@@ -141,8 +141,15 @@ public class SysUserController extends BaseController
             return error("新增用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
         user.setCreateBy(getUsername());
-        // 用户类型不能由前端指定，新增账号默认是普通用户。
-        user.setUserType(UserTypeEnum.NORMAL.getCode());
+        // 只有超级管理员可以创建超级管理员，普通管理员提交的值一律降级为普通用户。
+        if (UserTypeEnum.SUPER_ADMIN.getCode().equals(user.getUserType()) && !SecurityUtils.isAdmin())
+        {
+            return error("只有超级管理员可以创建超级管理员用户");
+        }
+        if (!UserTypeEnum.SUPER_ADMIN.getCode().equals(user.getUserType()))
+        {
+            user.setUserType(UserTypeEnum.NORMAL.getCode());
+        }
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         return toAjax(userService.insertUser(user));
     }
@@ -170,6 +177,16 @@ public class SysUserController extends BaseController
         else if (StringUtils.isNotEmpty(user.getEmail()) && !userService.checkEmailUnique(user))
         {
             return error("修改用户'" + user.getUserName() + "'失败，邮箱账号已存在");
+        }
+        // 非超级管理员不能通过修改请求提升用户身份；保持数据库中的原身份。
+        SysUser existingUser = userService.selectUserById(user.getUserId());
+        if (!SecurityUtils.isAdmin())
+        {
+            user.setUserType(existingUser.getUserType());
+        }
+        else if (!UserTypeEnum.SUPER_ADMIN.getCode().equals(user.getUserType()))
+        {
+            user.setUserType(UserTypeEnum.NORMAL.getCode());
         }
         user.setUpdateBy(getUsername());
         return toAjax(userService.updateUser(user));

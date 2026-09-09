@@ -174,7 +174,6 @@ COMMENT ON TABLE sys_menu IS '菜单权限表';
 
 INSERT INTO sys_menu VALUES
 ('1', '系统管理', '0', '1', 'system',           NULL, '', '', 1, 0, 'M', '0', '0', '', 'system',   'admin', CURRENT_TIMESTAMP, '', NULL, '系统管理目录'),
-('2', '系统监控', '0', '2', 'monitor',          NULL, '', '', 1, 0, 'M', '0', '0', '', 'monitor',  'admin', CURRENT_TIMESTAMP, '', NULL, '系统监控目录'),
 ('3', '系统工具', '0', '3', 'tool',             NULL, '', '', 1, 0, 'M', '0', '0', '', 'tool',     'admin', CURRENT_TIMESTAMP, '', NULL, '系统工具目录'),
 ('100',  '用户管理', '1',   '1', 'user',       'system/user/index',        '', '', 1, 0, 'C', '0', '0', 'system:user:list',        'user',          'admin', CURRENT_TIMESTAMP, '', NULL, '用户管理菜单'),
 ('101',  '角色管理', '1',   '2', 'role',       'system/role/index',        '', '', 1, 0, 'C', '0', '0', 'system:role:list',        'peoples',       'admin', CURRENT_TIMESTAMP, '', NULL, '角色管理菜单'),
@@ -242,7 +241,6 @@ INSERT INTO sys_menu VALUES
 ('121',  'WhatsApp发送', '1', '11', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:whatsapp:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'WhatsApp通知接口权限'),
 ('122',  '系统通知', '1', '9', 'notification', 'notification/index', '', '', 1, 0, 'C', '0', '0', 'notification:view', 'message', 'admin', CURRENT_TIMESTAMP, '', NULL, '系统通知页面'),
 ('123',  'Lark发送', '122', '3', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:lark:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'Lark通知接口权限'),
-('124',  '数据监控', '2', '1', 'doris', 'monitor/doris/index', '', '', 1, 0, 'C', '0', '0', 'monitor:doris:query', 'data-analysis', 'admin', CURRENT_TIMESTAMP, '', NULL, 'Doris数据监控');
 
 -- 6. 菜单多语言表
 -- SysMenuMapper 会在查询菜单时关联本表；必须在应用启动前创建。
@@ -266,9 +264,6 @@ VALUES
   (1,   'zh-CN', '系统管理', '系统管理目录'),
   (1,   'zh-TW', '系統管理', '系統管理目錄'),
   (1,   'en-US', 'System Management', 'System management'),
-  (2,   'zh-CN', '系统监控', '系统监控目录'),
-  (2,   'zh-TW', '系統監控', '系統監控目錄'),
-  (2,   'en-US', 'System Monitoring', 'System monitoring'),
   (100, 'zh-CN', '用户管理', '用户管理菜单'),
   (100, 'zh-TW', '使用者管理', '使用者管理選單'),
   (100, 'en-US', 'User Management', 'User management'),
@@ -290,9 +285,6 @@ VALUES
   (122, 'zh-CN', '系统通知', '系统通知菜单'),
   (122, 'zh-TW', '系統通知', '系統通知選單'),
   (122, 'en-US', 'System Notifications', 'System notifications'),
-  (124, 'zh-CN', '数据监控', 'Doris数据监控菜单'),
-  (124, 'zh-TW', '資料監控', 'Doris資料監控選單'),
-  (124, 'en-US', 'Data Monitoring', 'Doris data monitoring'),
   (500, 'zh-CN', '操作日志', '操作日志菜单'),
   (500, 'zh-TW', '操作日誌', '操作日誌選單'),
   (500, 'en-US', 'Operation Logs', 'Operation logs'),

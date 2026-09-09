@@ -36,12 +36,6 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
-        <!-- Doris uses the MySQL wire protocol. This is a separate read-only data source. -->
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-        </dependency>
-
         <!-- 核心模块-->
         <dependency>
             <groupId>com.fivetech</groupId>

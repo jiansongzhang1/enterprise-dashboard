@@ -11,13 +11,6 @@ fivetech:
   # 获取ip地址开关
   addressEnabled: false
 
-# Doris read-only data source. Keep disabled for local environments without VPC access.
-doris:
-  enabled: ${DORIS_ENABLED:false}
-  url: ${DORIS_URL:jdbc:mysql://ip-10-32-16-87.ap-southeast-1.compute.internal:9030/dmo_dwh_dwd_2b2c_rt}
-  username: ${DORIS_USERNAME:}
-  password: ${DORIS_PASSWORD:}
-
 # 开发环境配置
 server:
   # 服务器的HTTP端口，默认为8080

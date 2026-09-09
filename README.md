@@ -1,6 +1,6 @@
 # FiveTech Dashboard Backend
 
-FiveTech Dashboard 后端服务，为权限管理、登录认证、系统通知、审计日志和数据监控提供 API 能力。
+FiveTech Dashboard 后端服务，为权限管理、登录认证、系统通知和审计日志提供 API 能力。
 
 ## 1. 项目概览
 
@@ -22,7 +22,6 @@ FiveTech Dashboard 后端服务，为权限管理、登录认证、系统通知�
 - WhatsApp 通知
 - Lark 通知
 - 通知联系人维护
-- Doris 币种金额汇总查询
 - 简体中文、繁体中文、英文菜单国际化
 
 ### 1.2 当前部署架构
@@ -39,7 +38,6 @@ CloudFront
            |
            +--> RDS PostgreSQL：系统业务库
            +--> EC2 Redis：Token、登录限制和防重复提交
-           +--> Doris：只读数据监控查询
            +--> SES SMTP：邮件发送
            +--> Telegram / WhatsApp / Lark：外部通知服务
 ```
@@ -68,7 +66,6 @@ CloudFront
 - PostgreSQL 16+
 - Redis / Lettuce
 - Druid DataSource
-- MySQL Connector/J，用于连接 Doris 的 MySQL 协议
 - Maven 3.9+
 - Node.js 及 npm，仅用于前端项目构建
 
@@ -109,12 +106,6 @@ PONG
 
 - PostgreSQL
 - Redis
-
-Doris 只在需要测试“数据监控”页面时启用。本地无法访问 VPC 内 Doris 时，应保持：
-
-```bash
-DORIS_ENABLED=false
-```
 
 ## 5. 配置说明
 
@@ -271,17 +262,6 @@ Lark 接收人支持：
 
 机器人和接收人必须属于同一个 Lark Workspace，并且应用已经发布和安装。
 
-### 5.10 Doris
-
-```bash
-export DORIS_ENABLED=true
-export DORIS_URL='jdbc:mysql://<DORIS_HOST>:9030/dmo_dwh_dwd_2b2c_rt'
-export DORIS_USERNAME='doris_reader'
-export DORIS_PASSWORD='<DORIS_PASSWORD>'
-```
-
-Doris 是独立的只读数据源，不替换 PostgreSQL 主库。后端 EC2 必须能访问 Doris 的 TCP `9030` 端口。
-
 ## 6. 数据库初始化
 
 ### 6.1 新环境
@@ -301,7 +281,6 @@ sql/ry_20260819_postgresql.sql
 - 通知联系人 JSONB 字段
 - 菜单多语言数据
 - 系统通知菜单
-- Doris 数据监控菜单
 - 初始角色和权限数据
 
 该脚本会删除并重建业务表，只能用于空库或已确认可以清空的数据库。
@@ -322,7 +301,6 @@ psql \
 已有数据时不要执行完整初始化脚本，应按变更内容执行增量脚本：
 
 ```text
-sql/add_doris_currency_monitor_postgresql.sql
 sql/add_system_notification_menu_postgresql.sql
 sql/add_email_permission_postgresql.sql
 sql/add_telegram_permission_postgresql.sql
@@ -368,7 +346,6 @@ User -> UserRole -> Role -> RolePermission -> Permission
 由 `sys_menu.perms` 定义，并通过后端注解校验，例如：
 
 ```java
-@PreAuthorize("@ss.hasPermi('monitor:doris:query')")
 ```
 
 ### 7.2 数据权限
@@ -426,22 +403,6 @@ User -> UserRole -> Role -> RolePermission -> Permission
 |---|---|
 | 操作日志 | `/monitor/operlog` |
 | 登录日志 | `/monitor/logininfor` |
-| Doris 数据监控 | `/monitor/doris` |
-
-Doris 汇总接口：
-
-```text
-GET /monitor/doris/source-currency-summary
-```
-
-查询逻辑：
-
-```sql
-SELECT source_currency, SUM(source_amount) AS source_amount
-FROM dwd_main_pax_admin_t_cache_rate_log
-GROUP BY source_currency
-ORDER BY source_currency;
-```
 
 ### 8.4 系统通知
 
@@ -470,13 +431,6 @@ TOKEN=$(curl -s -X POST 'http://localhost:8080/login' \
 ```bash
 curl -H "Authorization: Bearer ${TOKEN}" \
   'http://localhost:8080/getInfo'
-```
-
-查询 Doris 数据：
-
-```bash
-curl -H "Authorization: Bearer ${TOKEN}" \
-  'http://localhost:8080/monitor/doris/source-currency-summary'
 ```
 
 发送邮件：
@@ -615,10 +569,6 @@ REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 TOKEN_SECRET=<TOKEN_SECRET>
 SERVER_SERVLET_CONTEXT_PATH=/prod-api
-DORIS_ENABLED=true
-DORIS_URL=jdbc:mysql://<DORIS_HOST>:9030/dmo_dwh_dwd_2b2c_rt
-DORIS_USERNAME=doris_reader
-DORIS_PASSWORD=<DORIS_PASSWORD>
 ```
 
 确认配置权限：
@@ -822,21 +772,7 @@ sudo systemctl cat fivetech
 - 后端是否配置 `SERVER_SERVLET_CONTEXT_PATH=/prod-api`
 - 用户是否拥有对应 `sys_menu` 权限
 
-### 15.3 Doris 查询失败
-
-```bash
-nc -vz <DORIS_HOST> 9030
-```
-
-重点检查：
-
-- `DORIS_ENABLED=true`
-- Doris 用户名和密码
-- EC2 到 Doris 的安全组授权
-- Doris 表名和字段名
-- 后端日志中的 JDBC 连接错误
-
-### 15.4 邮件发送失败
+### 15.3 邮件发送失败
 
 重点检查：
 
@@ -847,30 +783,16 @@ nc -vz <DORIS_HOST> 9030
 - SES 账号是否仍处于 Sandbox
 - 收件人邮箱是否被 SES 允许
 
-### 15.5 菜单不显示
+### 15.4 菜单不显示
 
-```sql
-SELECT menu_id, menu_name, perms, component, status, visible
-FROM sys_menu
-WHERE menu_id = 124
-   OR perms = 'monitor:doris:query';
-```
-
-然后确认：
-
-1. `sys_role_menu` 中存在对应角色授权。
-2. 当前用户拥有该角色。
-3. 退出并重新登录，重新获取路由和 Token。
-4. CloudFront 已完成刷新。
-5. 前端组件路径与 `component` 值一致。
+检查对应 `sys_menu` 记录、`sys_role_menu` 授权、当前用户角色以及前端路由缓存。修改菜单后退出并重新登录，必要时刷新 CloudFront。
 
 ## 16. 安全规范
 
 - 不在 Git、SQL、README、日志和聊天记录中保存生产密码。
 - 已暴露的 SMTP、Telegram、WhatsApp、Lark、数据库和 JWT 密钥应及时轮换。
-- RDS、Doris 和 Redis 优先使用内网访问。
+- RDS 和 Redis 优先使用内网访问。
 - Security Group 只开放必要端口和来源安全组。
-- Doris 查询菜单默认仅管理员可见。
 - 普通角色遵循最小权限原则，不默认授予用户删除、角色管理等高危权限。
 - `/druid/`、Swagger 和 Actuator 等运维入口不应直接暴露公网。
 - 生产环境必须启用 HTTPS，并正确配置 CloudFront 到后端的行为转发。
@@ -898,13 +820,6 @@ WHERE menu_id = 124
 - Lark 的 `open_id` 或 `chat_id` 属于当前 Workspace。
 - 外部服务失败时后端返回可定位的错误日志。
 
-### Doris 数据监控
-
-- Doris 可连接时页面能展示币种汇总。
-- Doris 不可连接时页面显示错误，不影响登录和权限管理。
-- 未授权用户无法调用接口。
-- 页面刷新不会修改 Doris 数据。
-
 ### 发布验证
 
 - 后端服务为 `active (running)`。
@@ -922,4 +837,3 @@ WHERE menu_id = 124
 - [Google Authenticator PRD](doc/PRD_GA_TOTP登录与绑定流程.md)
 - [Google Authenticator 技术设计](doc/技术设计_GA_TOTP登录与绑定流程.md)
 - [项目数据库梳理](doc/项目数据库梳理.md)
-

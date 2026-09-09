@@ -78,41 +78,6 @@ psql "host=<RDS_ENDPOINT> port=5432 dbname=appdb user=appadmin sslmode=require" 
 
 `sys_config`、`sys_dict_type`、`sys_dict_data` 当前仍是后端运行依赖，不建议删除。`sys_job`、`sys_job_log` 可以作为后续专项清理，但必须先移除对应 Java 模块、Mapper、启动配置和任务调用，再单独执行迁移。
 
-## Doris 数据监控菜单
-
-后端新增只读接口：
-
-```text
-GET /monitor/doris/source-currency-summary
-```
-
-完整初始化脚本已经包含菜单 `124`。已有数据库只需要执行：
-
-```text
-add_doris_currency_monitor_postgresql.sql
-```
-
-该菜单默认只授予管理员使用。普通角色是否可以查看汇总金额，需要确认数据敏感性后再授权：
-
-```sql
-INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 2, 124
-WHERE NOT EXISTS (
-  SELECT 1 FROM sys_role_menu WHERE role_id = 2 AND menu_id = 124
-);
-```
-
-后端 EC2 环境变量：
-
-```bash
-export DORIS_ENABLED=true
-export DORIS_URL='jdbc:mysql://ip-10-32-16-87.ap-southeast-1.compute.internal:9030/dmo_dwh_dwd_2b2c_rt'
-export DORIS_USERNAME='doris_reader'
-export DORIS_PASSWORD='<DORIS_PASSWORD>'
-```
-
-后端 EC2 的 Security Group 必须被 Doris EC2 的 Security Group 允许访问 TCP `9030`。本地环境保持 `DORIS_ENABLED=false`，不会尝试连接 Doris。
-
 ## TOTP 账号初始化
 
 脚本不会写入固定的管理员 TOTP 密钥。执行完成后，请使用安全的 Base32 密钥生成方式为管理员注入密钥：
