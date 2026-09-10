@@ -19,15 +19,16 @@ import com.fivetech.common.constant.UserConstants;
 import com.fivetech.common.core.domain.TreeSelect;
 import com.fivetech.common.core.domain.entity.SysMenu;
 import com.fivetech.common.core.domain.entity.SysRole;
+import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.text.Convert;
 import com.fivetech.common.exception.ServiceException;
-import com.fivetech.common.utils.SecurityUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.system.domain.vo.MetaVo;
 import com.fivetech.system.domain.vo.RouterVo;
 import com.fivetech.system.mapper.SysMenuMapper;
 import com.fivetech.system.mapper.SysRoleMapper;
 import com.fivetech.system.mapper.SysRoleMenuMapper;
+import com.fivetech.system.mapper.SysUserMapper;
 import com.fivetech.system.service.ISysMenuService;
 
 /**
@@ -53,6 +54,9 @@ public class SysMenuServiceImpl implements ISysMenuService
     @Autowired
     private SysRoleMenuMapper roleMenuMapper;
 
+    @Autowired
+    private SysUserMapper userMapper;
+
     /**
      * 根据用户查询系统菜单列表
      * 
@@ -77,7 +81,7 @@ public class SysMenuServiceImpl implements ISysMenuService
         String locale = LocaleContextHolder.getLocale().toLanguageTag();
         List<SysMenu> menuList = null;
         // 管理员显示所有菜单信息
-        if (SecurityUtils.isAdmin())
+        if (isSuperAdmin(userId))
         {
             menuList = menuMapper.selectMenuList(menu, locale);
         }
@@ -141,7 +145,7 @@ public class SysMenuServiceImpl implements ISysMenuService
     public List<SysMenu> selectMenuTreeByUserId(Long userId)
     {
         List<SysMenu> menus = null;
-        if (SecurityUtils.isAdmin())
+        if (isSuperAdmin(userId))
         {
             menus = menuMapper.selectMenuTreeAll(LocaleContextHolder.getLocale().toLanguageTag());
         }
@@ -150,6 +154,20 @@ public class SysMenuServiceImpl implements ISysMenuService
             menus = menuMapper.selectMenuTreeByUserId(userId, LocaleContextHolder.getLocale().toLanguageTag());
         }
         return getChildPerms(menus, MENU_ROOT_ID);
+    }
+
+    /**
+     * Menu visibility must use the persisted user identity rather than a
+     * potentially stale user object from the login session.
+     */
+    private boolean isSuperAdmin(Long userId)
+    {
+        if (userId == null)
+        {
+            return false;
+        }
+        SysUser user = userMapper.selectUserById(userId);
+        return user != null && user.isAdmin();
     }
 
     /**
