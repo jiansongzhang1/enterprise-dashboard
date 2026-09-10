@@ -182,7 +182,15 @@ public class SysRoleServiceImpl implements ISysRoleService
     @Override
     public void checkRoleAllowed(SysRole role)
     {
-        if (StringUtils.isNotNull(role.getRoleId()) && role.isAdmin())
+        if (role == null || StringUtils.isNull(role.getRoleId()))
+        {
+            return;
+        }
+
+        // Always load the persisted role. Do not trust role_key from the request,
+        // otherwise a caller could rename the protected role before this check.
+        SysRole persistedRole = roleMapper.selectRoleById(role.getRoleId());
+        if (persistedRole != null && persistedRole.isAdmin())
         {
             throw new ServiceException("不允许操作超级管理员角色");
         }
@@ -295,14 +303,23 @@ public class SysRoleServiceImpl implements ISysRoleService
         int rows = 1;
         // 新增用户与角色管理
         List<SysRoleMenu> list = new ArrayList<SysRoleMenu>();
-        for (Long menuId : role.getMenuIds())
+        Long[] menuIds = role.getMenuIds();
+        if (menuIds == null || menuIds.length == 0)
         {
+            return rows;
+        }
+        for (Long menuId : menuIds)
+        {
+            if (menuId == null)
+            {
+                continue;
+            }
             SysRoleMenu rm = new SysRoleMenu();
             rm.setRoleId(role.getRoleId());
             rm.setMenuId(menuId);
             list.add(rm);
         }
-        if (list.size() > 0)
+        if (!list.isEmpty())
         {
             rows = roleMenuMapper.batchRoleMenu(list);
         }
@@ -319,14 +336,23 @@ public class SysRoleServiceImpl implements ISysRoleService
         int rows = 1;
         // 新增角色与部门（数据权限）管理
         List<SysRoleDept> list = new ArrayList<SysRoleDept>();
-        for (Long deptId : role.getDeptIds())
+        Long[] deptIds = role.getDeptIds();
+        if (deptIds == null || deptIds.length == 0)
         {
+            return rows;
+        }
+        for (Long deptId : deptIds)
+        {
+            if (deptId == null)
+            {
+                continue;
+            }
             SysRoleDept rd = new SysRoleDept();
             rd.setRoleId(role.getRoleId());
             rd.setDeptId(deptId);
             list.add(rd);
         }
-        if (list.size() > 0)
+        if (!list.isEmpty())
         {
             rows = roleDeptMapper.batchRoleDept(list);
         }

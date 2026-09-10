@@ -9,6 +9,7 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 import com.fivetech.common.annotation.Excel;
 import com.fivetech.common.annotation.Excel.ColumnType;
 import com.fivetech.common.core.domain.BaseEntity;
+import com.fivetech.common.constant.Constants;
 
 /**
  * 角色表 sys_role
@@ -86,12 +87,16 @@ public class SysRole extends BaseEntity
 
     public boolean isAdmin()
     {
-        return isAdmin(this.roleId);
+        return isAdmin(this.roleKey);
     }
 
-    public static boolean isAdmin(Long roleId)
+    /**
+     * 判断是否为受保护的超级管理员角色。
+     * 角色身份由 role_key 决定，不能依赖数据库生成的 role_id。
+     */
+    public static boolean isAdmin(String roleKey)
     {
-        return roleId != null && 1L == roleId;
+        return Constants.SUPER_ADMIN.equals(roleKey == null ? null : roleKey.trim());
     }
 
     @NotBlank(message = "角色名称不能为空")
