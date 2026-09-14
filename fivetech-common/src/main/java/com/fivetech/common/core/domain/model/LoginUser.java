@@ -1,5 +1,6 @@
 package com.fivetech.common.core.domain.model;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
@@ -16,7 +17,7 @@ import com.fivetech.common.core.domain.entity.SysUser;
  * 
  * @author fivetech
  */
-public class LoginUser implements UserDetails
+public class LoginUser implements UserDetails, Serializable
 {
     private static final long serialVersionUID = 1L;
 

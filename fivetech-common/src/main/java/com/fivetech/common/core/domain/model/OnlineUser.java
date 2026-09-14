@@ -1,10 +1,14 @@
 package com.fivetech.common.core.domain.model;
 
+import java.io.Serializable;
+
 /**
  * 在线用户展示对象，不暴露登录 Token 和密码等敏感信息。
  */
-public class OnlineUser
+public class OnlineUser implements Serializable
 {
+    private static final long serialVersionUID = 1L;
+
     private String tokenId;
     private Long userId;
     private String userName;
