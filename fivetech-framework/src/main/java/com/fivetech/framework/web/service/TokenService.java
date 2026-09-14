@@ -1,6 +1,10 @@
 package com.fivetech.framework.web.service;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -11,6 +15,7 @@ import org.springframework.stereotype.Component;
 import com.fivetech.common.constant.CacheConstants;
 import com.fivetech.common.constant.Constants;
 import com.fivetech.common.core.domain.model.LoginUser;
+import com.fivetech.common.core.domain.model.OnlineUser;
 import com.fivetech.common.core.redis.RedisCache;
 import com.fivetech.common.utils.ServletUtils;
 import com.fivetech.common.utils.StringUtils;
@@ -31,6 +36,7 @@ import jakarta.servlet.http.HttpServletRequest;
 @Component
 public class TokenService
 {
+    private static final long ONLINE_SESSION_TIMEOUT_SECONDS = 120L;
     private static final Logger log = LoggerFactory.getLogger(TokenService.class);
 
     // 令牌自定义标识
@@ -102,6 +108,7 @@ public class TokenService
         {
             String userKey = getTokenKey(token);
             redisCache.deleteObject(userKey);
+            redisCache.deleteObject(getOnlineSessionKey(token));
         }
     }
 
@@ -152,6 +159,70 @@ public class TokenService
         // 根据uuid将loginUser缓存
         String userKey = getTokenKey(loginUser.getToken());
         redisCache.setCacheObject(userKey, loginUser, expireTime, TimeUnit.MINUTES);
+        refreshOnlineSession(loginUser);
+    }
+
+    /** 刷新在线会话心跳。 */
+    public void refreshOnlineSession(LoginUser loginUser)
+    {
+        if (loginUser == null || StringUtils.isEmpty(loginUser.getToken()))
+        {
+            return;
+        }
+        OnlineUser onlineUser = toOnlineUser(loginUser);
+        onlineUser.setLastHeartbeat(System.currentTimeMillis());
+        redisCache.setCacheObject(getOnlineSessionKey(loginUser.getToken()), onlineUser,
+                (int) ONLINE_SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /** 查询当前仍在 Redis TTL 内的在线会话。 */
+    public List<OnlineUser> listOnlineUsers()
+    {
+        List<OnlineUser> result = new ArrayList<>();
+        Collection<String> keys = redisCache.keys(CacheConstants.ONLINE_SESSION_KEY + "*");
+        for (String key : keys)
+        {
+            OnlineUser onlineUser = redisCache.getCacheObject(key);
+            if (onlineUser != null)
+            {
+                String tokenId = key.substring(CacheConstants.ONLINE_SESSION_KEY.length());
+                onlineUser.setTokenId(tokenId);
+                onlineUser.setExpireTime(System.currentTimeMillis() + redisCache.getExpire(key) * 1000L);
+                result.add(onlineUser);
+            }
+        }
+        result.sort(Comparator.comparing(OnlineUser::getLastHeartbeat, Comparator.nullsLast(Comparator.reverseOrder())));
+        return result;
+    }
+
+    /** 强制注销一个登录会话。 */
+    public boolean forceLogout(String tokenId)
+    {
+        if (StringUtils.isEmpty(tokenId))
+        {
+            return false;
+        }
+        delLoginUser(tokenId);
+        return true;
+    }
+
+    private OnlineUser toOnlineUser(LoginUser loginUser)
+    {
+        OnlineUser onlineUser = new OnlineUser();
+        onlineUser.setUserId(loginUser.getUserId());
+        onlineUser.setUserName(loginUser.getUsername());
+        onlineUser.setNickName(loginUser.getUser() == null ? null : loginUser.getUser().getNickName());
+        onlineUser.setIpaddr(loginUser.getIpaddr());
+        onlineUser.setLoginLocation(loginUser.getLoginLocation());
+        onlineUser.setBrowser(loginUser.getBrowser());
+        onlineUser.setOs(loginUser.getOs());
+        onlineUser.setLoginTime(loginUser.getLoginTime());
+        return onlineUser;
+    }
+
+    private String getOnlineSessionKey(String tokenId)
+    {
+        return CacheConstants.ONLINE_SESSION_KEY + tokenId;
     }
 
     /**
