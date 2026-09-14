@@ -121,8 +121,8 @@ token:
   header: Authorization
   # 令牌密钥
   secret: ${TOKEN_SECRET:}
-  # 令牌有效期（默认30分钟）
-  expireTime: 30
+  # 令牌有效期，单位：分钟
+  expireTime: ${TOKEN_EXPIRE_TIME:30}
 
 # MyBatis配置
 mybatis:
