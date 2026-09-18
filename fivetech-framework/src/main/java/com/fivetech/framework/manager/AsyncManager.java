@@ -4,6 +4,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import com.fivetech.common.utils.Threads;
+import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.utils.spring.SpringUtils;
 
 /**
@@ -42,7 +43,8 @@ public class AsyncManager
      */
     public void execute(TimerTask task)
     {
-        executor.schedule(task, OPERATE_DELAY_TIME, TimeUnit.MILLISECONDS);
+        // 包装一层，把调用线程的 traceId 带进异步任务，登录日志/操作日志才能与请求对上
+        executor.schedule(TraceIdUtils.wrap(task), OPERATE_DELAY_TIME, TimeUnit.MILLISECONDS);
     }
 
     /**

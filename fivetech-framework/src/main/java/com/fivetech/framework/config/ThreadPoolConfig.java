@@ -1,9 +1,11 @@
 package com.fivetech.framework.config;
 
 import com.fivetech.common.utils.Threads;
+import com.fivetech.common.utils.TraceIdUtils;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -39,7 +41,18 @@ public class ThreadPoolConfig
         executor.setKeepAliveSeconds(keepAliveSeconds);
         // 线程池对拒绝任务(无线程可用)的处理策略
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 把提交线程的 traceId 带到执行线程，异步日志才追得上同一条链路
+        executor.setTaskDecorator(mdcTaskDecorator());
         return executor;
+    }
+
+    /**
+     * MDC 上下文传递装饰器：线程池默认不传递 MDC，不装饰则异步日志会丢失 traceId
+     */
+    @Bean
+    public TaskDecorator mdcTaskDecorator()
+    {
+        return runnable -> TraceIdUtils.wrap(runnable);
     }
 
     /**

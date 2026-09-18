@@ -11,6 +11,7 @@ import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.config.FiveTechConfig;
 import com.fivetech.common.constant.Constants;
 import com.fivetech.framework.interceptor.RepeatSubmitInterceptor;
@@ -61,6 +62,8 @@ public class ResourcesConfig implements WebMvcConfigurer
         config.addAllowedHeader("*");
         // 设置访问源请求方法
         config.addAllowedMethod("*");
+        // 暴露链路追踪响应头，前端才能读到 X-Trace-Id
+        config.addExposedHeader(TraceIdUtils.TRACE_HEADER);
         // 有效期 1800秒
         config.setMaxAge(1800L);
         // 添加映射路径，拦截一切请求

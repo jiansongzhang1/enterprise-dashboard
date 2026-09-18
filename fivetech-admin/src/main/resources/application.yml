@@ -115,6 +115,70 @@ notification:
     api-base-url: ${LARK_API_BASE_URL:https://open.larksuite.com}
     timeout-seconds: ${LARK_TIMEOUT_SECONDS:10}
 
+# 仪表板查询配置
+dashboard:
+  # 默认站点，一期单站点
+  default-site: ${DASHBOARD_SITE:SITE-IN}
+  # 统计时区，日切与环比同比都依此时区
+  timezone: ${DASHBOARD_TIMEZONE:Asia/Kolkata}
+  # 币别，一期单币别不做汇率折算
+  currency: ${DASHBOARD_CURRENCY:INR}
+  # 站点上线日，所有时间选择的下界
+  launch-date: ${DASHBOARD_LAUNCH_DATE:2026-03-01}
+  # 指标口径版本
+  registry-version: ${DASHBOARD_REGISTRY_VERSION:v1.3}
+  # 数据延迟小时数，落在窗口内的时间片标记 delayed
+  delay-window-hours: ${DASHBOARD_DELAY_HOURS:2}
+  # 在线查询行数上限，超过引导走异步导出
+  row-limit: ${DASHBOARD_ROW_LIMIT:100000}
+  # 单次查询最大数据点数，超过自动降级粒度
+  max-points-per-granularity: ${DASHBOARD_MAX_POINTS:744}
+  # 会员账号是否脱敏
+  mask-account: ${DASHBOARD_MASK_ACCOUNT:true}
+  gateway:
+    # stub = 占位实现（返回空数据）；接入 Doris 后改为 doris
+    type: ${DASHBOARD_GATEWAY_TYPE:stub}
+
+# 健康检查与监控端点
+# 独立端口 8081，安全组只对内网/探活来源开放，绝不暴露公网
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+
+# 系统错误告警：研发/运维侧的异常推送，与仪表板的业务指标告警不是同一套
+# 生产开启前务必先配 telegram-chat-ids，否则只会写日志不会推送
+alert:
+  # 总开关，关闭时只记日志
+  enabled: ${ALERT_ENABLED:false}
+  # 环境标识，出现在消息首行，避免测试环境告警被误当成生产
+  env: ${ALERT_ENV:local}
+  # 实例标识，留空取主机名
+  instance: ${ALERT_INSTANCE:}
+  # Telegram 接收方 chat_id，多个用逗号分隔
+  telegram-chat-ids: ${ALERT_TELEGRAM_CHAT_IDS:}
+  # 同一异常指纹的静默窗口（秒）
+  dedup-window-seconds: ${ALERT_DEDUP_WINDOW_SECONDS:300}
+  # 全局每分钟最大推送条数
+  rate-per-minute: ${ALERT_RATE_PER_MINUTE:10}
+  # 消息中携带的堆栈行数
+  stack-lines: ${ALERT_STACK_LINES:6}
+  # 异步发送队列容量
+  queue-capacity: ${ALERT_QUEUE_CAPACITY:200}
+
 # token配置
 token:
   # 令牌自定义标识return userId != null && 1L == userId;

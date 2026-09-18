@@ -3,6 +3,7 @@ package com.fivetech.framework.web.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -17,7 +18,12 @@ import com.fivetech.common.core.text.Convert;
 import com.fivetech.common.exception.DemoModeException;
 import com.fivetech.common.exception.ServiceException;
 import com.fivetech.common.utils.StringUtils;
+import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.utils.html.EscapeUtil;
+import com.fivetech.common.utils.ip.IpUtils;
+import com.fivetech.framework.alert.AlertContext;
+import com.fivetech.framework.alert.AlertLevel;
+import com.fivetech.framework.alert.ErrorAlertService;
 
 /**
  * 全局异常处理器
@@ -28,6 +34,10 @@ import com.fivetech.common.utils.html.EscapeUtil;
 public class GlobalExceptionHandler
 {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /** 告警关闭或未装配时为 null，此处只记日志，不影响任何接口 */
+    @Autowired(required = false)
+    private ErrorAlertService errorAlertService;
 
     /**
      * 权限校验异常
@@ -98,7 +108,8 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',发生未知异常.", requestURI, e);
-        return AjaxResult.error(e.getMessage());
+        pushAlert("系统未捕获异常", e, request);
+        return errorWithTrace(e.getMessage());
     }
 
     /**
@@ -109,7 +120,69 @@ public class GlobalExceptionHandler
     {
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',发生系统异常.", requestURI, e);
-        return AjaxResult.error(e.getMessage());
+        pushAlert("系统异常", e, request);
+        return errorWithTrace(e.getMessage());
+    }
+
+    /**
+     * 推送系统错误告警。
+     * <p>
+     * 只有未捕获异常走到这里，业务异常（ServiceException）不告警。
+     * 组装过程本身不允许抛异常，否则会把一次普通报错变成 500 处理失败。
+     */
+    private void pushAlert(String title, Throwable e, HttpServletRequest request)
+    {
+        if (errorAlertService == null)
+        {
+            return;
+        }
+        try
+        {
+            errorAlertService.alert(AlertContext.of(AlertLevel.P2, title, e)
+                .setTraceId(TraceIdUtils.get())
+                .setMethod(request.getMethod())
+                .setUri(request.getRequestURI())
+                .setUsername(currentUsername())
+                .setClientIp(IpUtils.getIpAddr(request)));
+        }
+        catch (Exception ignored)
+        {
+            // 告警组装失败不能影响异常响应本身
+        }
+    }
+
+    /**
+     * 安全获取当前用户名：未登录时 SecurityUtils 会抛异常，这里不能让它冒出去
+     */
+    private String currentUsername()
+    {
+        try
+        {
+            return com.fivetech.common.utils.SecurityUtils.getUsername();
+        }
+        catch (Exception e)
+        {
+            return "anonymous";
+        }
+    }
+
+    /**
+     * 构造带追踪号的错误响应。
+     * <p>
+     * 追踪号同时放在 traceId 字段与提示文案里：前者供前端上报，
+     * 后者让用户截图反馈时就能带上，无需额外操作。
+     */
+    private AjaxResult errorWithTrace(String message)
+    {
+        String traceId = TraceIdUtils.get();
+        String text = StringUtils.isEmpty(message) ? "系统异常，请联系管理员" : message;
+        if (StringUtils.isNotEmpty(traceId))
+        {
+            text = text + "（追踪号 " + traceId + "）";
+        }
+        AjaxResult result = AjaxResult.error(text);
+        result.put("traceId", traceId);
+        return result;
     }
 
     /**

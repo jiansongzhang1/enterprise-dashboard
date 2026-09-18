@@ -36,6 +36,12 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
+        <!-- 健康检查与指标，供外部探活使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- 核心模块-->
         <dependency>
             <groupId>com.fivetech</groupId>
