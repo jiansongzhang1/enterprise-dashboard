@@ -8,7 +8,7 @@ import com.fivetech.dashboard.enums.Granularity;
 /**
  * 解析后的统计区间。
  * <p>
- * 所有下游查询只认这里的确定时间戳，不再接触 rangeType 这类枚举。
+ * 所有下游查询只认这里的确定时间戳，不再接触前端传入的日期字符串。
  *
  * @author fivetech
  */
