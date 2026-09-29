@@ -99,11 +99,11 @@ public class SecurityConfig
             // 注解标记允许匿名访问的url
             .authorizeHttpRequests((requests) -> {
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
-                // 登录和 Google Authenticator 绑定接口允许匿名访问
-                requests.requestMatchers("/login", "/ga/bind/start", "/ga/bind/confirm").permitAll()
+                // 登录、Google Authenticator 绑定、邮件链接启用账号接口允许匿名访问
+                requests.requestMatchers("/login", "/ga/bind/start", "/ga/bind/confirm", "/account/activation/**").permitAll()
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
-                    .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/druid/**").permitAll()
+                    .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/dashboard/metrics/**").permitAll()
                     // 健康检查供外部探活，正常走 management 独立端口；此处兜底放行，避免探活拿到 401
                     .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                     // 除上面外的所有请求全部需要鉴权认证

@@ -40,33 +40,34 @@ public class RefererFilter implements Filter
 
         String referer = req.getHeader("Referer");
 
-        // 如果Referer为空，拒绝访问
-        if (referer == null || referer.isEmpty())
-        {
-            resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied: Referer header is required");
-            return;
-        }
-
-        // 检查Referer是否在允许的域名列表中
-        boolean allowed = false;
-        for (String domain : allowedDomains)
-        {
-            if (referer.contains(domain))
-            {
-                allowed = true;
-                break;
-            }
-        }
-
-        // 根据检查结果决定是否放行
-        if (allowed)
-        {
-            chain.doFilter(request, response);
-        }
-        else
-        {
-            resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied: Referer '" + referer + "' is not allowed");
-        }
+        // 如果Referer为空，拒绝访问  todo 恢复
+        return;
+//        if (referer == null || referer.isEmpty())
+//        {
+//          //  resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied: Referer header is required");
+//            return;
+//        }
+//
+//        // 检查Referer是否在允许的域名列表中
+//        boolean allowed = false;
+//        for (String domain : allowedDomains)
+//        {
+//            if (referer.contains(domain))
+//            {
+//                allowed = true;
+//                break;
+//            }
+//        }
+//
+//        // 根据检查结果决定是否放行
+//        if (allowed)
+//        {
+//            chain.doFilter(request, response);
+//        }
+//        else
+//        {
+//            resp.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied: Referer '" + referer + "' is not allowed");
+//        }
     }
 
     @Override

@@ -22,8 +22,6 @@ import com.fivetech.dashboard.gateway.DataFreshness;
 import com.fivetech.dashboard.gateway.MetricDataGateway;
 import com.fivetech.dashboard.gateway.RecordPage;
 import com.fivetech.dashboard.gateway.RecordPageRequest;
-import com.fivetech.dashboard.gateway.ScopeFilter;
-import com.fivetech.dashboard.service.DashboardScopeResolver;
 import com.fivetech.dashboard.service.IRecordQueryService;
 import com.fivetech.dashboard.service.RecordColumnRegistry;
 import com.fivetech.dashboard.service.TimeRangeResolver;
@@ -45,17 +43,14 @@ public class RecordQueryServiceImpl implements IRecordQueryService
 
     private final RecordColumnRegistry columnRegistry;
 
-    private final DashboardScopeResolver scopeResolver;
-
     private final MetricDataGateway gateway;
 
     public RecordQueryServiceImpl(DashboardProperties properties, TimeRangeResolver timeResolver,
-            RecordColumnRegistry columnRegistry, DashboardScopeResolver scopeResolver, MetricDataGateway gateway)
+            RecordColumnRegistry columnRegistry, MetricDataGateway gateway)
     {
         this.properties = properties;
         this.timeResolver = timeResolver;
         this.columnRegistry = columnRegistry;
-        this.scopeResolver = scopeResolver;
         this.gateway = gateway;
     }
 
@@ -114,19 +109,19 @@ public class RecordQueryServiceImpl implements IRecordQueryService
     }
 
     /**
-     * 三张表共用的前置处理：权限 → 时间 → 白名单校验
+     * 三张表共用的前置处理：时间解析 → 白名单校验
+     * <p>
+     * 一期不做行/列维度数据权限，访问控制完全由控制器的 @PreAuthorize 承担。
      */
     private Context prepare(BaseRecordQuery query, List<ColumnMetaVO> columns, String defaultSort)
     {
         Context ctx = new Context();
         ctx.siteCode = StringUtils.isEmpty(query.getSiteCode())
             ? properties.getDefaultSite() : query.getSiteCode();
-        ScopeFilter scope = scopeResolver.resolve();
-
         ctx.freshness = timeResolver.resolveFreshness(ctx.siteCode);
         ctx.warnings = new ArrayList<>();
         // 记录表允许「不限时间」
-        ctx.range = timeResolver.resolveMain(query, ctx.freshness.getAsOf(), true);
+        ctx.range = timeResolver.resolveMain(query, ctx.freshness.getAsOf());
 
         RecordPageRequest request = new RecordPageRequest();
         request.setSiteCode(ctx.siteCode);
@@ -139,7 +134,6 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         request.setPageNum(query.getPageNum() == null ? 1 : query.getPageNum());
         request.setPageSize(query.getPageSize() == null ? 20 : query.getPageSize());
         request.setRowLimit(properties.getRowLimit());
-        request.setScopeFilter(scope);
         ctx.request = request;
         return ctx;
     }

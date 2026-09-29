@@ -21,6 +21,7 @@ import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.utils.html.EscapeUtil;
 import com.fivetech.common.utils.ip.IpUtils;
+import com.fivetech.dashboard.gateway.uds.UdsQueryException;
 import com.fivetech.framework.alert.AlertContext;
 import com.fivetech.framework.alert.AlertLevel;
 import com.fivetech.framework.alert.ErrorAlertService;
@@ -98,6 +99,31 @@ public class GlobalExceptionHandler
         }
         log.error("请求参数类型不匹配'{}',发生系统异常.", requestURI, e);
         return AjaxResult.error(String.format("请求参数类型不匹配，参数[%s]要求类型为：'%s'，但输入值为：'%s'", e.getName(), e.getRequiredType().getName(), value));
+    }
+
+    /**
+     * 外部数据服务（UDS）调用失败。
+     * <p>
+     * 这是数据平台或网络的问题，不是本系统的 bug：给用户可理解的提示，
+     * 日志只打一行摘要（完整堆栈放 debug），同时照常告警到值班。
+     */
+    @ExceptionHandler(UdsQueryException.class)
+    public AjaxResult handleUdsQueryException(UdsQueryException e, HttpServletRequest request)
+    {
+        String requestURI = request.getRequestURI();
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root)
+        {
+            root = root.getCause();
+        }
+        log.error("请求地址'{}',数据服务调用失败 httpStatus={} udsCode={} : {} (root={})",
+            requestURI, e.getHttpStatus(), e.getUdsCode(), e.getMessage(), root.getClass().getSimpleName());
+        log.debug("数据服务调用失败堆栈", e);
+        pushAlert("数据服务调用失败", e, request);
+        String message = e.getHttpStatus() == 0
+            ? "数据服务暂时无法连接，请稍后重试"
+            : "数据服务查询失败，请稍后重试";
+        return errorWithTrace(message);
     }
 
     /**

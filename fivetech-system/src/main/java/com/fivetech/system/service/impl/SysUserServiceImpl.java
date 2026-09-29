@@ -334,6 +334,12 @@ public class SysUserServiceImpl implements ISysUserService
     }
 
     @Override
+    public int activateUser(Long userId, String encodedPassword)
+    {
+        return userMapper.activateUser(userId, encodedPassword);
+    }
+
+    @Override
     public int updateGaSecretIfEmpty(Long userId, String gaSecret, Integer gaStatus)
     {
         return userMapper.updateGaSecretIfEmpty(userId, gaSecret, gaStatus);

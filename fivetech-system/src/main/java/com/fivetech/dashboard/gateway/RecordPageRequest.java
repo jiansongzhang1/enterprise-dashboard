@@ -44,8 +44,6 @@ public class RecordPageRequest implements Serializable
     /** 行数上限，超过时网关应返回 truncated 标记而不是把全量拉回来 */
     private int rowLimit;
 
-    private ScopeFilter scopeFilter;
-
     public String getSiteCode()
     {
         return siteCode;
@@ -154,15 +152,5 @@ public class RecordPageRequest implements Serializable
     public void setRowLimit(int rowLimit)
     {
         this.rowLimit = rowLimit;
-    }
-
-    public ScopeFilter getScopeFilter()
-    {
-        return scopeFilter;
-    }
-
-    public void setScopeFilter(ScopeFilter scopeFilter)
-    {
-        this.scopeFilter = scopeFilter;
     }
 }

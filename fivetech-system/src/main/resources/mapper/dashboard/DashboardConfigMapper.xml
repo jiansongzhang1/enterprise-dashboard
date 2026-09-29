@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.dashboard.mapper.DashboardConfigMapper">
+
+	<resultMap type="com.fivetech.dashboard.domain.MetricCardConfig" id="MetricCardResult">
+		<result property="metricCode"      column="metric_code"      />
+		<result property="metricName"      column="metric_name"      />
+		<result property="metricNameEn"    column="metric_name_en"   />
+		<result property="groupCode"       column="group_code"       />
+		<result property="sourceTable"     column="source_table"     />
+		<result property="sourceField"     column="source_field"     />
+		<result property="chartType"       column="chart_type"       />
+		<result property="valueFormat"     column="value_format"     />
+		<result property="valueDecimals"   column="value_decimals"   />
+		<result property="showAsCard"      column="show_as_card"     />
+		<result property="sortNo"          column="sort_no"          />
+		<result property="calcType"        column="calc_type"        />
+		<result property="leftCode"        column="left_code"        />
+		<result property="rightCode"       column="right_code"       />
+		<result property="aggType"         column="agg_type"         />
+		<result property="weightField"     column="weight_field"     />
+		<result property="alertEnabled"    column="alert_enabled"    />
+		<result property="alertMin"        column="alert_min"        />
+		<result property="alertMax"        column="alert_max"        />
+		<result property="tolerancePct"    column="tolerance_pct"    />
+		<result property="status"          column="status"           />
+		<result property="remark"          column="remark"           />
+	</resultMap>
+
+	<resultMap type="com.fivetech.dashboard.domain.PageMetricConfig" id="PageMetricResult">
+		<result property="pageCode"   column="page_code"   />
+		<result property="metricCode" column="metric_code" />
+		<result property="sortNo"     column="sort_no"     />
+		<result property="isDefault"  column="is_default"  />
+		<result property="emphasis"   column="emphasis"    />
+		<result property="status"     column="status"      />
+	</resultMap>
+
+	<!-- 不过滤 status：校验器要看见停用的行才能报「页面挂着已停用指标」 -->
+	<select id="selectAllMetricCards" resultMap="MetricCardResult">
+		select metric_code, metric_name, metric_name_en, group_code,
+		       source_table, source_field, chart_type, value_format, value_decimals,
+		       show_as_card, sort_no, calc_type, left_code, right_code,
+		       agg_type, weight_field, alert_enabled, alert_min, alert_max,
+		       tolerance_pct, status, remark
+		  from dashboard_metric_card
+		 order by sort_no, metric_code
+	</select>
+
+	<select id="selectAllPageMetrics" resultMap="PageMetricResult">
+		select page_code, metric_code, sort_no, is_default, emphasis, status
+		  from dashboard_page_metric
+		 order by page_code, sort_no, metric_code
+	</select>
+
+	<select id="selectEnabledGroupCodes" resultType="java.lang.String">
+		select group_code from dashboard_metric_group
+		 where status = '0'
+		 order by sort_no
+	</select>
+
+</mapper>

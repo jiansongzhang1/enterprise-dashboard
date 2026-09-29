@@ -96,6 +96,15 @@ public interface SysUserMapper
     public int updateGaStatus(@Param("userId") Long userId, @Param("gaStatus") Integer gaStatus);
 
     /**
+     * 通过启用链接设置密码并标记账号已启用；仅对待启用账号生效。
+     *
+     * @param userId 用户ID
+     * @param password 已加密的密码
+     * @return 更新行数（0 表示账号已启用或不存在）
+     */
+    public int activateUser(@Param("userId") Long userId, @Param("password") String password);
+
+    /**
      * 首次绑定时生成并保存 TOTP 密钥，仅允许更新空密钥账号。
      *
      * @param userId 用户ID

@@ -1,5 +1,7 @@
 package com.fivetech.web.controller.system;
 
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,10 +26,13 @@ import com.fivetech.common.core.domain.entity.SysRole;
 import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.page.TableDataInfo;
 import com.fivetech.common.enums.BusinessType;
+import com.fivetech.common.enums.UserStatus;
 import com.fivetech.common.enums.UserTypeEnum;
 import com.fivetech.common.utils.SecurityUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.poi.ExcelUtil;
+import com.fivetech.framework.notification.AccountMailService;
+import com.fivetech.framework.web.service.SysAccountActivationService;
 import com.fivetech.system.service.ISysDeptService;
 import com.fivetech.system.service.ISysPostService;
 import com.fivetech.system.service.ISysRoleService;
@@ -53,6 +58,14 @@ public class SysUserController extends BaseController
 
     @Autowired
     private ISysPostService postService;
+
+    @Autowired
+    private AccountMailService accountMailService;
+
+    @Autowired
+    private SysAccountActivationService activationService;
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
      * 获取用户列表
@@ -150,8 +163,35 @@ public class SysUserController extends BaseController
         {
             user.setUserType(UserTypeEnum.NORMAL.getCode());
         }
-        user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
-        return toAjax(userService.insertUser(user));
+        // 员工通过邮件里的一次性链接自己设置密码，管理员不分配、不接触密码
+        if (!AccountMailService.isDeliverable(user.getEmail()))
+        {
+            return error("新增用户'" + user.getUserName() + "'失败，请填写有效的邮箱，用于接收启用链接");
+        }
+        if (!accountMailService.canSendActivation())
+        {
+            return error("新增用户'" + user.getUserName() + "'失败，未开启邮件发送或未配置前台地址 notification.email.account.portal-url");
+        }
+        user.setEmail(user.getEmail().trim());
+        // 启用前写入一个无人知道的随机密码，账号在员工设置密码前无法登录
+        user.setPassword(SecurityUtils.encryptPassword(unusablePassword()));
+        user.setPwdUpdateDate(null);
+        user.setActivateTime(null);
+        int rows = userService.insertUser(user);
+        if (rows > 0)
+        {
+            try
+            {
+                activationService.issueActivation(user, getUsername());
+            }
+            catch (Exception e)
+            {
+                // 账号已建好，不回滚；管理员可在列表里重发启用邮件
+                logger.error("启用链接生成失败：账号={}", user.getUserName(), e);
+                return success("账号已创建，但启用邮件未能发送，请稍后在用户列表中重发启用邮件");
+            }
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -212,14 +252,57 @@ public class SysUserController extends BaseController
      */
     @PreAuthorize("@ss.hasPermi('system:user:resetPwd')")
     @Log(title = "用户管理", businessType = BusinessType.UPDATE)
-    @PutMapping("/resetPwd")
+    @PostMapping("/resetPwd")
     public AjaxResult resetPwd(@RequestBody SysUser user)
     {
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         user.setUpdateBy(getUsername());
-        return toAjax(userService.resetPwd(user));
+        int rows = userService.resetPwd(user);
+        if (rows > 0)
+        {
+            // 只通知“密码已变更”，邮件中不含新密码
+            accountMailService.sendPasswordChanged(userService.selectUserById(user.getUserId()), true, null);
+        }
+        return toAjax(rows);
+    }
+
+    /**
+     * 重发启用邮件：仅限待启用账号，旧链接立即作废
+     */
+    @PreAuthorize("@ss.hasPermi('system:user:edit')")
+    @Log(title = "用户管理", businessType = BusinessType.UPDATE)
+    @PostMapping("/resendActivation/{userId}")
+    public AjaxResult resendActivation(@PathVariable("userId") Long userId)
+    {
+        SysUser target = new SysUser();
+        target.setUserId(userId);
+        userService.checkUserAllowed(target);
+        userService.checkUserDataScope(userId);
+        SysUser user = userService.selectUserById(userId);
+        if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+        {
+            return error("用户不存在");
+        }
+        if (user.getActivateTime() != null)
+        {
+            return error("该账号已启用，无需重发启用邮件");
+        }
+        if (UserStatus.DISABLE.getCode().equals(user.getStatus()))
+        {
+            return error("该账号已停用，请先启用账号再重发");
+        }
+        if (!AccountMailService.isDeliverable(user.getEmail()))
+        {
+            return error("该账号没有有效的邮箱，请先修改邮箱");
+        }
+        if (!accountMailService.canSendActivation())
+        {
+            return error("未开启邮件发送或未配置前台地址 notification.email.account.portal-url");
+        }
+        activationService.issueActivation(user, getUsername());
+        return success();
     }
 
     /**
@@ -233,7 +316,23 @@ public class SysUserController extends BaseController
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
         user.setUpdateBy(getUsername());
-        return toAjax(userService.updateUserStatus(user));
+        SysUser before = userService.selectUserById(user.getUserId());
+        int rows = userService.updateUserStatus(user);
+        if (rows > 0 && before != null && !StringUtils.equals(before.getStatus(), user.getStatus()))
+        {
+            if (UserStatus.DISABLE.getCode().equals(user.getStatus()))
+            {
+                // 停用时作废未使用的启用链接；会话在下一次请求时由 JwtAuthenticationTokenFilter 踢出
+                activationService.revokeLinks(before.getUserId());
+                accountMailService.sendAccountDisabled(before);
+            }
+            else if (UserStatus.OK.getCode().equals(user.getStatus()) && before.getActivateTime() != null)
+            {
+                // 待启用账号重新启用时不发通知：旧链接已作废，由管理员重发启用邮件
+                accountMailService.sendAccountEnabled(before);
+            }
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -263,6 +362,14 @@ public class SysUserController extends BaseController
         roleService.checkRoleDataScope(roleIds);
         userService.insertUserAuth(userId, roleIds);
         return success();
+    }
+
+    /** 生成一个无人知道的随机密码，用于待启用账号 */
+    private static String unusablePassword()
+    {
+        byte[] bytes = new byte[24];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     /**

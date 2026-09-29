@@ -39,6 +39,9 @@ public class DashboardProperties
     /** 会员账号等敏感字段是否脱敏 */
     private boolean maskAccount = true;
 
+    /** CSV 导出配置 */
+    private ExportProperties export = new ExportProperties();
+
     public String getDefaultSite()
     {
         return defaultSite;
@@ -127,5 +130,15 @@ public class DashboardProperties
     public void setMaskAccount(boolean maskAccount)
     {
         this.maskAccount = maskAccount;
+    }
+
+    public ExportProperties getExport()
+    {
+        return export;
+    }
+
+    public void setExport(ExportProperties export)
+    {
+        this.export = export;
     }
 }

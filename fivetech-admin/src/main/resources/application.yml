@@ -87,17 +87,24 @@ spring:
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 10000
       mail.smtp.writetimeout: 10000
-  # 服务模块
-  devtools:
-    restart:
-      # 热部署开关
-      enabled: true
 
 # 邮件通知配置
 notification:
   email:
     enabled: ${MAIL_ENABLED:true}
     from: ${MAIL_FROM:jackson@fivetech.co.jp}
+    # 账号通知邮件（繁體）：开通时发启用链接，密码变更、停用、重新启用时发通知；邮件中不含任何密码
+    account:
+      enabled: ${MAIL_ACCOUNT_ENABLED:true}
+      # 平台名称，用于邮件主题和正文
+      platform-name: ${MAIL_PLATFORM_NAME:Yata}
+      # 前台访问地址（含部署子路径，不带结尾斜杠），启用链接为 {portal-url}/activate?token=…
+      # 必填：留空时无法新建账号（收不到启用链接）
+      portal-url: ${MAIL_PORTAL_URL:}
+      # 启用链接有效小时数（24–168）
+      link-expire-hours: ${MAIL_LINK_EXPIRE_HOURS:72}
+      # 邮件中时间的显示时区，如 Asia/Taipei；留空使用服务器时区
+      time-zone: ${MAIL_TIME_ZONE:}
   telegram:
     enabled: ${TELEGRAM_ENABLED:false}
     bot-token: ${TELEGRAM_BOT_TOKEN:}
@@ -136,8 +143,85 @@ dashboard:
   # 会员账号是否脱敏
   mask-account: ${DASHBOARD_MASK_ACCOUNT:true}
   gateway:
-    # stub = 占位实现（返回空数据）；接入 Doris 后改为 doris
-    type: ${DASHBOARD_GATEWAY_TYPE:stub}
+    # UDS 统一数据服务对接
+    uds:
+      # POC 走本机 SSM 端口转发；端口转发断了这里就连不通，不是应用的问题
+      base-url: ${UDS_BASE_URL:http://172.29.106.105:18082}
+      query-path: ${UDS_QUERY_PATH:/v1/query}
+      # X-Uds-* 是测试身份头，不是认证。生产请用服务账号而不是个人账号
+      principal: ${UDS_PRINCIPAL:fivetech-dashboard}
+      tenant: ${UDS_TENANT:site:SITE-IN}
+      roles: ${UDS_ROLES:dashboard_ops}
+      # ops_hourly 是站点级 ADS 汇总，不做商户隔离，因此不传 merchant-codes。
+      # 只有 merchant_bet_hourly 那条下钻链路才需要它
+      merchant-codes: ${UDS_MERCHANT_CODES:}
+      connect-timeout-seconds: ${UDS_CONNECT_TIMEOUT:5}
+      # 留 25 秒：CloudFront 源站超时是 30 秒，要给自己留出返回和序列化的余量
+      read-timeout-seconds: ${UDS_READ_TIMEOUT:25}
+      # 上游水位低于请求上界时（HTTP 400 code=4403）：已拿到过上游水位就直接截到水位，
+      # 只有冷启动还没有水位时，才按粒度逐格回退，最多回退这么多格
+      not-ready-retries: ${UDS_NOT_READY_RETRIES:6}
+      # 探到的水位缓存秒数；过期后重新试满区间，上游追上进度时自动恢复
+      watermark-cache-seconds: ${UDS_WATERMARK_CACHE_SECONDS:120}
+      # 指标映射：本系统指标编码 -> UDS 数据集与指标名。改口径只改这里，不用发版
+      datasets:
+        # 运营看板 21 个指标全部来自这一个数据集，一次查询就能取全
+        ops_hourly:
+          time-dimension: biz_hh
+          grain: HOUR
+          dimensions:
+            - biz_hh
+          options:
+            channel: ADHOC
+          metrics:
+            # eg1 获客与转化
+            login: login_users
+            reg: register_users
+            ftd: first_deposit_users
+            ftdr: first_deposit_conversion_rate
+            ftdA: first_deposit_arppu
+            # eg2 资金流
+            dep: deposit_amount
+            wd: withdrawal_amount
+            net: net_deposit
+            arppu: arppu
+            turnX: turnover_multiple
+            # eg3 支付健康度
+            dOkR: deposit_success_rate
+            dT: avg_deposit_time
+            wOkR: withdrawal_success_rate
+            wT: avg_withdrawal_time
+            # eg4 投注与盈收
+            active: active_users
+            bet: bet_amount
+            ggr: ggr
+            killR: average_kill_rate
+            bonus: bonus_amount
+            bonusR: bonus_ratio
+            # 口径差异：UDS 侧 ngr = ggr - bonus_amount - refund - overflow，比原型多两项扣减
+            ngr: ngr
+      # 明细数据集：UDS 是否支持明细查询待确认，未配置时明细接口返回空结果。
+      # 注意不要写成 details: {} —— Spring Boot 会把空 map 压成空字符串导致绑定失败，
+      # 需要时按下面的结构补齐即可：
+      #   details:
+      #     member:
+      #       dataset: member_detail
+      #       time-dimension: dt
+      #       fields:
+      #         account: member_account
+      #         registerTime: reg_time
+  # CSV 导出（请求体传 export_csv=true 触发）
+  export:
+    enabled: ${DASHBOARD_EXPORT_ENABLED:true}
+    # ALL_FILTERED = 当前筛选条件下的全部数据（忽略分页）；CURRENT_PAGE = 只导当前页
+    scope: ${DASHBOARD_EXPORT_SCOPE:ALL_FILTERED}
+    # 是否在文件开头写口径说明区（程序消费时建议关闭）
+    include-meta: ${DASHBOARD_EXPORT_INCLUDE_META:true}
+    # 单次导出最大行数
+    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:100000}
+    # 明细含个人信息，导出默认要求独立权限点
+    require-permission: ${DASHBOARD_EXPORT_REQUIRE_PERMISSION:true}
+    permission: ${DASHBOARD_EXPORT_PERMISSION:dashboard:export:csv}
 
 # 健康检查与监控端点
 # 独立端口 8081，安全组只对内网/探活来源开放，绝不暴露公网
@@ -184,7 +268,7 @@ token:
   # 令牌自定义标识return userId != null && 1L == userId;
   header: Authorization
   # 令牌密钥
-  secret: ${TOKEN_SECRET:}
+  secret: ${TOKEN_SECRET:0ce51bf42033cfcf3805e49a15dee5818802f534e8d4958122c5c4bcea63cb254a1068d727a10c2db5307a8240db083a}
   # 令牌有效期，单位：分钟
   expireTime: ${TOKEN_EXPIRE_TIME:30}
 

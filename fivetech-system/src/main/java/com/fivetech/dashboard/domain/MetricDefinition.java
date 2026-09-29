@@ -38,6 +38,19 @@ public class MetricDefinition implements Serializable
     /** 派生指标的公式，仅作展示与文档用途，求值在数据侧完成 */
     private final String expression;
 
+    /**
+     * 是否可被接口选为列。
+     * <p>仅供派生指标引用的隐藏原子量（depU / ftdAmt / pay / dOk / dTry / wOk / wTry）为 false：
+     * 它们要留在注册表里让公式解析得通，但不能被前端选出来当一列。</p>
+     */
+    private boolean selectable = true;
+
+    /** 是否出现在运营总览的指标墙。login 为 false：只进汇总表，不上墙 */
+    private boolean onWall = true;
+
+    /** 覆盖默认小数位，null 表示按 format 的默认值；来自 dashboard_metric_card.value_decimals */
+    private Integer decimals;
+
     public MetricDefinition(String code, String label, String group, String kind,
             String format, String aggregation, String expression)
     {
@@ -48,6 +61,44 @@ public class MetricDefinition implements Serializable
         this.format = format;
         this.aggregation = aggregation;
         this.expression = expression;
+    }
+
+    /** 链式设置可见性，供注册表初始化时使用 */
+    public MetricDefinition visibility(boolean selectable, boolean onWall)
+    {
+        this.selectable = selectable;
+        this.onWall = onWall;
+        return this;
+    }
+
+    public Integer getDecimals()
+    {
+        return decimals;
+    }
+
+    public void setDecimals(Integer decimals)
+    {
+        this.decimals = decimals;
+    }
+
+    public boolean isSelectable()
+    {
+        return selectable;
+    }
+
+    public void setSelectable(boolean selectable)
+    {
+        this.selectable = selectable;
+    }
+
+    public boolean isOnWall()
+    {
+        return onWall;
+    }
+
+    public void setOnWall(boolean onWall)
+    {
+        this.onWall = onWall;
     }
 
     public String getCode()

@@ -18,7 +18,6 @@ import com.fivetech.dashboard.domain.query.BaseDashboardQuery;
 import com.fivetech.dashboard.domain.vo.QueryContext;
 import com.fivetech.dashboard.enums.CompareType;
 import com.fivetech.dashboard.enums.Granularity;
-import com.fivetech.dashboard.enums.RangeType;
 import com.fivetech.dashboard.gateway.DataFreshness;
 import com.fivetech.dashboard.gateway.MetricDataGateway;
 
@@ -75,9 +74,8 @@ public class TimeRangeResolver
      *
      * @param query 查询入参
      * @param asOf 数据截止时间
-     * @param allowUnbounded 是否允许「不限时间」（记录表允许，指标汇总表不允许）
      */
-    public ResolvedRange resolveMain(BaseDashboardQuery query, LocalDateTime asOf, boolean allowUnbounded)
+    public ResolvedRange resolveMain(BaseDashboardQuery query, LocalDateTime asOf)
     {
         // 下钻时间片优先级最高：从指标汇总表某一行点进来时，条件就是那一格
         if (StringUtils.isNotEmpty(query.getSlotFrom()) && StringUtils.isNotEmpty(query.getSlotTo()))
@@ -91,38 +89,29 @@ public class TimeRangeResolver
             return ResolvedRange.of(from, to, Granularity.HOUR);
         }
 
-        LocalDate today = asOf.toLocalDate();
-        RangeType type = query.getRangeType() == null ? RangeType.TODAY : query.getRangeType();
-        switch (type)
+        boolean noFrom = StringUtils.isEmpty(query.getFrom());
+        boolean noTo = StringUtils.isEmpty(query.getTo());
+        if (noFrom && noTo)
         {
-            case ALL:
-                if (!allowUnbounded)
-                {
-                    throw new ServiceException("指标汇总表不支持不限时间，请选择具体区间");
-                }
-                return ResolvedRange.unbounded();
-            case TODAY:
-                return clampToAsOf(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), asOf);
-            case YESTERDAY:
-                return clampToAsOf(today.minusDays(1).atStartOfDay(), today.atStartOfDay(), asOf);
-            case LAST_7D:
-                return clampToAsOf(today.minusDays(7).atStartOfDay(), today.atStartOfDay(), asOf);
-            case LAST_30D:
-                return clampToAsOf(today.minusDays(30).atStartOfDay(), today.atStartOfDay(), asOf);
-            case CUSTOM:
-            default:
-                LocalDate from = parseDate(query.getFrom(), "from");
-                LocalDate to = parseDate(query.getTo(), "to");
-                if (to.isBefore(from))
-                {
-                    throw new ServiceException("结束日不能早于开始日");
-                }
-                if (from.isBefore(launchDate()))
-                {
-                    throw new ServiceException("开始日不能早于站点上线日 " + properties.getLaunchDate());
-                }
-                return clampToAsOf(from.atStartOfDay(), to.plusDays(1).atStartOfDay(), asOf);
+            // 不传区间时默认「今天」，并截到数据截止时间
+            LocalDate today = asOf.toLocalDate();
+            return clampToAsOf(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), asOf);
         }
+        if (noFrom || noTo)
+        {
+            throw new ServiceException("from 与 to 需同时传入");
+        }
+        LocalDate from = parseDate(query.getFrom(), "from");
+        LocalDate to = parseDate(query.getTo(), "to");
+        if (to.isBefore(from))
+        {
+            throw new ServiceException("结束日不能早于开始日");
+        }
+        if (from.isBefore(launchDate()))
+        {
+            throw new ServiceException("开始日不能早于站点上线日 " + properties.getLaunchDate());
+        }
+        return clampToAsOf(from.atStartOfDay(), to.plusDays(1).atStartOfDay(), asOf);
     }
 
     /**

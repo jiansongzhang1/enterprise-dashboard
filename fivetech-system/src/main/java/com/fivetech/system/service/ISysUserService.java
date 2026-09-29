@@ -153,6 +153,15 @@ public interface ISysUserService
     public int updateGaStatus(Long userId, Integer gaStatus);
 
     /**
+     * 通过启用链接设置密码并标记账号已启用；仅对待启用账号生效。
+     *
+     * @param userId 用户ID
+     * @param encodedPassword 已加密的密码
+     * @return 更新行数
+     */
+    public int activateUser(Long userId, String encodedPassword);
+
+    /**
      * 首次绑定时保存 TOTP 密钥。
      *
      * @param userId 用户ID

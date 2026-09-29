@@ -19,12 +19,11 @@ import com.fivetech.dashboard.domain.vo.MetricSummaryRowVO;
 import com.fivetech.dashboard.domain.vo.MetricSummaryVO;
 import com.fivetech.dashboard.domain.vo.PageResultVO;
 import com.fivetech.dashboard.domain.vo.QueryContext;
+import com.fivetech.dashboard.enums.DashboardPage;
 import com.fivetech.dashboard.enums.Granularity;
 import com.fivetech.dashboard.gateway.DataFreshness;
 import com.fivetech.dashboard.gateway.MetricDataGateway;
 import com.fivetech.dashboard.gateway.MetricSlotRequest;
-import com.fivetech.dashboard.gateway.ScopeFilter;
-import com.fivetech.dashboard.service.DashboardScopeResolver;
 import com.fivetech.dashboard.service.IMetricSummaryService;
 import com.fivetech.dashboard.service.MetricRegistry;
 import com.fivetech.dashboard.service.TimeRangeResolver;
@@ -53,17 +52,14 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
 
     private final MetricRegistry metricRegistry;
 
-    private final DashboardScopeResolver scopeResolver;
-
     private final MetricDataGateway gateway;
 
     public MetricSummaryServiceImpl(DashboardProperties properties, TimeRangeResolver timeResolver,
-            MetricRegistry metricRegistry, DashboardScopeResolver scopeResolver, MetricDataGateway gateway)
+            MetricRegistry metricRegistry, MetricDataGateway gateway)
     {
         this.properties = properties;
         this.timeResolver = timeResolver;
         this.metricRegistry = metricRegistry;
-        this.scopeResolver = scopeResolver;
         this.gateway = gateway;
     }
 
@@ -73,15 +69,15 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         String siteCode = StringUtils.isEmpty(query.getSiteCode())
             ? properties.getDefaultSite() : query.getSiteCode();
 
-        // 1. 权限：先拿到范围，再决定能查哪些指标
-        ScopeFilter scope = scopeResolver.resolve();
+        // 1. 指标列：只做白名单校验。一期不做指标维度权限，
+        //    能进到这个方法就说明已通过页面维度的 @PreAuthorize
         List<String> columns = metricRegistry.resolveColumns(
-            query.getMetricCodes(), scopeResolver.allowedMetricCodes(scope));
+            DashboardPage.SUMMARY, query.getMetricCodes());
 
         // 2. 时间：解析区间、粒度、对比期，全部在服务端完成
         DataFreshness freshness = timeResolver.resolveFreshness(siteCode);
         List<String> warnings = new ArrayList<>();
-        ResolvedRange main = timeResolver.resolveMain(query, freshness.getAsOf(), false);
+        ResolvedRange main = timeResolver.resolveMain(query, freshness.getAsOf());
         List<Granularity> available = timeResolver.availableGranularities(main);
         Granularity granularity = timeResolver.resolveGranularity(query.getGranularity(), available);
         if (query.getGranularity() != null && query.getGranularity() != granularity)
@@ -98,13 +94,13 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         main.setPoints(rows.size());
 
         // 4. 取数
-        Map<String, List<BigDecimal>> series = gateway.querySeries(slotRequest(siteCode, main, columns, scope));
+        Map<String, List<BigDecimal>> series = gateway.querySeries(slotRequest(siteCode, main, columns));
         fill(rows, series, false);
         if (compare != null)
         {
             compare.setGranularity(granularity);
             Map<String, List<BigDecimal>> compareSeries =
-                gateway.querySeries(slotRequest(siteCode, compare, columns, scope));
+                gateway.querySeries(slotRequest(siteCode, compare, columns));
             fill(rows, compareSeries, true);
         }
 
@@ -119,16 +115,16 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         vo.setColumns(buildColumns(columns));
         vo.setPage(page);
         // 6. 合计：独立重算，不是把上面的行加起来
-        vo.setTotalRow(gateway.queryTotals(slotRequest(siteCode, main, columns, scope)));
+        vo.setTotalRow(gateway.queryTotals(slotRequest(siteCode, main, columns)));
         if (compare != null)
         {
-            vo.setCompareTotalRow(gateway.queryTotals(slotRequest(siteCode, compare, columns, scope)));
+            vo.setCompareTotalRow(gateway.queryTotals(slotRequest(siteCode, compare, columns)));
         }
         return vo;
     }
 
     private MetricSlotRequest slotRequest(String siteCode, ResolvedRange range,
-            List<String> columns, ScopeFilter scope)
+            List<String> columns)
     {
         MetricSlotRequest request = new MetricSlotRequest();
         request.setSiteCode(siteCode);
@@ -136,7 +132,6 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         request.setTo(range.getTo());
         request.setGranularity(range.getGranularity());
         request.setMetricCodes(columns);
-        request.setScopeFilter(scope);
         return request;
     }
 

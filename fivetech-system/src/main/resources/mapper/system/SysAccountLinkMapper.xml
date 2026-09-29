@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.system.mapper.SysAccountLinkMapper">
+
+	<!-- 时间一律由应用传入（同一个 JVM 时钟），避免数据库会话时区与应用时区不一致导致过期判断错位 -->
+	<resultMap type="com.fivetech.system.domain.SysAccountLink" id="SysAccountLinkResult">
+		<id     property="linkId"      column="link_id"      />
+		<result property="userId"      column="user_id"      />
+		<result property="linkType"    column="link_type"    />
+		<result property="tokenHash"   column="token_hash"   />
+		<result property="expireTime"  column="expire_time"  />
+		<result property="usedTime"    column="used_time"    />
+		<result property="revokedTime" column="revoked_time" />
+		<result property="createBy"    column="create_by"    />
+		<result property="createTime"  column="create_time"  />
+	</resultMap>
+
+	<insert id="insertLink" parameterType="com.fivetech.system.domain.SysAccountLink" useGeneratedKeys="true" keyProperty="linkId" keyColumn="link_id">
+		insert into sys_account_link (user_id, link_type, token_hash, expire_time, create_by, create_time)
+		values (#{userId}, #{linkType}, #{tokenHash}, #{expireTime}, #{createBy}, #{createTime})
+	</insert>
+
+	<select id="selectByTokenHash" resultMap="SysAccountLinkResult">
+		select link_id, user_id, link_type, token_hash, expire_time, used_time, revoked_time, create_by, create_time
+		from sys_account_link
+		where token_hash = #{tokenHash}
+	</select>
+
+	<update id="revokeUnusedByUserId">
+		update sys_account_link
+		set revoked_time = #{now}
+		where user_id = #{userId}
+		  and used_time is null
+		  and revoked_time is null
+	</update>
+
+	<update id="markUsed">
+		update sys_account_link
+		set used_time = #{now}
+		where link_id = #{linkId}
+		  and used_time is null
+		  and revoked_time is null
+		  and expire_time &gt; #{now}
+	</update>
+
+</mapper>

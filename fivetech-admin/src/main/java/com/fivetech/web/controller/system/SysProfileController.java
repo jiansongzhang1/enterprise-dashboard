@@ -23,6 +23,8 @@ import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.file.FileUploadUtils;
 import com.fivetech.common.utils.file.FileUtils;
 import com.fivetech.common.utils.file.MimeTypeUtils;
+import com.fivetech.common.utils.ip.IpUtils;
+import com.fivetech.framework.notification.AccountMailService;
 import com.fivetech.framework.web.service.TokenService;
 import com.fivetech.system.service.ISysUserService;
 
@@ -35,6 +37,9 @@ import com.fivetech.system.service.ISysUserService;
 @RequestMapping("/system/user/profile")
 public class SysProfileController extends BaseController
 {
+    @Autowired
+    private AccountMailService accountMailService;
+
     @Autowired
     private ISysUserService userService;
 
@@ -115,6 +120,8 @@ public class SysProfileController extends BaseController
             loginUser.getUser().setPwdUpdateDate(DateUtils.getNowDate());
             loginUser.getUser().setPassword(newPassword);
             tokenService.setLoginUser(loginUser);
+            // 通知本人“密码已变更”，附来源 IP；不含密码
+            accountMailService.sendPasswordChanged(user, false, IpUtils.getIpAddr());
             return success();
         }
         return error("修改密码异常，请联系管理员");

@@ -7,8 +7,8 @@ spring:
             # 主库数据源
             master:
                 url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres?currentSchema=public}
-                username: ${DB_USERNAME:}
-                password: ${DB_PASSWORD:}
+                username: ${DB_USERNAME:jackson}
+                password: ${DB_PASSWORD:password}
             # 从库数据源
             slave:
                 # 从数据源开关/默认关闭

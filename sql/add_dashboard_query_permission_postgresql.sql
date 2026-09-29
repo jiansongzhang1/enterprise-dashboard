@@ -85,3 +85,19 @@ SELECT
 WHERE NOT EXISTS (
     SELECT 1 FROM sys_menu WHERE menu_id = 135 OR perms = 'dashboard:record:bet'
 );
+
+-- 按钮权限：CSV 导出（独立权限点）
+-- 明细含会员账号等个人信息，「能查看」不等于「能批量导出」，故单独授权。
+-- 若不想区分，把 dashboard.export.require-permission 设为 false 即可。
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT
+    136, 'CSV导出', 130, 3, '', '', '', '',
+    1, 0, 'F', '1', '0', 'dashboard:export:csv', '#', 'admin',
+    CURRENT_TIMESTAMP, '', NULL, '仪表板查询结果导出 CSV 的权限'
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_menu WHERE menu_id = 136 OR perms = 'dashboard:export:csv'
+);

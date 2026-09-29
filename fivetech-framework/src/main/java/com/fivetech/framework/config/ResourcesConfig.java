@@ -64,6 +64,9 @@ public class ResourcesConfig implements WebMvcConfigurer
         config.addAllowedMethod("*");
         // 暴露链路追踪响应头，前端才能读到 X-Trace-Id
         config.addExposedHeader(TraceIdUtils.TRACE_HEADER);
+        // 暴露下载响应头，否则前端拿不到 CSV 的文件名
+        config.addExposedHeader("Content-Disposition");
+        config.addExposedHeader("download-filename");
         // 有效期 1800秒
         config.setMaxAge(1800L);
         // 添加映射路径，拦截一切请求

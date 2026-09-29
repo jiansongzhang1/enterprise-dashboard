@@ -289,11 +289,18 @@ public class TokenService
     private String getToken(HttpServletRequest request)
     {
         String token = request.getHeader(header);
-        if (StringUtils.isNotEmpty(token) && token.startsWith(Constants.TOKEN_PREFIX))
+        if (StringUtils.isEmpty(token))
         {
-            token = token.replace(Constants.TOKEN_PREFIX, "");
+            return null;
         }
-        return token;
+        // 必须带 Bearer 前缀：宽松解析会掩盖客户端格式错误，
+        // 也会在前置网关校验 Authorization 格式时突然失效
+        if (!token.startsWith(Constants.TOKEN_PREFIX))
+        {
+            log.warn("Authorization 头缺少 Bearer 前缀，已拒绝");
+            return null;
+        }
+        return token.substring(Constants.TOKEN_PREFIX.length()).trim();
     }
 
     private String getTokenKey(String uuid)

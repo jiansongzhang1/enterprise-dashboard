@@ -30,7 +30,7 @@ public class MetricSummaryQuery extends BaseDashboardQuery
     /** 自定义对比区间结束日期，compareType=CUSTOM 时必填 */
     private String compareTo;
 
-    /** 需要的指标编码列表。为空时返回核心指标集 */
+    /** 需要的指标编码列表。为空时返回全部指标集 */
     private List<String> metricCodes = new ArrayList<>();
 
     /** 排序列：时间列传 "time"，否则传指标编码 */

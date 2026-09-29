@@ -16,7 +16,6 @@ import com.fivetech.dashboard.domain.vo.TransactionRecordVO;
  * <p>
  * 实现方需遵守：
  * <ol>
- *   <li>必须把 {@link ScopeFilter} 的条件下推，不得忽略或放宽；</li>
  *   <li>指标编码到表/列的映射在实现内部完成，绝不接受调用方传入表名列名；</li>
  *   <li>指标墙一次请求会要多个指标，实现应按表合并查询，而不是逐指标发一次；</li>
  *   <li>无数据返回 null，<b>不要返回 0</b>——两者在业务上不是一回事。</li>
