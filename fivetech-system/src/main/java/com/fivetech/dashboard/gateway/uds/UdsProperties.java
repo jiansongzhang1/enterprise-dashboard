@@ -614,6 +614,12 @@ public class UdsProperties
          */
         private String timeColumn;
 
+        /**
+         * 快照数据集（如 dashboard_player_snapshot_v3）：time 固定为 {time-dimension, HOUR, now, now}，
+         * 按与数据团队的约定表示「返回全部数据」；业务时间区间只落在 time-column 的筛选上，不再推 uds_hh 主轴
+         */
+        private boolean snapshot;
+
         /** 稳定行身份，排序的最后一项固定按它升序 */
         private String rowKey = "uds_rowkey";
 
@@ -658,6 +664,16 @@ public class UdsProperties
         public String getTimeColumn()
         {
             return timeColumn;
+        }
+
+        public boolean isSnapshot()
+        {
+            return snapshot;
+        }
+
+        public void setSnapshot(boolean snapshot)
+        {
+            this.snapshot = snapshot;
         }
 
         public void setTimeColumn(String timeColumn)

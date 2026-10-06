@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import com.fivetech.common.exception.ServiceException;
 import com.fivetech.common.utils.StringUtils;
+import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.dashboard.domain.vo.BetRecordVO;
 import com.fivetech.dashboard.domain.vo.DepositRecordVO;
 import com.fivetech.dashboard.domain.vo.MemberRecordVO;
@@ -85,10 +86,14 @@ public class UdsMetricDataGateway implements MetricDataGateway
 
     private final UdsClient client;
 
-    public UdsMetricDataGateway(UdsProperties properties, UdsClient client)
+    /** 站点上线日 / 统计时区：明细不带时间时，用来补 UDS 必填的 time 主轴 */
+    private final DashboardProperties dashboard;
+
+    public UdsMetricDataGateway(UdsProperties properties, UdsClient client, DashboardProperties dashboard)
     {
         this.properties = properties;
         this.client = client;
+        this.dashboard = dashboard;
     }
 
     // ===================== 新鲜度 =====================
@@ -1295,6 +1300,35 @@ public class UdsMetricDataGateway implements MetricDataGateway
      *   <li>排序：主排序字段 + uds_rowkey ASC，翻页才稳定。</li>
      * </ul>
      */
+    /**
+     * 明细不带时间时的主轴：站点上线日 00:00 ~ 统计时区下一个整点（右开）。
+     * 上线日取 dashboard.launch-date，解析失败时退回 2026-03-01。
+     */
+    private LocalDateTime[] fullAxis()
+    {
+        LocalDate launch;
+        try
+        {
+            launch = LocalDate.parse(dashboard.getLaunchDate().trim());
+        }
+        catch (Exception e)
+        {
+            log.warn("[uds] dashboard.launch-date 无法解析（{}），明细主轴下界退回 2026-03-01", dashboard.getLaunchDate());
+            launch = LocalDate.of(2026, 3, 1);
+        }
+        java.time.ZoneId zone;
+        try
+        {
+            zone = java.time.ZoneId.of(dashboard.getTimezone());
+        }
+        catch (Exception e)
+        {
+            zone = java.time.ZoneId.of("Asia/Kolkata");
+        }
+        LocalDateTime to = LocalDateTime.now(zone).truncatedTo(ChronoUnit.HOURS).plusHours(1);
+        return new LocalDateTime[] { launch.atStartOfDay(), to };
+    }
+
     private Map<String, Object> detailBody(UdsProperties.DetailDataset d, RecordPageRequest request, DetailMode mode,
             int limit, long offset)
     {
@@ -1397,7 +1431,27 @@ public class UdsMetricDataGateway implements MetricDataGateway
             }
         }
 
-        // TODO：不带任何时间的查询（会员页不设默认区间）UDS 是否接受、扫描成本是否会触发 4405，联调时确认
+        if (d.isSnapshot())
+        {
+            // 快照数据集：time 固定 now~now，按与数据团队的约定表示「返回全部数据」；
+            // 注册时间等区间已在上面落到 time-column 筛选
+            Map<String, Object> time = new LinkedHashMap<>();
+            time.put("dimension", d.getTimeDimension());
+            time.put("granularity", "HOUR");
+            time.put("from", "now");
+            time.put("to", "now");
+            body.put("time", time);
+            axisFrom = null;
+            axisTo = null;
+        }
+        // UDS 的 time 是必填项：请求没带时间时，主轴补成「上线日 ~ 当前整点」，
+        // 只限定扫描范围，不额外加时间列筛选，等价于不限时间
+        else if (axisFrom == null || axisTo == null)
+        {
+            LocalDateTime[] all = fullAxis();
+            axisFrom = all[0];
+            axisTo = all[1];
+        }
         if (axisFrom != null && axisTo != null && axisTo.isAfter(axisFrom))
         {
             Map<String, Object> time = new LinkedHashMap<>();

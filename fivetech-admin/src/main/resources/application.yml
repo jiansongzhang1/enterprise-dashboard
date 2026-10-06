@@ -299,8 +299,11 @@ dashboard:
       # 列表与 COUNT 用 /v1/query/batch 一次发出；排序固定以 uds_rowkey ASC 收尾；limit ≤ 1000、offset ≤ 100000
       details:
         member:
-          dataset: dashboard_player_detail_v2
-          time-dimension: uds_hh
+          # 会员快照（v3）：time 固定 snapshot_at now~now，按与数据团队的约定表示「返回全部数据」；
+          # 页面选了注册时间时，区间只落在 register_date_india 筛选上
+          dataset: dashboard_player_snapshot_v3
+          time-dimension: snapshot_at
+          snapshot: true
           time-column: register_date_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -443,8 +446,9 @@ dashboard:
           limit: 20
           with-total: true
           batch: true                     # 排名 + 全量一次 /v1/query/batch（game-batch）
-          # 游戏类型 game_type 直接取游戏榜数据集；名称 / 厂商名由下方 enrich 从投注明细按同窗口补全，查不到名称时用 game_id 填充
-          dimensions: { platformCode: provider_code, gameId: game_id, gameType: game_type }
+          # 游戏类型 game_type、厂商 vendorName（provider_name，如 JILI / SPRIBE）直接取游戏榜数据集；
+          # 名称由下方 enrich 从投注明细按同窗口补全，查不到名称时用 game_id 填充
+          dimensions: { platformCode: provider_code, vendorName: provider_name, gameId: game_id, gameType: game_type }
           # betUsers = bet_player_visits：小时人数累加的「人次」，不是区间独立人数
           metrics: { betAmount: bet_amount, ggr: ggr, betUsers: bet_player_visits, betCount: bet_times }
           order-by:
@@ -458,7 +462,7 @@ dashboard:
             time-dimension: uds_hh
             filter-key: gameId
             keys: { platformCode: provider_code, gameId: game_id }
-            fields: { name: game_name, vendorName: provider_name }
+            fields: { name: game_name }
         reg_channels:                     # 注册渠道：Reg_channel 为大类，Reg_source 为子渠道
           dataset: dashboard_reg_source
           time-dimension: India_DDHH

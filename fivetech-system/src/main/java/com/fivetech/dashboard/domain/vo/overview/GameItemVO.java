@@ -21,7 +21,7 @@ public class GameItemVO implements Serializable
     /** 游戏平台 Code */
     private String platformCode;
 
-    /** 厂商名 */
+    /** 厂商名（游戏榜数据集的 provider_name，如 JILI / SPRIBE / EVOLUTION） */
     private String vendorName;
 
     /** 游戏ID */
