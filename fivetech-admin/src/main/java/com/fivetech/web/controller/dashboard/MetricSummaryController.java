@@ -11,7 +11,7 @@ import com.fivetech.common.core.controller.BaseController;
 import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.dashboard.domain.query.MetricSummaryQuery;
 import com.fivetech.dashboard.domain.vo.MetricSummaryVO;
-import com.fivetech.dashboard.export.DashboardCsvExporter;
+import com.fivetech.dashboard.export.DashboardXlsxExporter;
 import com.fivetech.dashboard.service.IMetricSummaryService;
 
 /**
@@ -34,17 +34,17 @@ public class MetricSummaryController extends BaseController
 {
     private final IMetricSummaryService metricSummaryService;
 
-    private final DashboardCsvExporter csvExporter;
+    private final DashboardXlsxExporter xlsxExporter;
 
     public MetricSummaryController(IMetricSummaryService metricSummaryService,
-            DashboardCsvExporter csvExporter)
+            DashboardXlsxExporter xlsxExporter)
     {
         this.metricSummaryService = metricSummaryService;
-        this.csvExporter = csvExporter;
+        this.xlsxExporter = xlsxExporter;
     }
 
     /**
-     * 查询指标汇总表；export_csv=true 时下载 CSV
+     * 查询指标汇总表；export_csv=true 时下载 XLSX
      */
 //    @PreAuthorize("@ss.hasPermi('dashboard:metric:summary')")
     @PostMapping("/summary")
@@ -52,10 +52,8 @@ public class MetricSummaryController extends BaseController
     {
         if (query.isExportCsv())
         {
-            // 文件名先算出来放进响应头，实际数据在流写出时才产生
-            String fileName = csvExporter.fileName("指标汇总");
-            return DashboardExportSupport.csv(fileName,
-                out -> csvExporter.exportMetricSummary(query, out));
+            return DashboardExportSupport.xlsx(xlsxExporter.fileName("指标汇总"),
+                xlsxExporter.exportMetricSummary(query));
         }
         MetricSummaryVO data = metricSummaryService.query(query);
         return ResponseEntity.ok(AjaxResult.success(data));

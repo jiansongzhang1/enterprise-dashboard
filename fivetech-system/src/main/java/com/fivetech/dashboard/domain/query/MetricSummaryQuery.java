@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import com.fivetech.dashboard.enums.CompareType;
 import com.fivetech.dashboard.enums.Granularity;
 
 /**
@@ -21,17 +20,15 @@ public class MetricSummaryQuery extends BaseDashboardQuery
     /** 时间粒度。为空时由服务端按区间长度给出默认值 */
     private Granularity granularity;
 
-    /** 对比期类型 */
-    private CompareType compareType = CompareType.PREV_PERIOD;
-
-    /** 自定义对比区间开始日期，compareType=CUSTOM 时必填 */
-    private String compareFrom;
-
-    /** 自定义对比区间结束日期，compareType=CUSTOM 时必填 */
-    private String compareTo;
-
     /** 需要的指标编码列表。为空时返回全部指标集 */
     private List<String> metricCodes = new ArrayList<>();
+
+    /**
+     * 只查核心指标。可为空，等同 false。
+     * <p>为 true 时只向数据平台查询核心指标（columns[].core = true 的那一套）：
+     * 同时传了 metricCodes 时取二者交集，交集为空则返回全部核心指标。</p>
+     */
+    private Boolean onlyCore;
 
     /** 排序列：时间列传 "time"，否则传指标编码 */
     private String sortColumn = "time";
@@ -46,6 +43,16 @@ public class MetricSummaryQuery extends BaseDashboardQuery
     @Max(200)
     private Integer pageSize = 20;
 
+    public Boolean getOnlyCore()
+    {
+        return onlyCore;
+    }
+
+    public void setOnlyCore(Boolean onlyCore)
+    {
+        this.onlyCore = onlyCore;
+    }
+
     public Granularity getGranularity()
     {
         return granularity;
@@ -54,36 +61,6 @@ public class MetricSummaryQuery extends BaseDashboardQuery
     public void setGranularity(Granularity granularity)
     {
         this.granularity = granularity;
-    }
-
-    public CompareType getCompareType()
-    {
-        return compareType;
-    }
-
-    public void setCompareType(CompareType compareType)
-    {
-        this.compareType = compareType;
-    }
-
-    public String getCompareFrom()
-    {
-        return compareFrom;
-    }
-
-    public void setCompareFrom(String compareFrom)
-    {
-        this.compareFrom = compareFrom;
-    }
-
-    public String getCompareTo()
-    {
-        return compareTo;
-    }
-
-    public void setCompareTo(String compareTo)
-    {
-        this.compareTo = compareTo;
     }
 
     public List<String> getMetricCodes()

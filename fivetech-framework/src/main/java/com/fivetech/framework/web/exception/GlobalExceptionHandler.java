@@ -120,10 +120,7 @@ public class GlobalExceptionHandler
             requestURI, e.getHttpStatus(), e.getUdsCode(), e.getMessage(), root.getClass().getSimpleName());
         log.debug("数据服务调用失败堆栈", e);
         pushAlert("数据服务调用失败", e, request);
-        String message = e.getHttpStatus() == 0
-            ? "数据服务暂时无法连接，请稍后重试"
-            : "数据服务查询失败，请稍后重试";
-        return errorWithTrace(message);
+        return errorWithTrace(e.userMessage());
     }
 
     /**

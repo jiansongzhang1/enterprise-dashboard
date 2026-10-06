@@ -169,6 +169,6 @@ INSERT INTO dashboard_page_metric (page_code, metric_code, sort_no, is_default, 
 --    SELECT c.metric_code, c.calc_type, o.metric_code AS operand, o.status
 --      FROM dashboard_metric_card c
 --      JOIN dashboard_metric_card o
---        ON o.metric_code IN (c.numerator_code, c.denominator_code)
+--        ON o.metric_code IN (c.left_code, c.right_code)
 --     WHERE c.calc_type <> 'NONE' AND c.status = '0' AND o.status <> '0';
 

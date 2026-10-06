@@ -1,0 +1,3247 @@
+{
+  "info": {
+    "_postman_id": "293236ae-5c05-4912-9404-92a287c61e46",
+    "name": "Fivetech Dashboard API · 明细查询 / 指标汇总 / 运营总览",
+    "description": "覆盖：指标汇总、明细查询（会员 / 存款 / 提款 / 投注 + 异步导出）、运营总览（排行榜 / 留存与 LTV / 注册渠道）。\n\n使用：\n1. 集合变量 baseUrl（本地 http://localhost:8080，生产带 /prod-api）、username、password、totp；\n2. 先跑「0. 登录」写入 token（或直接填 token）；\n3. 日期变量（today / yesterday / d7 …）由集合的 Pre-request Script 按 Asia/Kolkata 自动生成，用例不会过期。\n\n若依返回 HTTP 恒为 200，断言一律看响应体 code。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 按站点时区 Asia/Kolkata (UTC+05:30) 生成动态日期，避免用例写死日期过期",
+          "const IST = 330 * 60 * 1000;",
+          "const now = new Date(Date.now() + IST);              // 以 UTC 字段读取即为印度时间",
+          "const pad = n => String(n).padStart(2, '0');",
+          "const day = (offset) => { const d = new Date(now.getTime() + offset * 86400000);",
+          "  return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };",
+          "const set = (k, v) => pm.collectionVariables.set(k, v);",
+          "set('today', day(0));",
+          "set('yesterday', day(-1));",
+          "set('tomorrow', day(1));",
+          "set('d7', day(-7));          // 近 7 天起始日（含）",
+          "set('d6', day(-6));",
+          "set('d8', day(-8));",
+          "set('d14', day(-14));",
+          "set('d29', day(-29));        // 近 30 天起始日（含）",
+          "set('d30', day(-30));",
+          "set('todayStart', day(0) + ' 00:00');",
+          "set('ystStart', day(-1) + ' 00:00');",
+          "set('ystSlotFrom', day(-1) + ' 09:00');   // 昨天 09:00–10:00 一个小时片，用于下钻用例",
+          "set('ystSlotTo', day(-1) + ' 10:00');"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 若依统一返回：HTTP 恒为 200，成败看 code",
+          "if (!pm.info.requestName.includes('已下线')) {",
+          "  pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "username",
+      "value": "admin"
+    },
+    {
+      "key": "password",
+      "value": "admin123"
+    },
+    {
+      "key": "totp",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 登录",
+      "item": [
+        {
+          "name": "登录（获取 token）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "code 为 Google Authenticator 6 位动态码，执行前先在集合变量 totp 里填好。已有 token 可直接填集合变量 token，跳过本请求。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "const t = pm.response.json().token;",
+                  "pm.test('拿到 token', () => pm.expect(t).to.be.a('string').and.not.empty);",
+                  "if (t) pm.collectionVariables.set('token', t);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "除本请求外，集合统一使用 Bearer {{token}} 鉴权。"
+    },
+    {
+      "name": "1. 指标汇总 /dashboard/metrics/summary",
+      "item": [
+        {
+          "name": "1.1 今日 / 小时粒度 / 环比",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"metricCodes\": [\n    \"reg\",\n    \"ftd\",\n    \"ftdr\",\n    \"dep\",\n    \"wd\",\n    \"net\"\n  ],\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "不传 from/to 即今日，截到 asOf。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('含 context / columns / page / totalRow', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.totalRow)).to.be.true; });",
+                  "pm.test('第一列是 time', () => { const d = pm.response.json().data; pm.expect(d.columns[0].code === 'time').to.be.true; });",
+                  "pm.test('只返回请求的指标列', () => { const d = pm.response.json().data; pm.expect(d.columns.slice(1).every(c => ['reg','ftd','ftdr','dep','wd','net'].includes(c.code))).to.be.true; });",
+                  "pm.test('有对比期 → compareTotalRow 存在', () => { const d = pm.response.json().data; pm.expect(d.compareTotalRow !== undefined).to.be.true; });",
+                  "pm.test('spanTo 截断到整点', () => { const d = pm.response.json().data; pm.expect(!d.context.spanTo || d.context.spanTo.endsWith(':00')).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 近 30 天 / 日粒度 / 默认指标集",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d29}}\",\n  \"to\": \"{{today}}\",\n  \"granularity\": \"DAY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('metricCodes 省略时返回默认指标集（列数 > 1）', () => { const d = pm.response.json().data; pm.expect(d.columns.length > 1).to.be.true; });",
+                  "pm.test('粒度为 DAY', () => { const d = pm.response.json().data; pm.expect(d.context.granularity === 'DAY').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 近 30 天请求 HOUR → 自动降级",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d29}}\",\n  \"to\": \"{{today}}\",\n  \"granularity\": \"HOUR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('warnings 含 GRANULARITY_DOWNGRADED', () => { const d = pm.response.json().data; pm.expect((d.context.warnings || []).includes('GRANULARITY_DOWNGRADED')).to.be.true; });",
+                  "pm.test('粒度降为 DAY', () => { const d = pm.response.json().data; pm.expect(d.context.granularity === 'DAY').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 自定义对比（等长）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{yesterday}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"CUSTOM\",\n  \"compareFrom\": \"{{d14}}\",\n  \"compareTo\": \"{{d8}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('对比区间已回显', () => { const d = pm.response.json().data; pm.expect(!!d.context.compareFrom).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 不对比 compareType=NONE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{yesterday}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"NONE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('无对比区间', () => { const d = pm.response.json().data; pm.expect(!d.context.compareFrom).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 [边界] 对比区间与主区间重叠 → 报错",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{yesterday}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"CUSTOM\",\n  \"compareFrom\": \"{{d14}}\",\n  \"compareTo\": \"{{d6}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                  "pm.test('msg 含「重叠」', () => pm.expect(pm.response.json().msg || '').to.include('重叠'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 [边界] 早于站点上线日 → 报错",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-01-01\",\n  \"to\": \"2026-01-31\",\n  \"granularity\": \"DAY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                  "pm.test('msg 含「上线日」', () => pm.expect(pm.response.json().msg || '').to.include('上线日'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 [边界] 对比区间长度不等 → 只警告不拦截",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{yesterday}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"CUSTOM\",\n  \"compareFrom\": \"{{d30}}\",\n  \"compareTo\": \"{{d29}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('warnings 含 COMPARE_LENGTH_MISMATCH', () => { const d = pm.response.json().data; pm.expect((d.context.warnings || []).includes('COMPARE_LENGTH_MISMATCH')).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 [边界] 未知指标编码 → 丢弃，其余正常",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metricCodes\": [\n    \"reg\",\n    \"nonexistent_metric\",\n    \"dep\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('不含未知指标列', () => { const d = pm.response.json().data; pm.expect(!d.columns.some(c => c.code === 'nonexistent_metric')).to.be.true; });",
+                  "pm.test('reg / dep 仍在', () => { const d = pm.response.json().data; pm.expect(['reg','dep'].every(k => d.columns.some(c => c.code === k))).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.10 [边界] 只传 from → 报错",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                  "pm.test('msg 含「from 与 to 需同时传入」', () => pm.expect(pm.response.json().msg || '').to.include('from 与 to 需同时传入'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11 [安全] 非法排序列 → 静默回退",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sortColumn\": \"time; DROP TABLE sys_user--\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.12 [边界] pageSize 超上限 → 拦截",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pageSize\": 9999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.13 导出 CSV（export_csv=true）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{yesterday}}\",\n  \"granularity\": \"DAY\",\n  \"export_csv\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "需要 dashboard:export:csv 权限。Postman 里用 Send and Download 保存文件。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('返回 CSV 文件（不是 JSON）', () => {",
+                  "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                  "  pm.expect(cd).to.include('attachment');",
+                  "  pm.expect(cd.toLowerCase()).to.include('.csv');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 明细查询",
+      "item": [
+        {
+          "name": "2.1 会员明细 /dashboard/records/member",
+          "item": [
+            {
+              "name": "会员 · 全量（不传时间）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 27 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 27).to.be.true; });",
+                      "pm.test('userId / username 为必选列', () => { const d = pm.response.json().data; pm.expect(d.columns.filter(c => c.locked).map(c => c.code).join(',') === 'userId,username').to.be.true; });",
+                      "pm.test('默认显示 13 列', () => { const d = pm.response.json().data; pm.expect(d.columns.filter(c => c.defaultVisible).length === 13).to.be.true; });",
+                      "pm.test('会员表无合计', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.summary || {}).length === 0).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · 注册时间区间 + 状态 + 国家",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registerTimeFrom\": \"{{ystStart}}\",\n  \"registerTimeTo\": \"{{todayStart}}\",\n  \"status\": \"ok\",\n  \"userType\": \"real\",\n  \"country\": \"IN\",\n  \"sortColumn\": \"registerTime\",\n  \"sortDirection\": \"desc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · 首存时间 + 累计存款区间",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"firstDepositTimeFrom\": \"{{ystStart}}\",\n  \"firstDepositTimeTo\": \"{{todayStart}}\",\n  \"cumulativeDepositMin\": 1000,\n  \"cumulativeDepositMax\": 500000,\n  \"level\": \"VIP3\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · 旧下钻（slot + sourceMetricCode=ftd）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{ystSlotFrom}}\",\n  \"slotTo\": \"{{ystSlotTo}}\",\n  \"sourceMetricCode\": \"ftd\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "只传 slotFrom/slotTo 时按来源指标映射：ftd/ftdA → 首存时间，active → 最近投注时间，其余 → 注册时间。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · [边界] 结束不晚于开始 → 报错",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registerTimeFrom\": \"{{todayStart}}\",\n  \"registerTimeTo\": \"{{ystStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「结束时间必须晚于开始时间」', () => pm.expect(pm.response.json().msg || '').to.include('结束时间必须晚于开始时间'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · [边界] 累计存款下限 > 上限 → 报错",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cumulativeDepositMin\": 5000,\n  \"cumulativeDepositMax\": 100\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「下限不能大于上限」', () => pm.expect(pm.response.json().msg || '').to.include('下限不能大于上限'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · [边界] 非法枚举 status / level → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"vip\",\n  \"level\": \"VIP99\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · 导出 CSV（只导选中列）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"columns\": [\n    \"status\",\n    \"registerTime\",\n    \"cumulativeDepositAmount\"\n  ],\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('返回 CSV 文件（不是 JSON）', () => {",
+                      "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                      "  pm.expect(cd).to.include('attachment');",
+                      "  pm.expect(cd.toLowerCase()).to.include('.csv');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "2.2 存款明细 /dashboard/records/deposit",
+          "item": [
+            {
+              "name": "存款 · 今日成功单",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"succ\",\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 9 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 9).to.be.true; });",
+                      "pm.test('订单表无合计：summary 为 {}', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.summary || {}).length === 0).to.be.true; });",
+                      "pm.test('summaryNote 为 null', () => { const d = pm.response.json().data; pm.expect(d.summaryNote === null).to.be.true; });",
+                      "pm.test('订单表列全部默认显示、无必选列', () => { const d = pm.response.json().data; pm.expect(d.columns.every(c => c.defaultVisible === true && c.locked === false)).to.be.true; });",
+                      "pm.test('列顺序以 orderNo 开头、costMinutes 结尾', () => { const d = pm.response.json().data; pm.expect(d.columns[0].code === 'orderNo' && d.columns[8].code === 'costMinutes').to.be.true; });",
+                      "pm.test('金额列为 MONEY_CUR 且不可排序', () => { const d = pm.response.json().data; pm.expect(d.columns.find(c => c.code === 'amount').format === 'MONEY_CUR' && !d.columns.find(c => c.code === 'amount').sortable).to.be.true; });",
+                      "pm.test('有统计区间 spanFrom / spanTo', () => { const d = pm.response.json().data; pm.expect(!!(d.context.spanFrom && d.context.spanTo)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 近 7 天按完成时间排序",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\",\n  \"sortColumn\": \"finishTime\",\n  \"sortDirection\": \"desc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 9 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 9).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 下钻时间片（左闭右开）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{ystSlotFrom}}\",\n  \"slotTo\": \"{{ystSlotTo}}\",\n  \"sourceMetricCode\": \"dep\",\n  \"status\": \"succ\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 9 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 9).to.be.true; });",
+                      "pm.test('spanFrom 等于时间片开始', () => { const d = pm.response.json().data; pm.expect(d.context.spanFrom === pm.collectionVariables.get('ystSlotFrom')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 关键字搜索",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"keyword\": \"100234\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 9 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 9).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · [边界] 金额列排序 → 静默回退 createTime",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sortColumn\": \"amount\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · [边界] 非法状态 auditing → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"auditing\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「succ/fail/pend」', () => pm.expect(pm.response.json().msg || '').to.include('succ/fail/pend'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 导出 CSV",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"succ\",\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('返回 CSV 文件（不是 JSON）', () => {",
+                      "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                      "  pm.expect(cd).to.include('attachment');",
+                      "  pm.expect(cd.toLowerCase()).to.include('.csv');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "2.3 提款明细 /dashboard/records/withdraw",
+          "item": [
+            {
+              "name": "提款 · 待审核 / 待审",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"auditing\",\n  \"auditStatus\": \"pending\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 17 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 17).to.be.true; });",
+                      "pm.test('订单表无合计：summary 为 {}', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.summary || {}).length === 0).to.be.true; });",
+                      "pm.test('summaryNote 为 null', () => { const d = pm.response.json().data; pm.expect(d.summaryNote === null).to.be.true; });",
+                      "pm.test('订单表列全部默认显示、无必选列', () => { const d = pm.response.json().data; pm.expect(d.columns.every(c => c.defaultVisible === true && c.locked === false)).to.be.true; });",
+                      "pm.test('最后一列为 auditNote（LONGTEXT）', () => { const d = pm.response.json().data; pm.expect(d.columns[16].code === 'auditNote' && d.columns[16].format === 'LONGTEXT').to.be.true; });",
+                      "pm.test('USDT 订单银行信息为 null', () => { const d = pm.response.json().data; pm.expect(d.page.rows.filter(r => r.currency === 'USDT').every(r => r.bankName === null && r.bankCode === null && r.bankCountry === null)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提款 · 成功单按资金操作时间排序",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"succ\",\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\",\n  \"sortColumn\": \"payTime\",\n  \"sortDirection\": \"desc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 17 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 17).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提款 · [边界] 非法审核状态 → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"auditStatus\": \"ok\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「pass/pending/reject」', () => pm.expect(pm.response.json().msg || '').to.include('pass/pending/reject'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提款 · [边界] 旧接口 /transaction 已下线",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/transaction",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "transaction"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('接口不存在（HTTP 404 或 code ≠ 200）', () => {",
+                      "  let c = null; try { c = pm.response.json().code; } catch (e) {}",
+                      "  pm.expect(pm.response.code === 404 || (c !== null && c !== 200)).to.be.true;",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提款 · 导出 CSV",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('返回 CSV 文件（不是 JSON）', () => {",
+                      "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                      "  pm.expect(cd).to.include('attachment');",
+                      "  pm.expect(cd.toLowerCase()).to.include('.csv');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "2.4 投注明细 /dashboard/records/bet",
+          "item": [
+            {
+              "name": "投注 · 今日全部",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 14 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 14).to.be.true; });",
+                      "pm.test('订单表无合计：summary 为 {}', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.summary || {}).length === 0).to.be.true; });",
+                      "pm.test('summaryNote 为 null', () => { const d = pm.response.json().data; pm.expect(d.summaryNote === null).to.be.true; });",
+                      "pm.test('订单表列全部默认显示、无必选列', () => { const d = pm.response.json().data; pm.expect(d.columns.every(c => c.defaultVisible === true && c.locked === false)).to.be.true; });",
+                      "pm.test('未结算注单 payout / winLoss 为 null', () => { const d = pm.response.json().data; pm.expect(d.page.rows.filter(r => r.settleStatus === 'open').every(r => r.payout === null && r.winLoss === null)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · 平台 + 类型 + 游戏 + 按投注金额排序",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"vendorCode\": \"JILI\",\n  \"gameType\": \"slots\",\n  \"game\": \"Super Ace\",\n  \"sortColumn\": \"betAmount\",\n  \"sortDirection\": \"desc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 14 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 14).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · 未结算 + 投注金额区间",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"settleStatus\": \"open\",\n  \"betAmountMin\": 100,\n  \"betAmountMax\": 5000,\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page / summary', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page && d.summary !== undefined)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('context.timezone / currency 已回填', () => { const d = pm.response.json().data; pm.expect(!!(d.context.timezone && d.context.currency)).to.be.true; });",
+                      "pm.test('columns 固定 14 列', () => { const d = pm.response.json().data; pm.expect(d.columns.length === 14).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · [边界] 投注金额下限 > 上限 → 报错",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"betAmountMin\": 5000,\n  \"betAmountMax\": 100\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「下限不能大于上限」', () => pm.expect(pm.response.json().msg || '').to.include('下限不能大于上限'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · [边界] 非法游戏类型 → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"gameType\": \"sports\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · [边界] pageSize 超上限 → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pageSize\": 9999\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · 导出 CSV",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('返回 CSV 文件（不是 JSON）', () => {",
+                      "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                      "  pm.expect(cd).to.include('attachment');",
+                      "  pm.expect(cd.toLowerCase()).to.include('.csv');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "2.5 明细异步导出 /dashboard/export",
+          "item": [
+            {
+              "name": "提交 · 存款明细导出",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\",\n  \"status\": \"succ\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "明细数据集未配置（dashboard.gateway.uds.details.deposit）时会返回明确的错误信息。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const r = pm.response.json();",
+                      "pm.test('提交成功或给出明确原因', () => pm.expect(r.code === 200 || !!r.msg).to.be.true);",
+                      "if (r.code === 200 && r.data && r.data.jobId) {",
+                      "  pm.collectionVariables.set('jobId', r.data.jobId);",
+                      "  pm.test('返回 jobId', () => pm.expect(r.data.jobId).to.be.a('string').and.not.empty);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提交 · 提款明细导出",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('有响应', () => pm.expect(pm.response.json().code).to.exist);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提交 · 投注明细导出",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"{{d6}}\",\n  \"to\": \"{{today}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('有响应', () => pm.expect(pm.response.json().code).to.exist);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "提交 · 会员明细导出",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registerTimeFrom\": \"{{ystStart}}\",\n  \"registerTimeTo\": \"{{todayStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('有响应', () => pm.expect(pm.response.json().code).to.exist);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "查询任务状态",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/tasks/{{jobId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "tasks",
+                    "{{jobId}}"
+                  ]
+                },
+                "description": "依赖「提交 · 存款明细导出」写入的 jobId。DONE 时 job 里带 1 小时有效的下载链接。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('有响应', () => pm.expect(pm.response.json().code).to.exist);",
+                      "const d = pm.response.json().data;",
+                      "if (d && d.job) pm.test('作业状态合法', () => pm.expect(['PENDING','RUNNING','DONE','FAILED','CANCELLED']).to.include(d.job.status));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "我的导出任务",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/tasks",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "tasks"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('返回数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "取消任务",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/tasks/{{jobId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "tasks",
+                    "{{jobId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('有响应', () => pm.expect(pm.response.json().code).to.exist);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "[安全] 查询他人 / 不存在的任务 → 拒绝",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/export/tasks/not_my_job_123",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "export",
+                    "tasks",
+                    "not_my_job_123"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（参数被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 运营总览（不含首页核心指标）",
+      "item": [
+        {
+          "name": "3.1 排行榜 /dashboard/metrics/rankingboard",
+          "item": [
+            {
+              "name": "排行榜 · 昨日 / Top 10",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"topN\": 10\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('有 slot / timezone / notices', () => { const d = pm.response.json().data; pm.expect(!!(d.slot && d.timezone && Array.isArray(d.notices))).to.be.true; });",
+                      "pm.test('updateFrequency = hour', () => { const d = pm.response.json().data; pm.expect(d.updateFrequency === 'hour').to.be.true; });",
+                      "pm.test('有 bonus 与 games 两块', () => { const d = pm.response.json().data; pm.expect(!!(d.bonus && d.games)).to.be.true; });",
+                      "pm.test('赠金最多 6 项', () => { const d = pm.response.json().data; pm.expect(d.bonus.items.length <= 6).to.be.true; });",
+                      "pm.test('赠金占比合计约 100%', () => { const d = pm.response.json().data; pm.expect(d.bonus.items.length === 0 || Math.abs(d.bonus.items.reduce((s, i) => s + Number(i.share || 0), 0) - 100) < 0.6).to.be.true; });",
+                      "pm.test('游戏榜不超过 topN', () => { const d = pm.response.json().data; pm.expect(d.games.items.length <= 10).to.be.true; });",
+                      "pm.test('游戏榜按投注额降序', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i, a) => i === 0 || Number(a[i-1].betAmount || 0) >= Number(g.betAmount || 0))).to.be.true; });",
+                      "pm.test('rank 从 1 连续', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i) => g.rank === i + 1)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · 近 7 天 / DAY / Top 20",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"topN\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('游戏榜不超过 20', () => { const d = pm.response.json().data; pm.expect(d.games.items.length <= 20).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · [提示] 传对比参数 → PARAM_IGNORED",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"compareType\": \"PREV_PERIOD\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('notices 含 PARAM_IGNORED', () => { const d = pm.response.json().data; pm.expect(d.notices.some(n => n.code === 'PARAM_IGNORED')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · [边界] topN=51 → 4004",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"topN\": 51\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4004', () => pm.expect(pm.response.json().code).to.eql(4004));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · [边界] 区间与粒度不对齐 → 4001",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{ystSlotFrom}}\",\n  \"slotTo\": \"{{todayStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · [边界] slotFrom ≥ slotTo → 4001",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{todayStart}}\",\n  \"slotTo\": \"{{ystStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "排行榜 · [待实现] 导出 → 5010",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "rankingboard"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 5010', () => pm.expect(pm.response.json().code).to.eql(5010));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "3.2 留存与 LTV /dashboard/metrics/cohort",
+          "item": [
+            {
+              "name": "队列 · 近 10 天 BOTH",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"type\": \"BOTH\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('有 slot / timezone / notices', () => { const d = pm.response.json().data; pm.expect(!!(d.slot && d.timezone && Array.isArray(d.notices))).to.be.true; });",
+                      "pm.test('updateFrequency = day', () => { const d = pm.response.json().data; pm.expect(d.updateFrequency === 'day').to.be.true; });",
+                      "pm.test('asOfKind = SNAPSHOT_T1', () => { const d = pm.response.json().data; pm.expect(d.asOfKind === 'SNAPSHOT_T1').to.be.true; });",
+                      "pm.test('固定 9 列 D+1…D+30', () => { const d = pm.response.json().data; pm.expect(JSON.stringify(d.columns) === JSON.stringify(['D+1','D+2','D+3','D+4','D+5','D+6','D+7','D+15','D+30'])).to.be.true; });",
+                      "pm.test('两张表都返回', () => { const d = pm.response.json().data; pm.expect(!!(d.retention && d.ltv)).to.be.true; });",
+                      "pm.test('分群口径：留存=首投日，LTV=首存日', () => { const d = pm.response.json().data; pm.expect(d.retention.cohortBy === 'FIRST_BET_DATE' && d.ltv.cohortBy === 'FIRST_DEPOSIT_DATE').to.be.true; });",
+                      "pm.test('每天一行（7 行）', () => { const d = pm.response.json().data; pm.expect(d.retention.rows.length === 7 && d.ltv.rows.length === 7).to.be.true; });",
+                      "pm.test('每行 values 长度 = 9', () => { const d = pm.response.json().data; pm.expect([...d.retention.rows, ...d.ltv.rows].every(r => r.values.length === 9)).to.be.true; });",
+                      "pm.test('昨天的分群 D+1 未到观察期为 null', () => { const d = pm.response.json().data; pm.expect(d.retention.rows[d.retention.rows.length - 1].values[0] === null).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · 只要留存 RETENTION",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"type\": \"RETENTION\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('ltv 为 null', () => { const d = pm.response.json().data; pm.expect(d.ltv === null || d.ltv === undefined).to.be.true; });",
+                      "pm.test('retention 存在', () => { const d = pm.response.json().data; pm.expect(!!d.retention).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · 区间含今天以后 → 截到昨天",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d6}}\",\n  \"slotTo\": \"{{tomorrow}}\",\n  \"type\": \"LTV\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('notices 含 SLOT_CLAMPED', () => { const d = pm.response.json().data; pm.expect(d.notices.some(n => n.code === 'SLOT_CLAMPED')).to.be.true; });",
+                      "pm.test('最后一行是昨天', () => { const d = pm.response.json().data; pm.expect(d.ltv.rows[d.ltv.rows.length - 1].cohortDate === pm.collectionVariables.get('yesterday')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · [提示] 传 granularity → PARAM_IGNORED",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"granularity\": \"HOUR\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('notices 含 PARAM_IGNORED', () => { const d = pm.response.json().data; pm.expect(d.notices.some(n => n.code === 'PARAM_IGNORED')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · [边界] 非法 type → 4005",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"type\": \"ALL\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4005', () => pm.expect(pm.response.json().code).to.eql(4005));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · [边界] 导出时 type=BOTH → 4005",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"type\": \"BOTH\",\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4005', () => pm.expect(pm.response.json().code).to.eql(4005));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · [待实现] 导出 RETENTION → 5010",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{d7}}\",\n  \"slotTo\": \"{{today}}\",\n  \"type\": \"RETENTION\",\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 5010', () => pm.expect(pm.response.json().code).to.eql(5010));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "队列 · [边界] 跨度超过 365 天 → 4001",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "cohort"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2025-01-01\",\n  \"slotTo\": \"{{today}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "3.3 注册渠道 /dashboard/metrics/reg-channels",
+          "item": [
+            {
+              "name": "注册渠道 · 昨日",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "reg-channels"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('有 slot / timezone / notices', () => { const d = pm.response.json().data; pm.expect(!!(d.slot && d.timezone && Array.isArray(d.notices))).to.be.true; });",
+                      "pm.test('updateFrequency = hour', () => { const d = pm.response.json().data; pm.expect(d.updateFrequency === 'hour').to.be.true; });",
+                      "pm.test('三个渠道分组都返回', () => { const d = pm.response.json().data; pm.expect(['ad','ag','og'].every(c => d.groups.some(g => g.code === c))).to.be.true; });",
+                      "pm.test('分组人数之和 = totalRegistrations', () => { const d = pm.response.json().data; pm.expect(d.totalRegistrations === null || d.groups.reduce((s, g) => s + (g.registrations || 0), 0) === d.totalRegistrations).to.be.true; });",
+                      "pm.test('渠道按注册人数降序', () => { const d = pm.response.json().data; pm.expect(d.channels.every((c, i, a) => i === 0 || a[i-1].registrations >= c.registrations)).to.be.true; });",
+                      "pm.test('渠道 code 为 groupCode|渠道编码', () => { const d = pm.response.json().data; pm.expect(d.channels.every(c => c.code.startsWith(c.groupCode + '|'))).to.be.true; });",
+                      "pm.test('notices 无 REG_TOTAL_MISMATCH（与指标卡注册人数一致）', () => { const d = pm.response.json().data; pm.expect(!d.notices.some(n => n.code === 'REG_TOTAL_MISMATCH')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "注册渠道 · 下钻小时片",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "reg-channels"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{ystSlotFrom}}\",\n  \"slotTo\": \"{{ystSlotTo}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "注册渠道 · [提示] 传 granularity / compareType → PARAM_IGNORED",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "reg-channels"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"PREV_PERIOD\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('notices 含 2 条 PARAM_IGNORED', () => { const d = pm.response.json().data; pm.expect(d.notices.filter(n => n.code === 'PARAM_IGNORED').length === 2).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "注册渠道 · [边界] slotFrom ≥ slotTo → 4001",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "reg-channels"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"{{todayStart}}\",\n  \"slotTo\": \"{{todayStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "注册渠道 · [边界] 时间格式错误 → 4001",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "metrics",
+                    "reg-channels"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2026/09/13\",\n  \"slotTo\": \"{{todayStart}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "不含 /dashboard/metrics/overview（首页核心指标）。用户与价值 /users 一期不做，未收录。\n拆解数据集（dashboard.gateway.uds.breakdowns）未配置时，各板块返回完整空结构，notices 含 DATA_NOT_CONNECTED。"
+    }
+  ]
+}

@@ -104,9 +104,9 @@ else bad "health 异常或不可达: $HEALTH"; fi
 # ---------- 2. 指标汇总 ----------
 hr "2. 指标汇总 POST /dashboard/metrics/summary"
 
-req "默认今日(不传 from/to) / 小时粒度 / 环比" \
+req "默认今日(不传 from/to) / 小时粒度" \
   "/dashboard/metrics/summary" \
-  '{"granularity":"HOUR","compareType":"PREV_PERIOD",
+  '{"granularity":"HOUR",
     "metricCodes":["reg","ftd","ftdr","dep","wd","net"],"pageNum":1,"pageSize":20}' \
   200 200
 note "重点看: context.spanTo 是否截断到整点 / availableGranularities / values 全为 null(占位实现)"
@@ -123,10 +123,9 @@ req "近30天 / 请求 HOUR 粒度 → 应自动降级" \
   200 200
 note "重点看: warnings 是否含 GRANULARITY_DOWNGRADED, granularity 是否变成 DAY"
 
-req "自定义区间 + 自定义对比(等长)" \
+req "自定义区间 / 日粒度" \
   "/dashboard/metrics/summary" \
-  '{"from":"2026-09-01","to":"2026-09-12","granularity":"DAY",
-    "compareType":"CUSTOM","compareFrom":"2026-08-20","compareTo":"2026-08-31"}' \
+  '{"from":"2026-09-01","to":"2026-09-12","granularity":"DAY"}' \
   200 200
 
 req "按指标列排序" \
@@ -137,54 +136,110 @@ req "按指标列排序" \
 # ---------- 3. 会员明细 ----------
 hr "3. 会员明细 POST /dashboard/records/member"
 
-req "全部列 / 今日" \
+req "默认: 不限时间, 返回全部 27 列定义" \
   "/dashboard/records/member" \
-  '{"viewScheme":"ALL","pageNum":1,"pageSize":20}' \
+  '{"pageNum":1,"pageSize":20}' \
   200 200
-note "重点看: columns 应返回全部 18 列"
+note "重点看: columns 27 列, defaultVisible 13 列, userId/username locked=true; context 不带 spanFrom/To"
 
-req "首存视角 + 按首存时间筛 (模拟从 ftd 指标下钻)" \
+req "三个时间条件可叠加 (注册 + 首存)" \
   "/dashboard/records/member" \
-  '{"slotFrom":"2026-09-13 09:00","slotTo":"2026-09-13 10:00",
-    "sourceMetricCode":"ftd","timeField":"FTD_TIME","viewScheme":"FTD",
-    "hasFirstDeposit":true}' \
+  '{"registerTimeFrom":"2026-09-01 00:00","registerTimeTo":"2026-09-13 00:00",
+    "firstDepositTimeFrom":"2026-09-10 00:00","firstDepositTimeTo":"2026-09-13 00:00",
+    "sortColumn":"firstDepositTime","sortDirection":"desc"}' \
   200 200
-note "重点看: columns 应只剩 key + ftd 两组; context.spanFrom/To 应等于 slot"
 
-req "价值视角 + 分层筛选" \
+req "从 ftd 指标下钻: 时间片写进首存时间" \
   "/dashboard/records/member" \
-  '{"from":"2026-08-30","to":"2026-09-28","viewScheme":"VALUE","tier":"high","stage":"active"}' \
+  '{"firstDepositTimeFrom":"2026-09-13 09:00","firstDepositTimeTo":"2026-09-13 10:00",
+    "sourceMetricCode":"ftd"}' \
   200 200
 
-req "全量区间 + 关键字搜索" \
+req "兼容旧下钻: 只传 slotFrom/slotTo + sourceMetricCode=active → 最近投注时间" \
   "/dashboard/records/member" \
-  '{"from":"2026-03-01","to":"2026-09-28","keyword":"+91","pageSize":10}' \
+  '{"slotFrom":"2026-09-13 09:00","slotTo":"2026-09-13 10:00","sourceMetricCode":"active"}' \
   200 200
-note "重点看: 关键字搜索结果; 区间只由 from/to 决定"
 
-# ---------- 4. 交易明细 ----------
-hr "4. 交易明细 POST /dashboard/records/transaction"
+req "更多筛选: 状态/类型/等级/国家/渠道/累计存款区间" \
+  "/dashboard/records/member" \
+  '{"status":"ok","userType":"real","level":"VIP3","country":"IN",
+    "registerChannel":"LP-01 / organic","cumulativeDepositMin":10000,"cumulativeDepositMax":500000}' \
+  200 200
 
-req "存款 / 成功单 / 今日" \
+req "搜索 用户ID / 账号名称" \
+  "/dashboard/records/member" \
+  '{"keyword":"10023","pageSize":10}' \
+  200 200
+
+req "非法枚举 → 参数校验拦截" \
+  "/dashboard/records/member" \
+  '{"status":"vip","level":"VIP0"}' \
+  200 500
+note "期望: msg 含 status / level 的取值说明"
+
+req "时间区间反了 → 报错" \
+  "/dashboard/records/member" \
+  '{"registerTimeFrom":"2026-09-13 10:00","registerTimeTo":"2026-09-13 09:00"}' \
+  200 500
+note "期望: msg 含「注册时间的结束时间必须晚于开始时间」"
+
+req "累计存款下限大于上限 → 报错" \
+  "/dashboard/records/member" \
+  '{"cumulativeDepositMin":5000,"cumulativeDepositMax":100}' \
+  200 500
+
+# ---------- 4. 存款 / 提款明细 ----------
+hr "4. 存款明细 POST /dashboard/records/deposit"
+
+req "成功单 / 今日" \
+  "/dashboard/records/deposit" \
+  '{"status":"succ","pageNum":1,"pageSize":20}' \
+  200 200
+note "重点看: columns 9 列; summary 为 {}, summaryNote 为 null; rows 含 userId/username/currency"
+
+req "近 7 天 + 按完成时间排序" \
+  "/dashboard/records/deposit" \
+  '{"from":"2026-09-22","to":"2026-09-28","sortColumn":"finishTime","sortDirection":"desc"}' \
+  200 200
+
+req "下钻时间片 (左闭右开)" \
+  "/dashboard/records/deposit" \
+  '{"slotFrom":"2026-09-13 09:00","slotTo":"2026-09-13 10:00","sourceMetricCode":"dep","status":"succ"}' \
+  200 200
+
+req "金额列不可排序 → 静默回退 createTime" \
+  "/dashboard/records/deposit" \
+  '{"sortColumn":"amount"}' \
+  200 200
+
+req "非法状态 → 参数校验拦截" \
+  "/dashboard/records/deposit" \
+  '{"status":"auditing"}' \
+  200 500
+
+hr "4b. 提款明细 POST /dashboard/records/withdraw"
+
+req "待审核 / 待审" \
+  "/dashboard/records/withdraw" \
+  '{"status":"auditing","auditStatus":"pending"}' \
+  200 200
+note "重点看: columns 17 列, 最后一列 auditNote (LONGTEXT)"
+
+req "按资金操作时间排序" \
+  "/dashboard/records/withdraw" \
+  '{"sortColumn":"payTime","sortDirection":"desc"}' \
+  200 200
+
+req "非法审核状态 → 参数校验拦截" \
+  "/dashboard/records/withdraw" \
+  '{"auditStatus":"ok"}' \
+  200 500
+
+req "旧接口 /transaction 已下线" \
   "/dashboard/records/transaction" \
-  '{"type":"DEPOSIT","status":"succ","pageNum":1,"pageSize":20}' \
-  200 200
-note "重点看: summaryNote 应为「仅计成功单」"
-
-req "提款 / 待审核" \
-  "/dashboard/records/transaction" \
-  '{"type":"WITHDRAW","status":"auditing","auditStatus":"pending"}' \
-  200 200
-
-req "存提都要 + 按金额排序" \
-  "/dashboard/records/transaction" \
-  '{"from":"2026-09-22","to":"2026-09-28","sortColumn":"amount","sortDirection":"desc"}' \
-  200 200
-
-req "切换到完成时间口径" \
-  "/dashboard/records/transaction" \
-  '{"timeField":"FINISH"}' \
-  200 200
+  '{}' \
+  200
+note "期望: 业务 code 非 200 (接口不存在)"
 
 # ---------- 5. 投注明细 ----------
 hr "5. 投注明细 POST /dashboard/records/bet"
@@ -193,21 +248,30 @@ req "今日全部" \
   "/dashboard/records/bet" \
   '{"pageNum":1,"pageSize":20}' \
   200 200
+note "重点看: columns 14 列, 默认按 betTime desc"
 
-req "按厂商筛选 + 按投注额排序" \
+req "平台 + 类型 + 游戏 + 按投注金额排序" \
   "/dashboard/records/bet" \
-  '{"vendor":"JILI","sortColumn":"betAmount","sortDirection":"desc"}' \
+  '{"vendorCode":"JILI","gameType":"slots","game":"Super Ace","sortColumn":"betAmount","sortDirection":"desc"}' \
   200 200
+
+req "未结算 + 投注金额区间" \
+  "/dashboard/records/bet" \
+  '{"settleStatus":"open","betAmountMin":100,"betAmountMax":5000}' \
+  200 200
+
+req "投注金额下限大于上限 → 报错" \
+  "/dashboard/records/bet" \
+  '{"betAmountMin":5000,"betAmountMax":100}' \
+  200 500
+
+req "非法游戏类型 → 参数校验拦截" \
+  "/dashboard/records/bet" \
+  '{"gameType":"sports"}' \
+  200 500
 
 # ---------- 6. 边界与安全 ----------
 hr "6. 边界与安全 (比正常路径更值得看)"
-
-req "对比区间与主区间重叠 → 应报错" \
-  "/dashboard/metrics/summary" \
-  '{"from":"2026-09-01","to":"2026-09-12",
-    "compareType":"CUSTOM","compareFrom":"2026-09-10","compareTo":"2026-09-15"}' \
-  200 500
-note "期望: 业务 code 非 200, msg 含「对比区间不能与主区间重叠」"
 
 req "早于站点上线日 → 应报错" \
   "/dashboard/metrics/summary" \
@@ -215,15 +279,8 @@ req "早于站点上线日 → 应报错" \
   200 500
 note "期望: msg 含「不能早于站点上线日 2026-03-01」"
 
-req "对比区间长度不等 → 只警告不拦截" \
-  "/dashboard/metrics/summary" \
-  '{"from":"2026-09-01","to":"2026-09-12","granularity":"DAY",
-    "compareType":"CUSTOM","compareFrom":"2026-08-01","compareTo":"2026-08-05"}' \
-  200 200
-note "期望: code=200 且 warnings 含 COMPARE_LENGTH_MISMATCH"
-
 req "SQL 注入式排序列 → 应静默回退, 不报错不拼查询" \
-  "/dashboard/records/transaction" \
+  "/dashboard/records/deposit" \
   '{"sortColumn":"amount; DROP TABLE sys_user--"}' \
   200 200
 note "期望: code=200, 服务端按 createTime 排序"

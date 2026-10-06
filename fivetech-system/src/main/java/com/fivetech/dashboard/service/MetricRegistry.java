@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.dashboard.domain.MetricCardConfig;
 import com.fivetech.dashboard.domain.MetricDefinition;
+import com.fivetech.dashboard.domain.MetricGroupConfig;
 import com.fivetech.dashboard.domain.PageMetricConfig;
 import com.fivetech.dashboard.enums.DashboardPage;
 import com.fivetech.dashboard.mapper.DashboardConfigMapper;
@@ -46,6 +47,9 @@ public class MetricRegistry
 
     private volatile Snapshot snapshot = Snapshot.empty();
 
+    /** dashboard_metric_group 的启用行，按 sort_no 排序；与快照一起在 reload 里替换 */
+    private volatile List<MetricGroupConfig> groups = List.of();
+
     public MetricRegistry(DashboardConfigMapper configMapper, DashboardConfigValidator validator)
     {
         this.configMapper = configMapper;
@@ -66,12 +70,12 @@ public class MetricRegistry
     {
         List<MetricCardConfig> cards;
         List<PageMetricConfig> pageMetrics;
-        List<String> groups;
+        List<MetricGroupConfig> groupRows;
         try
         {
             cards = configMapper.selectAllMetricCards();
             pageMetrics = configMapper.selectAllPageMetrics();
-            groups = configMapper.selectEnabledGroupCodes();
+            groupRows = configMapper.selectEnabledGroups();
         }
         catch (Exception e)
         {
@@ -82,9 +86,15 @@ public class MetricRegistry
                 + e.getMessage(), e);
         }
 
+        List<String> groups = new ArrayList<>();
+        for (MetricGroupConfig g : groupRows)
+        {
+            groups.add(g.getGroupCode());
+        }
         validator.validateOrFail(cards, pageMetrics, groups);
 
         this.snapshot = Snapshot.build(cards, pageMetrics);
+        this.groups = Collections.unmodifiableList(new ArrayList<>(groupRows));
         log.info("[dashboard-config] 注册表已加载：可选指标 {} 个，{} 页面 {} 个，{} 页面 {} 个",
             snapshot.selectable.size(),
             DashboardPage.OVERVIEW, snapshot.columnsOf(DashboardPage.OVERVIEW).size(),
@@ -92,6 +102,29 @@ public class MetricRegistry
     }
 
     // ===================== 查询 =====================
+
+    /** 启用的分组，按 sort_no 排序 */
+    public List<MetricGroupConfig> groups()
+    {
+        return groups;
+    }
+
+    /** 分组配置；编码为空或不在字典里时返回 null */
+    public MetricGroupConfig groupOf(String code)
+    {
+        if (code == null)
+        {
+            return null;
+        }
+        for (MetricGroupConfig g : groups)
+        {
+            if (code.equals(g.getGroupCode()))
+            {
+                return g;
+            }
+        }
+        return null;
+    }
 
     public MetricDefinition get(String code)
     {
@@ -121,10 +154,31 @@ public class MetricRegistry
         return new ArrayList<>(snapshot.defaultsOf(page));
     }
 
+    /**
+     * 指标在某页面上的序号，取 {@code dashboard_page_metric.sort_no}。
+     * <p>页面顺序只认这一列；{@code dashboard_metric_card.sort_no} 是指标的全局顺序，
+     * 不决定任何页面的排列。指标没挂在该页面上时返回 null。</p>
+     */
+    public Integer pageSortNo(DashboardPage page, String code)
+    {
+        return snapshot.pageSortNo(page, code);
+    }
+
     /** 某页面上的大号卡（仅指标墙有意义） */
     public List<String> coreOf(DashboardPage page)
     {
         return new ArrayList<>(snapshot.coreOf(page));
+    }
+
+    /**
+     * 核心指标编码。
+     * <p>核心与否只在一处定义：dashboard_page_metric 中运营总览（OVERVIEW）emphasis = 'CORE' 的指标。
+     * 表约束要求 SUMMARY 行的 emphasis 恒为 NORMAL，汇总表不另立一套，直接复用指标墙的定义，
+     * 避免两处配置不一致（指标墙标了核心、汇总表却没标）。</p>
+     */
+    public java.util.Set<String> coreMetricCodes()
+    {
+        return new java.util.LinkedHashSet<>(snapshot.coreOf(DashboardPage.OVERVIEW));
     }
 
     /** 指标汇总的默认列。保留这个名字是为了不改调用方 */
@@ -166,6 +220,37 @@ public class MetricRegistry
         return result.isEmpty() ? new ArrayList<>(defaults) : result;
     }
 
+    /**
+     * 只取核心指标的列：页面列顺序不变，过滤出核心指标。
+     * <p>传了 requested 时取交集；交集为空（请求的全是非核心指标）则返回该页全部核心指标，
+     * 与 {@link #resolveColumns(DashboardPage, List)} 的回退方式一致。</p>
+     */
+    public List<String> resolveCoreColumns(DashboardPage page, List<String> requested)
+    {
+        java.util.Set<String> core = coreMetricCodes();
+        List<String> all = new ArrayList<>();
+        for (String code : snapshot.columnsOf(page))
+        {
+            if (core.contains(code))
+            {
+                all.add(code);
+            }
+        }
+        if (requested == null || requested.isEmpty())
+        {
+            return all;
+        }
+        List<String> picked = new ArrayList<>();
+        for (String code : all)
+        {
+            if (requested.contains(code))
+            {
+                picked.add(code);
+            }
+        }
+        return picked.isEmpty() ? all : picked;
+    }
+
     /** 兼容旧调用：默认按指标汇总页解析 */
     public List<String> resolveColumns(List<String> requested)
     {
@@ -198,10 +283,14 @@ public class MetricRegistry
 
         private final Map<String, List<String>> core;
 
+        /** page → (metricCode → dashboard_page_metric.sort_no) */
+        private final Map<String, Map<String, Integer>> pageSort;
+
         private Snapshot(Map<String, MetricDefinition> definitions, List<String> selectable,
                 Map<String, List<String>> columns, Map<String, List<String>> defaults,
-                Map<String, List<String>> core)
+                Map<String, List<String>> core, Map<String, Map<String, Integer>> pageSort)
         {
+            this.pageSort = pageSort;
             this.definitions = definitions;
             this.selectable = selectable;
             this.columns = columns;
@@ -211,7 +300,7 @@ public class MetricRegistry
 
         private static Snapshot empty()
         {
-            return new Snapshot(Map.of(), List.of(), Map.of(), Map.of(), Map.of());
+            return new Snapshot(Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of());
         }
 
         private List<String> columnsOf(DashboardPage page)
@@ -229,19 +318,16 @@ public class MetricRegistry
             return core.getOrDefault(page.name(), List.of());
         }
 
+        private Integer pageSortNo(DashboardPage page, String code)
+        {
+            return pageSort.getOrDefault(page.name(), Map.of()).get(code);
+        }
+
         private static Snapshot build(List<MetricCardConfig> cards, List<PageMetricConfig> pageMetrics)
         {
             Map<String, MetricDefinition> definitions = new LinkedHashMap<>();
             List<String> selectable = new ArrayList<>();
 
-            Set<String> onWall = new LinkedHashSet<>();
-            for (PageMetricConfig relation : pageMetrics)
-            {
-                if (relation.isEnabled() && DashboardPage.OVERVIEW.name().equals(relation.getPageCode()))
-                {
-                    onWall.add(relation.getMetricCode());
-                }
-            }
 
             for (MetricCardConfig card : cards)
             {
@@ -252,9 +338,15 @@ public class MetricRegistry
                 MetricDefinition definition = new MetricDefinition(
                     card.getMetricCode(), card.getMetricName(), card.getGroupCode(),
                     card.isDerived() ? DERIVED : ATOM,
-                    card.getValueFormat(), card.getAggType(), expressionOf(card))
-                    .visibility(card.isShowAsCard(), onWall.contains(card.getMetricCode()));
+                    card.getValueFormat(), card.getAggType(), expressionOf(card));
                 definition.setDecimals(card.getValueDecimals());
+                definition.setUpdateFrequency(card.getUpdateFrequency());
+                definition.setSingleDayOnly(card.isSingleDayOnly());
+                definition.setDirection(card.getDirection());
+                definition.setSortNo(card.getSortNo());
+                definition.setCalcType(card.getCalcType());
+                definition.setLeftCode(card.getLeftCode());
+                definition.setRightCode(card.getRightCode());
                 definitions.put(card.getMetricCode(), definition);
                 if (card.isShowAsCard())
                 {
@@ -265,6 +357,7 @@ public class MetricRegistry
             Map<String, List<String>> columns = new LinkedHashMap<>();
             Map<String, List<String>> defaults = new LinkedHashMap<>();
             Map<String, List<String>> core = new LinkedHashMap<>();
+            Map<String, Map<String, Integer>> pageSort = new LinkedHashMap<>();
             // pageMetrics 已按 page_code, sort_no 排序，顺序直接沿用
             for (PageMetricConfig relation : pageMetrics)
             {
@@ -274,6 +367,8 @@ public class MetricRegistry
                 }
                 String page = relation.getPageCode();
                 columns.computeIfAbsent(page, k -> new ArrayList<>()).add(relation.getMetricCode());
+                pageSort.computeIfAbsent(page, k -> new LinkedHashMap<>())
+                    .put(relation.getMetricCode(), relation.getSortNo());
                 if (relation.getIsDefault())
                 {
                     defaults.computeIfAbsent(page, k -> new ArrayList<>()).add(relation.getMetricCode());
@@ -286,7 +381,15 @@ public class MetricRegistry
 
             return new Snapshot(Collections.unmodifiableMap(definitions),
                 Collections.unmodifiableList(selectable),
-                unmodifiable(columns), unmodifiable(defaults), unmodifiable(core));
+                unmodifiable(columns), unmodifiable(defaults), unmodifiable(core),
+                unmodifiableNested(pageSort));
+        }
+
+        private static Map<String, Map<String, Integer>> unmodifiableNested(Map<String, Map<String, Integer>> source)
+        {
+            Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
+            source.forEach((k, v) -> result.put(k, Collections.unmodifiableMap(v)));
+            return Collections.unmodifiableMap(result);
         }
 
         private static Map<String, List<String>> unmodifiable(Map<String, List<String>> source)

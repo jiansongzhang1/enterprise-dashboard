@@ -4,7 +4,9 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
- * 投注明细行。一行一笔投注。
+ * 投注明细行。一行一笔注单。
+ * <p>
+ * 金额统一为站点币种（INR）。未结算注单的派彩、输赢为 null，不是 0。
  *
  * @author fivetech
  */
@@ -15,32 +17,50 @@ public class BetRecordVO implements Serializable
     /** 注单号 */
     private String orderNo;
 
-    /** 会员账号（脱敏后） */
-    private String account;
+    /** 用户ID */
+    private String userId;
 
-    /** 厂商 */
-    private String vendor;
+    /** 账号名称 */
+    private String username;
 
-    /** 游戏类型编码 */
+    /** 游戏平台 Code */
+    private String vendorCode;
+
+    /** 平台厂商名 */
+    private String vendorName;
+
+    /** 游戏类型编码 slots / live / mini */
     private String gameType;
 
     /** 游戏类型名称 */
     private String gameTypeLabel;
 
+    /** 游戏ID */
+    private String gameId;
+
     /** 游戏名称 */
-    private String game;
+    private String gameName;
 
     /** 投注金额 */
     private BigDecimal betAmount;
 
-    /** 派彩金额 */
+    /** 派彩；未结算为 null */
     private BigDecimal payout;
 
-    /** 输赢（投注 − 派彩），正数代表平台盈利 */
+    /** 输赢 = 投注 − 派彩，平台视角：正数平台赢；未结算为 null */
     private BigDecimal winLoss;
 
+    /** 结算状态编码 done / open */
+    private String settleStatus;
+
+    /** 结算状态名称 */
+    private String settleStatusLabel;
+
     /** 投注时间 */
-    private String createTime;
+    private String betTime;
+
+    /** 结算时间；未结算为 null */
+    private String settleTime;
 
     public String getOrderNo()
     {
@@ -52,24 +72,44 @@ public class BetRecordVO implements Serializable
         this.orderNo = orderNo;
     }
 
-    public String getAccount()
+    public String getUserId()
     {
-        return account;
+        return userId;
     }
 
-    public void setAccount(String account)
+    public void setUserId(String userId)
     {
-        this.account = account;
+        this.userId = userId;
     }
 
-    public String getVendor()
+    public String getUsername()
     {
-        return vendor;
+        return username;
     }
 
-    public void setVendor(String vendor)
+    public void setUsername(String username)
     {
-        this.vendor = vendor;
+        this.username = username;
+    }
+
+    public String getVendorCode()
+    {
+        return vendorCode;
+    }
+
+    public void setVendorCode(String vendorCode)
+    {
+        this.vendorCode = vendorCode;
+    }
+
+    public String getVendorName()
+    {
+        return vendorName;
+    }
+
+    public void setVendorName(String vendorName)
+    {
+        this.vendorName = vendorName;
     }
 
     public String getGameType()
@@ -92,14 +132,24 @@ public class BetRecordVO implements Serializable
         this.gameTypeLabel = gameTypeLabel;
     }
 
-    public String getGame()
+    public String getGameId()
     {
-        return game;
+        return gameId;
     }
 
-    public void setGame(String game)
+    public void setGameId(String gameId)
     {
-        this.game = game;
+        this.gameId = gameId;
+    }
+
+    public String getGameName()
+    {
+        return gameName;
+    }
+
+    public void setGameName(String gameName)
+    {
+        this.gameName = gameName;
     }
 
     public BigDecimal getBetAmount()
@@ -132,13 +182,43 @@ public class BetRecordVO implements Serializable
         this.winLoss = winLoss;
     }
 
-    public String getCreateTime()
+    public String getSettleStatus()
     {
-        return createTime;
+        return settleStatus;
     }
 
-    public void setCreateTime(String createTime)
+    public void setSettleStatus(String settleStatus)
     {
-        this.createTime = createTime;
+        this.settleStatus = settleStatus;
+    }
+
+    public String getSettleStatusLabel()
+    {
+        return settleStatusLabel;
+    }
+
+    public void setSettleStatusLabel(String settleStatusLabel)
+    {
+        this.settleStatusLabel = settleStatusLabel;
+    }
+
+    public String getBetTime()
+    {
+        return betTime;
+    }
+
+    public void setBetTime(String betTime)
+    {
+        this.betTime = betTime;
+    }
+
+    public String getSettleTime()
+    {
+        return settleTime;
+    }
+
+    public void setSettleTime(String settleTime)
+    {
+        this.settleTime = settleTime;
     }
 }

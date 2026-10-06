@@ -31,6 +31,12 @@ public class RecordPageRequest implements Serializable
      */
     private Map<String, Object> filters = new LinkedHashMap<>();
 
+    /**
+     * 区间筛选条件，可以有多个且互相叠加（会员表的注册 / 首存 / 最近投注时间、累计存款金额）。
+     * field 同样是<b>列编码</b>，由网关映射成上游字段名。
+     */
+    private java.util.List<Range> ranges = new java.util.ArrayList<>();
+
     /** 排序列编码，已通过白名单校验 */
     private String sortColumn;
 
@@ -152,5 +158,70 @@ public class RecordPageRequest implements Serializable
     public void setRowLimit(int rowLimit)
     {
         this.rowLimit = rowLimit;
+    }
+
+    public java.util.List<Range> getRanges()
+    {
+        return ranges;
+    }
+
+    public void setRanges(java.util.List<Range> ranges)
+    {
+        this.ranges = ranges;
+    }
+
+    /** 加一个区间条件；两端都为空时忽略 */
+    public void addRange(String field, Object from, Object to, boolean toInclusive)
+    {
+        if (from == null && to == null)
+        {
+            return;
+        }
+        ranges.add(new Range(field, from, to, toInclusive));
+    }
+
+    /**
+     * 区间条件。from 恒为闭区间；to 是否包含由 toInclusive 决定——
+     * 时间按全站约定左闭右开（false），金额上下限都包含（true）。
+     */
+    public static class Range implements Serializable
+    {
+        private static final long serialVersionUID = 1L;
+
+        private final String field;
+
+        private final Object from;
+
+        private final Object to;
+
+        private final boolean toInclusive;
+
+        public Range(String field, Object from, Object to, boolean toInclusive)
+        {
+            this.field = field;
+            this.from = from;
+            this.to = to;
+            this.toInclusive = toInclusive;
+        }
+
+        public String getField()
+        {
+            return field;
+        }
+
+        public Object getFrom()
+        {
+            return from;
+        }
+
+        public Object getTo()
+        {
+            return to;
+        }
+
+        public boolean isToInclusive()
+        {
+            return toInclusive;
+        }
     }
 }

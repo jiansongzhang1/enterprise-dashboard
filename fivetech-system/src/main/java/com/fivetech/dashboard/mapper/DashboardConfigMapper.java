@@ -2,6 +2,7 @@ package com.fivetech.dashboard.mapper;
 
 import java.util.List;
 import com.fivetech.dashboard.domain.MetricCardConfig;
+import com.fivetech.dashboard.domain.MetricGroupConfig;
 import com.fivetech.dashboard.domain.PageMetricConfig;
 
 /**
@@ -28,7 +29,8 @@ public interface DashboardConfigMapper
     List<PageMetricConfig> selectAllPageMetrics();
 
     /**
-     * 查询分组编码，用于校验指标卡引用的 group_code 是否存在
+     * 查询启用的分组，按 sort_no 排序。
+     * <p>既用于校验指标卡引用的 group_code 是否存在，也是分组名与分组按钮顺序的来源。</p>
      */
-    List<String> selectEnabledGroupCodes();
+    List<MetricGroupConfig> selectEnabledGroups();
 }

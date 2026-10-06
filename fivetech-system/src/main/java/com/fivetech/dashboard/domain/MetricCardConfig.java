@@ -27,7 +27,16 @@ public class MetricCardConfig implements Serializable
 
     private String sourceField;
 
+    /** 更新频率 realtime / hour / day。取值固定，来自 update_frequency 列 */
+    private String updateFrequency;
+
+    /** 仅支持单日查询：区间跨天时不查、不展示（如活跃人数、ARPPU） */
+    private boolean singleDayOnly;
+
     private String chartType;
+
+    /** 涨跌好坏方向 up / down / flat / range，来自 direction 列 */
+    private String direction;
 
     /** INT / MONEY / PCT / MIN / MULTIPLE */
     private String valueFormat;
@@ -136,6 +145,16 @@ public class MetricCardConfig implements Serializable
         this.sourceField = sourceField;
     }
 
+    public String getUpdateFrequency()
+    {
+        return updateFrequency;
+    }
+
+    public void setUpdateFrequency(String updateFrequency)
+    {
+        this.updateFrequency = updateFrequency;
+    }
+
     public String getChartType()
     {
         return chartType;
@@ -144,6 +163,16 @@ public class MetricCardConfig implements Serializable
     public void setChartType(String chartType)
     {
         this.chartType = chartType;
+    }
+
+    public String getDirection()
+    {
+        return direction;
+    }
+
+    public void setDirection(String direction)
+    {
+        this.direction = direction;
     }
 
     public String getValueFormat()
@@ -294,5 +323,14 @@ public class MetricCardConfig implements Serializable
     public void setRemark(String remark)
     {
         this.remark = remark;
+    }
+    public boolean isSingleDayOnly()
+    {
+        return singleDayOnly;
+    }
+
+    public void setSingleDayOnly(boolean singleDayOnly)
+    {
+        this.singleDayOnly = singleDayOnly;
     }
 }

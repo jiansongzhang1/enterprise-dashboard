@@ -15,14 +15,53 @@ public class UdsRow
 {
     private final Map<String, Object> cells;
 
+    /**
+     * 列名小写 → 原始列名。上游表定义的大小写不一定和我们配置里写的一致
+     * （ads_kpi_summary_1h 里是 GGR / bonusAmount / India_DDHH），
+     * 精确匹配取不到值时不会报错，只会安静地返回 null，指标就此变空。
+     */
+    private final Map<String, String> lowerIndex;
+
     public UdsRow(Map<String, Object> cells)
     {
-        this.cells = cells;
+        this.cells = cells == null ? java.util.Map.of() : cells;
+        Map<String, String> index = new java.util.HashMap<>(this.cells.size() * 2);
+        for (String key : this.cells.keySet())
+        {
+            if (key != null)
+            {
+                // 先到先得：真出现同名不同大小写的两列，保留先出现的那个，
+                // 并在调用侧靠 cells() 能看出全貌
+                index.putIfAbsent(key.toLowerCase(java.util.Locale.ROOT), key);
+            }
+        }
+        this.lowerIndex = index;
     }
 
+    /**
+     * 按列名取原始值。<b>先精确匹配，取不到再忽略大小写匹配一次</b>。
+     */
     public Object raw(String column)
     {
-        return column == null ? null : cells.get(column);
+        if (column == null)
+        {
+            return null;
+        }
+        Object exact = cells.get(column);
+        if (exact != null || cells.containsKey(column))
+        {
+            return exact;
+        }
+        String actual = lowerIndex.get(column.toLowerCase(java.util.Locale.ROOT));
+        return actual == null ? null : cells.get(actual);
+    }
+
+    /** 该列是否存在（不区分大小写） */
+    public boolean has(String column)
+    {
+        return column != null
+            && (cells.containsKey(column)
+                || lowerIndex.containsKey(column.toLowerCase(java.util.Locale.ROOT)));
     }
 
     public String str(String column)

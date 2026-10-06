@@ -56,7 +56,7 @@ curl --location "$MGMT/actuator/health"
 
 ## 3. 指标汇总 `/dashboard/metrics/summary`
 
-### 3.1 今日 · 小时粒度 · 环比
+### 3.1 今日 · 小时粒度
 
 ```bash
 curl --location "$BASE/dashboard/metrics/summary" \
@@ -64,7 +64,6 @@ curl --location "$BASE/dashboard/metrics/summary" \
   --header 'Content-Type: application/json' \
   --data '{
     "granularity": "HOUR",
-    "compareType": "PREV_PERIOD",
     "metricCodes": ["reg","ftd","ftdr","dep","wd","net"],
     "pageNum": 1,
     "pageSize": 20
@@ -84,36 +83,18 @@ curl --location "$BASE/dashboard/metrics/summary" \
 
 预期：`granularity` 变成 `DAY`，`warnings` 含 `GRANULARITY_DOWNGRADED`。
 
-### 3.3 自定义区间 + 自定义对比（等长）
+### 3.3 自定义区间 · 日粒度
 
 ```bash
 curl --location "$BASE/dashboard/metrics/summary" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{
-    "from": "2026-09-01",
-    "to": "2026-09-12",
-    "granularity": "DAY",
-    "compareType": "CUSTOM",
-    "compareFrom": "2026-08-20",
-    "compareTo": "2026-08-31"
-  }'
+  --data '{"from": "2026-09-01", "to": "2026-09-12", "granularity": "DAY"}'
 ```
 
-### 3.4 边界：对比区间与主区间重叠（应报错）
+> 指标汇总不做对比期，compareType / compareFrom / compareTo 已移除，传了也会被忽略。
 
-```bash
-curl --location "$BASE/dashboard/metrics/summary" \
-  --header "Authorization: Bearer $TOKEN" \
-  --header 'Content-Type: application/json' \
-  --data '{ "from": "2026-09-01", "to": "2026-09-12",
-    "compareType": "CUSTOM", "compareFrom": "2026-09-10", "compareTo": "2026-09-15"
-  }'
-```
-
-预期：`code` 非 200，msg 含「对比区间不能与主区间重叠」。
-
-### 3.5 边界：早于站点上线日（应报错）
+### 3.4 边界：早于站点上线日（应报错）
 
 ```bash
 curl --location "$BASE/dashboard/metrics/summary" \
@@ -122,7 +103,7 @@ curl --location "$BASE/dashboard/metrics/summary" \
   --data '{"from":"2026-01-01","to":"2026-01-31"}'
 ```
 
-### 3.6 安全：注入式排序列（应静默回退，返回 200）
+### 3.5 安全：注入式排序列（应静默回退，返回 200）
 
 ```bash
 curl --location "$BASE/dashboard/metrics/summary" \
@@ -135,65 +116,95 @@ curl --location "$BASE/dashboard/metrics/summary" \
 
 ## 4. 明细查询
 
-### 4.1 会员明细 · 全部列
+### 4.1 会员明细 · 默认（不限时间，返回 27 列定义）
 
 ```bash
 curl --location "$BASE/dashboard/records/member" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"viewScheme":"ALL","pageNum":1,"pageSize":20}'
+  --data '{"pageNum":1,"pageSize":20}'
 ```
 
-### 4.2 会员明细 · 模拟从首存指标下钻
+### 4.2 会员明细 · 完整入参（对齐原型 MVP-V1.0）
 
 ```bash
 curl --location "$BASE/dashboard/records/member" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
   --data '{
-    "slotFrom": "2026-09-13 09:00",
-    "slotTo": "2026-09-13 10:00",
-    "sourceMetricCode": "ftd",
-    "timeField": "FTD_TIME",
-    "viewScheme": "FTD",
-    "hasFirstDeposit": true
+    "keyword": "",
+    "registerTimeFrom": "2026-09-13 09:00",
+    "registerTimeTo": "2026-09-13 10:00",
+    "firstDepositTimeFrom": null,
+    "firstDepositTimeTo": null,
+    "lastBetTimeFrom": null,
+    "lastBetTimeTo": null,
+    "status": "ok",
+    "userType": "real",
+    "level": "VIP3",
+    "country": "IN",
+    "registerChannel": "LP-01 / organic",
+    "cumulativeDepositMin": 10000,
+    "cumulativeDepositMax": 500000,
+    "sourceMetricCode": "reg",
+    "sortColumn": "registerTime",
+    "sortDirection": "desc",
+    "pageNum": 1,
+    "pageSize": 20
   }'
 ```
 
+- 三个时间条件各自独立、可叠加，都是 `yyyy-MM-dd HH:mm`、左闭右开；都不传 = 不限时间。
+- 从指标下钻：注册类 → `registerTime*`，首存类（ftd / ftdA）→ `firstDepositTime*`，活跃人数 → `lastBetTime*`。
+- 枚举：`status` ok/pend/frozen/self/banned；`userType` real/trial/test/agent；`level` VIP1–VIP18；`country` IN/NP/BD/LK/PK。
+
 预期：`columns` 只剩 key + ftd 两组，`context.spanFrom/To` 等于 slot。
 
-### 4.3 交易明细 · 存款成功单
+### 4.3 存款明细 · 成功单
 
 ```bash
-curl --location "$BASE/dashboard/records/transaction" \
+curl --location "$BASE/dashboard/records/deposit" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"type":"DEPOSIT","status":"succ","pageNum":1,"pageSize":20}'
+  --data '{"status":"succ","pageNum":1,"pageSize":20}'
 ```
 
-预期：`summaryNote` 为「仅计成功单」。
+预期：`columns` 9 列；`summary` 为 `{}`、`summaryNote` 为 `null`（订单表混币种，不出合计）。
 
-### 4.4 交易明细 · 方向与状态不匹配（应空结果而非报错）
+### 4.4 存款明细 · 下钻时间片
 
 ```bash
-curl --location "$BASE/dashboard/records/transaction" \
+curl --location "$BASE/dashboard/records/deposit" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"type":"DEPOSIT","status":"auditing"}'
+  --data '{"slotFrom":"2026-09-13 09:00","slotTo":"2026-09-13 10:00","sourceMetricCode":"dep","status":"succ"}'
 ```
 
-### 4.5 投注明细 · 按厂商筛选
+### 4.5 提款明细 · 待审核
+
+```bash
+curl --location "$BASE/dashboard/records/withdraw" \
+  --header "Authorization: Bearer $TOKEN" \
+  --header 'Content-Type: application/json' \
+  --data '{"status":"auditing","auditStatus":"pending","sortColumn":"createTime","sortDirection":"desc"}'
+```
+
+预期：`columns` 17 列，最后一列 `auditNote`；USDT 订单的 `bankName/bankCode/bankCountry` 为 `null`。
+
+### 4.6 投注明细 · 平台 + 类型 + 金额区间
 
 ```bash
 curl --location "$BASE/dashboard/records/bet" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"vendor":"JILI","sortColumn":"betAmount","sortDirection":"desc"}'
+  --data '{"vendorCode":"JILI","gameType":"slots","game":"Super Ace","settleStatus":"done","betAmountMin":100,"betAmountMax":5000,"sortColumn":"betAmount","sortDirection":"desc"}'
 ```
+
+预期：`columns` 14 列，默认按 `betTime desc`；未结算注单 `payout`、`winLoss` 为 `null`。
 
 ---
 
-## 5. CSV 导出（`export_csv: true`）
+## 5. 导出 XLSX（`export_csv: true`，字段名为兼容历史保留，也可传 `export: true`）
 
 命令行下载，`-OJ` 会用响应头里的文件名落盘：
 
@@ -201,7 +212,7 @@ curl --location "$BASE/dashboard/records/bet" \
 curl --location "$BASE/dashboard/records/member" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"viewScheme":"ALL","export_csv":true}' \
+  --data '{"columns":["status","registerTime","cumulativeDepositAmount"],"export_csv":true}' \
   -OJ
 ```
 
@@ -212,18 +223,17 @@ curl --location "$BASE/dashboard/metrics/summary" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
   --data '{"granularity":"HOUR","export_csv":true}' \
-  -D - -o 指标汇总.csv
+  -D - -o 指标汇总.xlsx
 ```
 
 检查要点：
 
 ```bash
-file 指标汇总.csv                    # 应为 UTF-8 (with BOM)
-head -c 3 指标汇总.csv | xxd         # 前三字节应是 ef bb bf
-head -20 指标汇总.csv                # 前面是口径说明区，空行后才是表头
+file 指标汇总.xlsx                   # 应为 Microsoft Excel 2007+
+unzip -l 指标汇总.xlsx | grep sheet  # 应有两张 sheet：数据、口径说明
 ```
 
-> Postman 里用右侧 **Send** 下拉的 **Send and Download**，否则 CSV 会以乱码形式显示在响应区。
+> Postman 里用右侧 **Send** 下拉的 **Send and Download**，否则 XLSX 会以乱码形式显示在响应区。
 
 导出权限未授时应报错（默认要求 `dashboard:export:csv`）：
 

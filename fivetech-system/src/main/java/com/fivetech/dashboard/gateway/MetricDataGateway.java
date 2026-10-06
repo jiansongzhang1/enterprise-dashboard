@@ -4,8 +4,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import com.fivetech.dashboard.domain.vo.BetRecordVO;
+import com.fivetech.dashboard.domain.vo.DepositRecordVO;
 import com.fivetech.dashboard.domain.vo.MemberRecordVO;
-import com.fivetech.dashboard.domain.vo.TransactionRecordVO;
+import com.fivetech.dashboard.domain.vo.WithdrawRecordVO;
 
 /**
  * 外部数据平台网关。
@@ -60,12 +61,54 @@ public interface MetricDataGateway
     RecordPage<MemberRecordVO> queryMemberRecords(RecordPageRequest request);
 
     /**
-     * 查询交易明细分页（存提合并）
+     * 查询存款明细分页
      */
-    RecordPage<TransactionRecordVO> queryTransactionRecords(RecordPageRequest request);
+    RecordPage<DepositRecordVO> queryDepositRecords(RecordPageRequest request);
+
+    /**
+     * 查询提款明细分页
+     */
+    RecordPage<WithdrawRecordVO> queryWithdrawRecords(RecordPageRequest request);
 
     /**
      * 查询投注明细分页
      */
     RecordPage<BetRecordVO> queryBetRecords(RecordPageRequest request);
+
+    /**
+     * 拆解查询：按配置的维度分组，取区间 [from, to) 的聚合值。运营总览的排行榜、队列、
+     * 用户快照、注册渠道都走它。
+     *
+     * @param key {@code dashboard.gateway.uds.breakdowns} 下的配置名
+     * @param from 区间开始（含）
+     * @param to 区间结束（不含）
+     * @return 未配置时 {@code configured=false}，不抛异常；数据平台故障照常抛出
+     */
+    BreakdownResult queryBreakdown(String key, java.time.LocalDateTime from, java.time.LocalDateTime to);
+
+    // ===================== 异步导出 =====================
+
+    /**
+     * 提交明细异步导出。筛选、排序、时间与同名分页查询完全同源，只是不分页。
+     *
+     * @param tab member / deposit / withdraw / bet
+     * @param request 与分页查询相同的请求（分页参数被忽略）
+     * @param maxRows 行数上限，&lt;=0 表示用数据平台默认上限
+     */
+    ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows);
+
+    /**
+     * 提交压测数据集导出，只用于验证大文件的生成与下载链路。
+     *
+     * @param merchantCode 商户过滤，空表示不过滤
+     * @param detailRows true 按明细行导出（大文件），false 按天 × 商户汇总（几行）
+     * @param maxRows 行数上限，&lt;=0 表示不限
+     */
+    ExportJob submitBenchmarkExport(String merchantCode, boolean detailRows, long maxRows);
+
+    /** 查询导出作业；DONE 时文件链接为现签 */
+    ExportJob getExportJob(String jobId);
+
+    /** 取消排队或运行中的导出作业 */
+    ExportJob cancelExportJob(String jobId);
 }

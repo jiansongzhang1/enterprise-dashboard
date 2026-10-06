@@ -33,12 +33,6 @@ public class QueryContext implements Serializable
     /** 主区间结束（含），yyyy-MM-dd HH:mm */
     private String spanTo;
 
-    /** 对比区间开始，无对比时为空 */
-    private String compareFrom;
-
-    /** 对比区间结束，无对比时为空 */
-    private String compareTo;
-
     /** 本次生效的粒度 */
     private Granularity granularity;
 
@@ -60,7 +54,7 @@ public class QueryContext implements Serializable
     /** 延迟窗口小时数 */
     private Integer delayWindowHours;
 
-    /** 警告码，如 COMPARE_LENGTH_MISMATCH。不拦截请求，仅提示 */
+    /** 警告码，如 GRANULARITY_DOWNGRADED。不拦截请求，仅提示 */
     private List<String> warnings = new ArrayList<>();
 
     public void addWarning(String code)
@@ -119,26 +113,6 @@ public class QueryContext implements Serializable
     public void setSpanTo(String spanTo)
     {
         this.spanTo = spanTo;
-    }
-
-    public String getCompareFrom()
-    {
-        return compareFrom;
-    }
-
-    public void setCompareFrom(String compareFrom)
-    {
-        this.compareFrom = compareFrom;
-    }
-
-    public String getCompareTo()
-    {
-        return compareTo;
-    }
-
-    public void setCompareTo(String compareTo)
-    {
-        this.compareTo = compareTo;
     }
 
     public Granularity getGranularity()

@@ -43,16 +43,17 @@ public class BaseDashboardQuery implements Serializable
     private String sourceMetricCode;
 
     /**
-     * 是否导出 CSV。
+     * 是否导出文件（XLSX）。
      * <p>
-     * 为 true 时接口不返回 JSON，直接返回 CSV 文件流；此时<b>忽略分页参数</b>，
+     * 为 true 时接口不返回 JSON，直接返回 XLSX 文件；此时<b>忽略分页参数</b>，
      * 导出当前筛选条件下的全部数据（上限见 {@code dashboard.export.max-rows}），
      * 与原型「匯出範圍：當前篩選條件下的全部資料（非當前頁）」一致。
      * <p>
-     * 字段名按约定用下划线 {@code export_csv}，同时兼容驼峰 {@code exportCsv}。
+     * 字段名 {@code export_csv} 是历史约定，格式已统一为 XLSX，名字保留以免前端改动；
+     * 同时兼容 {@code exportCsv} 与 {@code export}。
      */
     @JsonProperty("export_csv")
-    @JsonAlias("exportCsv")
+    @JsonAlias({ "exportCsv", "export" })
     private boolean exportCsv;
 
     public String getSiteCode()

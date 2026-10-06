@@ -466,8 +466,14 @@ public class SysMenuServiceImpl implements ISysMenuService
      */
     public String getRouteName(String name, String path)
     {
-        String routerName = StringUtils.isNotEmpty(name) ? name : path;
-        return StringUtils.capitalize(routerName);
+        if (StringUtils.isNotEmpty(name))
+        {
+            // 配了 route_name 就原样下发。Vue 路由的 name 大小写敏感，
+            // 前端按 name 映射到自己的页面组件，这里擅自首字母大写会让映射直接落空
+            return name;
+        }
+        // 没配才回退到路由地址，并按老规矩首字母大写
+        return StringUtils.capitalize(path);
     }
 
     /**

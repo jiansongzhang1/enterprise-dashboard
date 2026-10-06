@@ -42,6 +42,53 @@ public class DashboardProperties
     /** CSV 导出配置 */
     private ExportProperties export = new ExportProperties();
 
+    /**
+     * 从指标下钻到存款明细时按哪个时间筛：createTime 创建时间 / finishTime 完成时间。
+     * <p>必须与数据平台「存款总额」的时间归属一致，否则跨时间片的订单（09:58 创建、10:02 成功）
+     * 会让下钻金额和指标值对不上。TODO：待数据团队确认口径后定默认值。</p>
+     */
+    private String depositDrillTimeField = "createTime";
+
+    /** 从指标下钻到提款明细时按哪个时间筛，含义同 depositDrillTimeField */
+    private String withdrawDrillTimeField = "createTime";
+
+    /**
+     * 指标汇总表中支持点单元格下钻的指标编码，对应 /summary 返回 columns[].drillable。
+     * <p>一期先放配置，不进数据库；取值与 API 文档第 5 章「下钻映射」一致。</p>
+     */
+    private java.util.List<String> summaryDrillableMetrics = new java.util.ArrayList<>(java.util.List.of(
+        "reg", "ftd", "ftdA", "dep", "arppu", "dOkR", "dT", "wd", "wOkR", "wT", "active", "bet"));
+
+    public java.util.List<String> getSummaryDrillableMetrics()
+    {
+        return summaryDrillableMetrics;
+    }
+
+    public void setSummaryDrillableMetrics(java.util.List<String> summaryDrillableMetrics)
+    {
+        this.summaryDrillableMetrics = summaryDrillableMetrics;
+    }
+
+    public String getDepositDrillTimeField()
+    {
+        return depositDrillTimeField;
+    }
+
+    public void setDepositDrillTimeField(String depositDrillTimeField)
+    {
+        this.depositDrillTimeField = depositDrillTimeField;
+    }
+
+    public String getWithdrawDrillTimeField()
+    {
+        return withdrawDrillTimeField;
+    }
+
+    public void setWithdrawDrillTimeField(String withdrawDrillTimeField)
+    {
+        this.withdrawDrillTimeField = withdrawDrillTimeField;
+    }
+
     public String getDefaultSite()
     {
         return defaultSite;

@@ -16,7 +16,6 @@ import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.dashboard.domain.ResolvedRange;
 import com.fivetech.dashboard.domain.query.BaseDashboardQuery;
 import com.fivetech.dashboard.domain.vo.QueryContext;
-import com.fivetech.dashboard.enums.CompareType;
 import com.fivetech.dashboard.enums.Granularity;
 import com.fivetech.dashboard.gateway.DataFreshness;
 import com.fivetech.dashboard.gateway.MetricDataGateway;
@@ -115,66 +114,6 @@ public class TimeRangeResolver
     }
 
     /**
-     * 解析对比区间。返回 null 表示不对比。
-     *
-     * @param warnings 校验产生的警告码写入此列表（不拦截请求）
-     */
-    public ResolvedRange resolveCompare(CompareType compareType, String compareFrom, String compareTo,
-            ResolvedRange main, List<String> warnings)
-    {
-        if (compareType == null || compareType == CompareType.NONE || main.isUnbounded())
-        {
-            return null;
-        }
-        long days = Math.max(1, ChronoUnit.DAYS.between(main.getFrom().toLocalDate(), main.getTo().toLocalDate()));
-        LocalDateTime from;
-        LocalDateTime to;
-        switch (compareType)
-        {
-            case LAST_YEAR:
-                from = main.getFrom().minusYears(1);
-                to = main.getTo().minusYears(1);
-                break;
-            case CUSTOM:
-                LocalDate cf = parseDate(compareFrom, "compareFrom");
-                LocalDate ct = parseDate(compareTo, "compareTo");
-                // 四条校验，与原型完全一致，前端校验不可信
-                if (ct.isBefore(cf))
-                {
-                    throw new ServiceException("对比区间结束日不能早于开始日");
-                }
-                if (cf.isBefore(launchDate()))
-                {
-                    throw new ServiceException("对比区间不能早于站点上线日 " + properties.getLaunchDate());
-                }
-                from = cf.atStartOfDay();
-                to = ct.plusDays(1).atStartOfDay();
-                if (from.isBefore(main.getTo()) && main.getFrom().isBefore(to))
-                {
-                    throw new ServiceException("对比区间不能与主区间重叠");
-                }
-                long compareDays = ChronoUnit.DAYS.between(cf, ct) + 1;
-                if (compareDays != days)
-                {
-                    // 长度不等只警告不拦截：用户可能就是想比一个长短不同的区间
-                    warnings.add("COMPARE_LENGTH_MISMATCH");
-                }
-                break;
-            case PREV_PERIOD:
-            default:
-                Duration span = Duration.between(main.getFrom(), main.getTo());
-                to = main.getFrom();
-                from = to.minus(span);
-                break;
-        }
-        if (from.toLocalDate().isBefore(launchDate()))
-        {
-            warnings.add("COMPARE_BEFORE_LAUNCH");
-        }
-        return ResolvedRange.of(from, to, main.getGranularity());
-    }
-
-    /**
      * 计算当前区间可用的粒度。前端只做渲染，不自行判断。
      */
     public List<Granularity> availableGranularities(ResolvedRange range)
@@ -220,7 +159,7 @@ public class TimeRangeResolver
     /**
      * 组装查询上下文
      */
-    public QueryContext buildContext(String siteCode, ResolvedRange main, ResolvedRange compare,
+    public QueryContext buildContext(String siteCode, ResolvedRange main,
             DataFreshness freshness, List<String> warnings)
     {
         QueryContext context = new QueryContext();
@@ -234,11 +173,6 @@ public class TimeRangeResolver
             context.setSpanTo(main.formatTo());
             context.setGranularity(main.getGranularity());
             context.setAvailableGranularities(availableGranularities(main));
-        }
-        if (compare != null)
-        {
-            context.setCompareFrom(compare.formatFrom());
-            context.setCompareTo(compare.formatTo());
         }
         if (freshness != null)
         {
@@ -299,7 +233,10 @@ public class TimeRangeResolver
         }
     }
 
-    private LocalDateTime parseDateTime(String value, String field)
+    /**
+     * 解析 yyyy-MM-dd HH:mm（也接受 yyyy-MM-dd，按当天 00:00）。格式不对抛 ServiceException，提示带参数名
+     */
+    public LocalDateTime parseDateTime(String value, String field)
     {
         try
         {

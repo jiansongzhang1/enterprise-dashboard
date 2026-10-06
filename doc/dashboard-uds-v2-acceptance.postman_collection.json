@@ -1,0 +1,2340 @@
+{
+  "info": {
+    "_postman_id": "95c14357-8aef-4aa7-9282-ceb551bc259d",
+    "name": "Fivetech Dashboard · UDS v2 验收",
+    "description": "基于 UDS v2 联调包（2026-10-05）的后端验收用例。全部使用 UDS 已验证有数据的历史窗口：\n- 总览 / 汇总 / 明细：IST 2026-09-27 ~ 09-30；\n- 排行榜 / 注册渠道：2026-07-27 20:00 ~ 07-28 20:00；\n- 留存 / LTV：2026-09-20 ~ 10-05。\n\n标 [对账] 的断言用 UDS 联调手册里的数值（dep 7900、GGR 5825.44、赠金 1476 → net 7726.42、NGR 4349.44 等）。历史回补可能改变数值：对不上时先用 UDS Postman 包查同窗口，确认是上游变化还是后端问题。\n\n使用：\n1. 环境里设 baseUrl（本地 http://localhost:8080）和 token；后端本地联调时设 UDS_BASE_URL=http://127.0.0.1:28080 并保持 SSM 隧道；\n2. 1/2/3/5 是只读用例，可整体 Run；4 异步导出会真正提交任务，单独手动跑；\n3. 若依返回 HTTP 恒为 200，断言看响应体 code。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.info.requestName.includes('[S3]')) pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "username",
+      "value": "admin"
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "totp",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ6anMxIiwibG9naW5fdXNlcl9rZXkiOiI3OTU2MTI0ZC05YWE5LTRmMTItYjQ5ZS1hYmQ1YTk2NDk0YTkifQ.T9ojCpzdlBTw4j9oJBro-_qt98C5hodDjLGk8zC4nyJRVaTUXTn01E5GLQMlltndO8Tf6VJs6gpictn1yHWCeQ"
+    },
+    {
+      "key": "ovFrom",
+      "value": "2026-09-27 00:00"
+    },
+    {
+      "key": "ovTo",
+      "value": "2026-09-30 00:00"
+    },
+    {
+      "key": "rankFrom",
+      "value": "2026-07-27 20:00"
+    },
+    {
+      "key": "rankTo",
+      "value": "2026-07-28 20:00"
+    },
+    {
+      "key": "depKeyword",
+      "value": "替换为真实玩家ID或订单号"
+    },
+    {
+      "key": "betGame",
+      "value": "替换为真实 game_id 或游戏名"
+    },
+    {
+      "key": "depPage1",
+      "value": "[]"
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "pollCount",
+      "value": "0"
+    },
+    {
+      "key": "exportFileUrl",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 登录",
+      "item": [
+        {
+          "name": "登录（获取 token）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "code 为 Google Authenticator 6 位动态码。已有 token 可直接填集合变量 token，跳过本请求。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "const t = pm.response.json().token;",
+                  "pm.test('拿到 token', () => pm.expect(t).to.be.a('string').and.not.empty);",
+                  "if (t) pm.collectionVariables.set('token', t);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 运营总览 · 主要指标 /dashboard/metrics/overview",
+      "item": [
+        {
+          "name": "1.1 [对账] 09-27~09-30 三天合计（不对比）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"DAY\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"{{ovFrom}}\",\n  \"slotTo\": \"{{ovTo}}\",\n  \"blocks\": [\n    \"METRICS\"\n  ],\n  \"includeSeries\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "数值来自 UDS 联调手册第 5 节（dataVersion v20260930_2100）。历史回补可能改变数值：对不上时先核对 UDS 同区间 overview-total 的返回，再判断后端。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('取数未降级（blockErrors 为空）', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.blockErrors || {}).length === 0).to.be.true; });",
+                  "pm.test('empty = false', () => { const d = pm.response.json().data; pm.expect(d.empty === false).to.be.true; });",
+                  "pm.test('asOf 已回填（上游水位）', () => { const d = pm.response.json().data; pm.expect(!!d.asOf).to.be.true; });",
+                  "pm.test('跨天：不含 active / arppu', () => { const d = pm.response.json().data; pm.expect(!d.blocks.METRICS.items.some(c => ['active','arppu'].includes(c.code))).to.be.true; });",
+                  "pm.test('notices 含 SINGLE_DAY_ONLY_HIDDEN', () => { const d = pm.response.json().data; pm.expect(d.notices.some(n => n.code === 'SINGLE_DAY_ONLY_HIDDEN')).to.be.true; });",
+                  "pm.test('net / ngr 的 udsMetric 标明为后端相减', () => { const d = pm.response.json().data; pm.expect(['net','ngr'].every(k => (d.blocks.METRICS.items.find(c => c.code === k) || {}).udsMetric.includes('-'))).to.be.true; });",
+                  "pm.test('首存ARPPU 构成的「首存总金额」已可取（ftd_amount）', () => { const d = pm.response.json().data; pm.expect(((d.blocks.METRICS.items.find(c => c.code === 'ftdA') || {}).composition || {operands: []}).operands.every(o => o.available)).to.be.true; });",
+                  "pm.test('[对账] reg ≈ 22', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'reg') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 22)).to.be.at.most(0); });",
+                  "pm.test('[对账] ftd ≈ 4', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'ftd') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 4)).to.be.at.most(0); });",
+                  "pm.test('[对账] dep ≈ 7900', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'dep') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 7900)).to.be.at.most(1); });",
+                  "pm.test('[对账] wd ≈ 173.58', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'wd') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 173.58)).to.be.at.most(1); });",
+                  "pm.test('[对账] bet ≈ 36621.55', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'bet') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 36621.55)).to.be.at.most(1); });",
+                  "pm.test('[对账] ggr ≈ 5825.44', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'ggr') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 5825.44)).to.be.at.most(1); });",
+                  "pm.test('[对账] bonus ≈ 1476', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'bonus') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 1476)).to.be.at.most(1); });",
+                  "pm.test('[对账] net ≈ 7726.42', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'net') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 7726.42)).to.be.at.most(1); });",
+                  "pm.test('[对账] ngr ≈ 4349.44', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'ngr') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 4349.44)).to.be.at.most(1); });",
+                  "pm.test('[对账] ftdr ≈ 18.18', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'ftdr') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 18.18)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] ftdA ≈ 1425', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'ftdA') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 1425)).to.be.at.most(0.1); });",
+                  "pm.test('[对账] turnX ≈ 4.64', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'turnX') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 4.64)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] dOkR ≈ 21.62', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'dOkR') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 21.62)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] dT ≈ 0.5', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'dT') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 0.5)).to.be.at.most(0.1); });",
+                  "pm.test('[对账] wOkR ≈ 100', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'wOkR') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 100)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] wT ≈ 114.7', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'wT') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 114.7)).to.be.at.most(0.1); });",
+                  "pm.test('[对账] killR ≈ 15.91', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'killR') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 15.91)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] bonusR ≈ 4.03', () => { const d = pm.response.json().data; const v = (d.blocks.METRICS.items.find(c => c.code === 'bonusR') || {}).value; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 4.03)).to.be.at.most(0.01); });",
+                  "pm.test('DAY 序列 3 个点', () => { const d = pm.response.json().data; pm.expect(d.slot.points === 3 && d.blocks.METRICS.items.every(c => (c.series || []).length === 3)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 三天 + 环比 PREV_PERIOD（对比期 09-24~09-27）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"slotFrom\": \"{{ovFrom}}\",\n  \"slotTo\": \"{{ovTo}}\",\n  \"blocks\": [\n    \"METRICS\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('compare 为 09-24 00:00 ~ 09-27 00:00', () => { const d = pm.response.json().data; pm.expect(d.compare && d.compare.from === '2026-09-24 00:00' && d.compare.to === '2026-09-27 00:00').to.be.true; });",
+                  "pm.test('dep 有对比值', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'dep') || {}).prevValue != null).to.be.true; });",
+                  "pm.test('PCT 指标只给 deltaPt 不给 deltaPct', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.filter(c => c.valueFormat === 'PCT').every(c => c.deltaPct == null)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 单日 09-27（日数据集）→ active / arppu 照常展示",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"2026-09-27 00:00\",\n  \"slotTo\": \"2026-09-28 00:00\",\n  \"metrics\": [\n    \"active\",\n    \"arppu\",\n    \"dep\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('active / arppu 卡片都在', () => { const d = pm.response.json().data; pm.expect(['active','arppu'].every(k => d.blocks.METRICS.items.some(c => c.code === k))).to.be.true; });",
+                  "pm.test('无 SINGLE_DAY_ONLY_HIDDEN', () => { const d = pm.response.json().data; pm.expect(!d.notices.some(n => n.code === 'SINGLE_DAY_ONLY_HIDDEN')).to.be.true; });",
+                  "pm.test('arppu 合计有值（dashboard_overview_day_v2.arppu_day）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'arppu') || {}).value != null).to.be.true; });",
+                  "pm.test('active 日合计为 null（active_day 未确认，占位）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'active') || {}).value == null).to.be.true; });",
+                  "pm.test('小时序列 24 个点', () => { const d = pm.response.json().data; pm.expect(d.slot.points === 24).to.be.true; });",
+                  "pm.test('active 小时序列有值（active_hour）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'active').series || []).some(v => v != null)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 小时粒度 09-29 全天 + 环比",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"slotFrom\": \"2026-09-29 00:00\",\n  \"slotTo\": \"2026-09-30 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('24 个点', () => { const d = pm.response.json().data; pm.expect(d.slot.points === 24).to.be.true; });",
+                  "pm.test('指标卡 20 张', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.total === 20).to.be.true; });",
+                  "pm.test('核心指标 8 个', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.coreCount === 8).to.be.true; });",
+                  "pm.test('dep 序列有值', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'dep').series || []).some(v => v != null)).to.be.true; });",
+                  "pm.test('比率已换算为百分数（dOkR 合计 ≤ 100 且 > 1）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'dOkR') || {}).value == null || ((d.blocks.METRICS.items.find(c => c.code === 'dOkR') || {}).value > 1 && (d.blocks.METRICS.items.find(c => c.code === 'dOkR') || {}).value <= 100)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 周粒度 09-01~09-29（每格单独查合计，batch）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"WEEK\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"2026-09-01 00:00\",\n  \"slotTo\": \"2026-09-29 00:00\",\n  \"metrics\": [\n    \"dep\",\n    \"ftdr\",\n    \"net\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('4 个周格', () => { const d = pm.response.json().data; pm.expect(d.slot.points === 4).to.be.true; });",
+                  "pm.test('dep 每格都有值', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'dep').series || []).every(v => v != null)).to.be.true; });",
+                  "pm.test('net 每格都有值（周格内 dep − wd）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'net').series || []).every(v => v != null)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 [未就绪] 10-04（UDS 返回 4403）→ 不报错、不填 0",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"2026-10-04 00:00\",\n  \"slotTo\": \"2026-10-05 00:00\",\n  \"metrics\": [\n    \"dep\",\n    \"reg\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "上游数据目前到 9 月底，10-04 窗口 UDS 返回 4403。后端按水位截断，整段都在水位之上时返回 null。若上游已补齐，本用例会失败，属正常。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('dep 为 null（不是 0）', () => { const d = pm.response.json().data; pm.expect((d.blocks.METRICS.items.find(c => c.code === 'dep') || {}).value == null).to.be.true; });",
+                  "pm.test('序列全为 null', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => (c.series || []).every(v => v == null))).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 整页导出（六个 sheet）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{ovFrom}}\",\n  \"slotTo\": \"{{ovTo}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"cohortFrom\": \"2026-09-20\",\n  \"cohortTo\": \"2026-10-05\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "运营总览四个接口、六个子页面汇成一个 xlsx：核心指标 / 注册渠道 / 赠金项目结构 / 热销游戏 / 留存率 / LTV。需要导出权限，用 Send and Download 保存后检查 sheet 名与顺序。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('返回 XLSX 文件', () => {",
+                  "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                  "  pm.expect(cd).to.include('attachment');",
+                  "  pm.expect(cd.toLowerCase()).to.include('.xlsx');",
+                  "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('spreadsheetml');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 整页导出 · [边界] slotTo ≤ slotFrom → 4001",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{ovTo}}\",\n  \"slotTo\": \"{{ovFrom}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 4001', () => pm.expect(pm.response.json().code).to.eql(4001));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 导出 XLSX",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{ovFrom}}\",\n  \"slotTo\": \"{{ovTo}}\",\n  \"blocks\": [\n    \"METRICS\"\n  ],\n  \"export\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('返回 XLSX 文件', () => {",
+                  "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                  "  pm.expect(cd).to.include('attachment');",
+                  "  pm.expect(cd.toLowerCase()).to.include('.xlsx');",
+                  "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('spreadsheetml');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 指标汇总 /dashboard/metrics/summary",
+      "item": [
+        {
+          "name": "2.1 [对账] 09-27~09-29 日粒度 · 合计行",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"granularity\": \"DAY\",\n  \"pageNum\": 1,\n  \"pageSize\": 50,\n  \"metricCodes\": [\n    \"reg\",\n    \"ftd\",\n    \"dep\",\n    \"wd\",\n    \"net\",\n    \"bet\",\n    \"ggr\",\n    \"bonus\",\n    \"ngr\",\n    \"ftdr\",\n    \"dOkR\",\n    \"killR\",\n    \"dT\",\n    \"wT\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "本次修复：/summary 的序列和合计行此前未做量纲换算（比率是 0～1、时长是秒），现与运营总览一致。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('3 个时间片', () => { const d = pm.response.json().data; pm.expect(d.page.total === 3).to.be.true; });",
+                  "pm.test('每列都有 core / drillable 布尔字段', () => { const d = pm.response.json().data; pm.expect(d.columns.every(c => typeof c.core === 'boolean' && typeof c.drillable === 'boolean')).to.be.true; });",
+                  "pm.test('drillable：dep / reg / bet 为 true', () => { const d = pm.response.json().data; pm.expect(['dep','reg','bet'].every(k => (d.columns.find(c => c.code === k) || {drillable: true}).drillable)).to.be.true; });",
+                  "pm.test('drillable：net / ggr / time 为 false', () => { const d = pm.response.json().data; pm.expect(['net','ggr','time'].every(k => !(d.columns.find(c => c.code === k) || {}).drillable)).to.be.true; });",
+                  "pm.test('[对账] totalRow.reg ≈ 22', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['reg']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 22)).to.be.at.most(0); });",
+                  "pm.test('[对账] totalRow.dep ≈ 7900', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['dep']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 7900)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.wd ≈ 173.58', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['wd']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 173.58)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.bet ≈ 36621.55', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['bet']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 36621.55)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.ggr ≈ 5825.44', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['ggr']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 5825.44)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.bonus ≈ 1476', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['bonus']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 1476)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.net ≈ 7726.42', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['net']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 7726.42)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.ngr ≈ 4349.44', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['ngr']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 4349.44)).to.be.at.most(1); });",
+                  "pm.test('[对账] totalRow.ftdr ≈ 18.18', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['ftdr']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 18.18)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] totalRow.dOkR ≈ 21.62', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['dOkR']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 21.62)).to.be.at.most(0.01); });",
+                  "pm.test('[对账] totalRow.dT ≈ 0.5', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['dT']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 0.5)).to.be.at.most(0.1); });",
+                  "pm.test('[对账] totalRow.wT ≈ 114.7', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['wT']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 114.7)).to.be.at.most(0.1); });",
+                  "pm.test('[对账] totalRow.killR ≈ 15.91', () => { const d = pm.response.json().data; const v = (d.totalRow || {})['killR']; pm.expect(v, '值为 null').to.not.equal(null); pm.expect(Math.abs(Number(v) - 15.91)).to.be.at.most(0.01); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 多日 ARPPU = 各日平均（汇总页口径）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"granularity\": \"DAY\",\n  \"metricCodes\": [\n    \"arppu\",\n    \"dep\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('每天的 arppu 都有值（日数据集）', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.values.arppu != null)).to.be.true; });",
+                  "pm.test('[口径] 合计 arppu = 三天 arppu 的平均（±0.1）', () => {",
+                  "  const d = pm.response.json().data;",
+                  "  const vals = d.page.rows.map(r => Number(r.values.arppu));",
+                  "  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;",
+                  "  pm.expect(Math.abs(Number(d.totalRow.arppu) - avg)).to.be.at.most(0.1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 周粒度 09-01~09-28",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-01\",\n  \"to\": \"2026-09-28\",\n  \"granularity\": \"WEEK\",\n  \"metricCodes\": [\n    \"dep\",\n    \"ftdr\",\n    \"bet\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('粒度为 WEEK', () => { const d = pm.response.json().data; pm.expect(d.context.granularity === 'WEEK').to.be.true; });",
+                  "pm.test('4 个周格', () => { const d = pm.response.json().data; pm.expect(d.page.total === 4).to.be.true; });",
+                  "pm.test('每格 dep 有值', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.values.dep != null)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 小时粒度 09-29 · 只查核心指标",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"granularity\": \"HOUR\",\n  \"onlyCore\": true,\n  \"pageSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('24 个小时片', () => { const d = pm.response.json().data; pm.expect(d.page.total === 24).to.be.true; });",
+                  "pm.test('只有核心指标列', () => { const d = pm.response.json().data; pm.expect(d.columns.slice(1).every(c => c.core)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 导出 XLSX",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "summary"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"granularity\": \"DAY\",\n  \"export_csv\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('返回 XLSX 文件', () => {",
+                  "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                  "  pm.expect(cd).to.include('attachment');",
+                  "  pm.expect(cd.toLowerCase()).to.include('.xlsx');",
+                  "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('spreadsheetml');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 明细查询 /dashboard/records/*",
+      "item": [
+        {
+          "name": "3.1 会员",
+          "item": [
+            {
+              "name": "会员 · 09-29 注册",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registerTimeFrom\": \"2026-09-29 00:00\",\n  \"registerTimeTo\": \"2026-09-30 00:00\",\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('total ≥ 13（UDS 联调 00:30 起 13 人）', () => { const d = pm.response.json().data; pm.expect(d.page.total >= 13).to.be.true; });",
+                      "pm.test('每行都有 userId', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => !!r.userId)).to.be.true; });",
+                      "pm.test('注册时间落在区间内', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => !r.registerTime || (r.registerTime >= '2026-09-29' && r.registerTime < '2026-09-30'))).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · [下钻] 首存人数 → 按首存时间",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2026-09-27 00:00\",\n  \"slotTo\": \"2026-09-30 00:00\",\n  \"sourceMetricCode\": \"ftd\",\n  \"pageSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "会员明细按首存时间下钻，行数应等于同区间指标卡 ftd（4）。不带 uds_hh 主轴，只在 first_deposit_time_india 上过滤。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('[对账] total = 首存人数 4', () => { const d = pm.response.json().data; pm.expect(d.page.total === 4).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · 不设时间 · 只查一页",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "会员页不设默认时间区间。UDS 是否接受无 time 的明细查询待联调确认；返回 4001 / 4405 时把结果反馈给数据团队。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('最多 20 行', () => { const d = pm.response.json().data; pm.expect(d.page.rows.length <= 20).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "会员 · [下钻] 活跃人数 → 拒绝，提示改投注明细",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2026-09-29 09:00\",\n  \"slotTo\": \"2026-09-29 10:00\",\n  \"sourceMetricCode\": \"active\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「投注明细」', () => pm.expect(pm.response.json().msg || '').to.include('投注明细'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "3.2 存款",
+          "item": [
+            {
+              "name": "存款 · 09-29 全部 · 第 1 页",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"pageNum\": 1,\n  \"pageSize\": 10\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('total ≥ 29', () => { const d = pm.response.json().data; pm.expect(d.page.total >= 29).to.be.true; });",
+                      "pm.test('本页 10 行', () => { const d = pm.response.json().data; pm.expect(d.page.rows.length === 10).to.be.true; });",
+                      "pm.test('按创建时间倒序', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every((r, i, a) => i === 0 || a[i-1].createTime >= r.createTime)).to.be.true; });",
+                      "const ids = (pm.response.json().data.page.rows || []).map(r => r.orderNo);",
+                      "pm.collectionVariables.set('depPage1', JSON.stringify(ids));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 09-29 全部 · 第 2 页（与第 1 页不重复）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"pageNum\": 2,\n  \"pageSize\": 10\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('与第 1 页无重复（uds_rowkey 稳定排序）', () => {",
+                      "  const p1 = JSON.parse(pm.collectionVariables.get('depPage1') || '[]');",
+                      "  const p2 = pm.response.json().data.page.rows.map(r => r.orderNo);",
+                      "  pm.expect(p2.filter(x => p1.includes(x))).to.be.empty;",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · [对账] 09-27~09-29 成功单 = 8",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"status\": \"succ\",\n  \"pageSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('total = 8（UDS deposit-success-list-count）', () => { const d = pm.response.json().data; pm.expect(d.page.total === 8).to.be.true; });",
+                      "pm.test('状态都翻译回 succ（UDS 30）', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.status === 'succ')).to.be.true; });",
+                      "pm.test('订单表无合计', () => { const d = pm.response.json().data; pm.expect(Object.keys(d.summary || {}).length === 0).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · [下钻] 存款总额时间片",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2026-09-29 00:00\",\n  \"slotTo\": \"2026-09-30 00:00\",\n  \"sourceMetricCode\": \"dep\",\n  \"status\": \"succ\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('统计区间 = 时间片', () => { const d = pm.response.json().data; pm.expect(d.context.spanFrom === '2026-09-29 00:00').to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 按金额排序（基准币 default_amount）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"sortColumn\": \"amount\",\n  \"sortDirection\": \"desc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 关键字（玩家 ID / 订单号 / 账号）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"keyword\": \"{{depKeyword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "把集合变量 depKeyword 换成一个真实玩家 ID 或订单号再跑。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 失败单（非 30 一律视为失败）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-27\",\n  \"to\": \"2026-09-29\",\n  \"status\": \"fail\",\n  \"pageSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "下推为 status < 30 OR status >= 31。同区间 成功 + 失败 = 全部订单数，可对照 3.2 的全部订单 total。"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('状态都是 fail', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.status === 'fail')).to.be.true; });",
+                      "pm.test('标签为「失败」', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.statusLabel === '失败')).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · [边界] 状态 pend 已取消 → 拦截",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"status\": \"pend\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code ≠ 200（被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                      "pm.test('msg 含「succ/fail」', () => pm.expect(pm.response.json().msg || '').to.include('succ/fail'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "存款 · 同步导出 XLSX",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/deposit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "deposit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"export_csv\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('返回 XLSX 文件', () => {",
+                      "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+                      "  pm.expect(cd).to.include('attachment');",
+                      "  pm.expect(cd.toLowerCase()).to.include('.xlsx');",
+                      "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('spreadsheetml');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "3.3 提款",
+          "item": [
+            {
+              "name": "提款 · 09-29",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/withdraw",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "withdraw"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('total ≥ 2', () => { const d = pm.response.json().data; pm.expect(d.page.total >= 2).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "3.4 投注",
+          "item": [
+            {
+              "name": "投注 · 09-29 · 第 1 页",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"pageSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('total ≥ 100', () => { const d = pm.response.json().data; pm.expect(d.page.total >= 100).to.be.true; });",
+                      "pm.test('金额为基准币 default_bet_amount', () => { const d = pm.response.json().data; pm.expect(d.page.rows.every(r => r.betAmount != null)).to.be.true; });",
+                      "pm.test('winLoss 有值（取平台视角 default_ggr）', () => { const d = pm.response.json().data; pm.expect(d.page.rows.some(r => r.winLoss != null)).to.be.true; });",
+                      "const bad = ((pm.response.json().data.page || {}).rows || []).filter(r => r.winLoss != null && r.payout != null && Math.abs(r.winLoss - (r.betAmount - r.payout)) >= 0.01);",
+                      "if (bad.length) console.log('提示：' + bad.length + ' 行 default_ggr ≠ 投注 − 派彩，需与数据团队核对来源语义（手册第 6 节）');"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · [下钻] 活跃人数 → 该时间片投注明细",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"slotFrom\": \"2026-09-29 09:00\",\n  \"slotTo\": \"2026-09-29 10:00\",\n  \"sourceMetricCode\": \"active\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });",
+                      "pm.test('统计区间 = 时间片', () => { const d = pm.response.json().data; pm.expect(d.context.spanFrom === '2026-09-29 09:00').to.be.true; });",
+                      "const rows = (pm.response.json().data.page || {}).rows || [];",
+                      "console.log('本页去重用户数（对照小时活跃人数）：' + new Set(rows.map(r => r.userId)).size);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "投注 · 按游戏（game_id 精确 / game_name 包含）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/records/bet",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "records",
+                    "bet"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\",\n  \"game\": \"{{betGame}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                      "pm.test('data 含 context / columns / page', () => { const d = pm.response.json().data; pm.expect(!!(d.context && d.columns && d.page)).to.be.true; });",
+                      "pm.test('rows 为数组', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d.page.rows)).to.be.true; });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. 异步导出 /dashboard/export（手动用 Runner 跑）",
+      "item": [
+        {
+          "name": "4.1 提交 · 存款明细 09-29",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/export/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "export",
+                "deposit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-09-29\",\n  \"to\": \"2026-09-29\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "请求体与 /records/deposit 同源（同一份 filters / orderBy），options.channel=EXPORT，时间始终是完整时间戳。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(r.code).to.eql(200));",
+                  "pm.test('返回 jobId', () => pm.expect((r.data || {}).jobId).to.be.a('string').and.not.empty);",
+                  "if (r.data && r.data.jobId) pm.collectionVariables.set('jobId', r.data.jobId);",
+                  "pm.collectionVariables.set('pollCount', '0');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 轮询直到 DONE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/export/tasks/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "export",
+                "tasks",
+                "{{jobId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(r.code).to.eql(200));",
+                  "const job = (r.data && r.data.job) || {};",
+                  "const n = Number(pm.collectionVariables.get('pollCount') || 0) + 1;",
+                  "pm.collectionVariables.set('pollCount', String(n));",
+                  "pm.test('状态合法', () => pm.expect(['PENDING','RUNNING','DONE','FAILED','CANCELLED']).to.include(job.status));",
+                  "if (job.status === 'DONE') {",
+                  "  pm.collectionVariables.set('pollCount', '0');",
+                  "  const files = job.files || [];",
+                  "  pm.test('DONE 时至少一个文件，带 url / fileName', () => { pm.expect(files.length).to.be.above(0); files.forEach(f => { pm.expect(f.url).to.be.a('string').and.not.empty; pm.expect(f.fileName).to.be.a('string').and.not.empty; }); });",
+                  "  if (files[0]) pm.collectionVariables.set('exportFileUrl', files[0].url);",
+                  "} else if (job.status === 'FAILED') {",
+                  "  pm.test('作业失败：' + (job.errorCode || '') + ' ' + (job.errorMessage || ''), () => pm.expect.fail());",
+                  "} else if (['PENDING','RUNNING'].includes(job.status) && n < 60) {",
+                  "  setTimeout(() => {}, 2000);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[S3] 下载前 1KB（预签名链接，不带鉴权头）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Range",
+                "value": "bytes=0-1023"
+              }
+            ],
+            "url": "{{exportFileUrl}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "直接用 DONE 返回的预签名 URL；不能带 Authorization。链接 1 小时有效，过期后重跑「轮询」。本地隧道环境下 S3 是否可达取决于本机网络。"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('exportFileUrl') && pm.execution && pm.execution.skipRequest) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('S3 返回 206 或 200', () => pm.expect([200, 206]).to.include(pm.response.code));",
+                  "pm.test('GZIP 文件头 1f8b', () => { const b = pm.response.stream; pm.expect(b && b.length > 1 && b[0] === 0x1f && b[1] === 0x8b).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 [边界] 取消已完成的任务 → 4407 提示",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/export/tasks/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "export",
+                "tasks",
+                "{{jobId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code ≠ 200（被拦截）', () => pm.expect(pm.response.json().code).to.not.eql(200));",
+                  "pm.test('msg 含「任务已结束」', () => pm.expect(pm.response.json().msg || '').to.include('任务已结束'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 我的导出任务",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/export/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "export",
+                "tasks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('返回数组且含刚提交的 jobId', () => { const d = pm.response.json().data; pm.expect(Array.isArray(d) && d.some(t => t.jobId === pm.collectionVariables.get('jobId'))).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "会真正提交 UDS 导出任务，勿与只读用例一起盲跑。"
+    },
+    {
+      "name": "5. 运营总览 · 排行榜 / 注册渠道 / 留存与 LTV",
+      "item": [
+        {
+          "name": "5.1 排行榜 · 07-27 20:00~07-28 20:00（game-batch / bonus-batch）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "rankingboard"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{rankFrom}}\",\n  \"slotTo\": \"{{rankTo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('updateFrequency = hour', () => { const d = pm.response.json().data; pm.expect(d.updateFrequency === 'hour').to.be.true; });",
+                  "pm.test('游戏榜固定 Top 20', () => { const d = pm.response.json().data; pm.expect(d.games.topN === 20).to.be.true; });",
+                  "pm.test('[对账] 游戏榜 20 行（UDS game-batch rowCounts[0]）', () => { const d = pm.response.json().data; pm.expect(d.games.items.length === 20).to.be.true; });",
+                  "pm.test('rank 1..20 连续', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i) => g.rank === i + 1)).to.be.true; });",
+                  "pm.test('按投注额降序', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i, a) => i === 0 || Number(a[i-1].betAmount) >= Number(g.betAmount))).to.be.true; });",
+                  "pm.test('每行有 platformCode + gameId', () => { const d = pm.response.json().data; pm.expect(d.games.items.every(g => !!g.platformCode && !!g.gameId)).to.be.true; });",
+                  "pm.test('分母 totalBetAmount 来自全量查询，≥ Top20 之和', () => { const d = pm.response.json().data; pm.expect(Number(d.games.totalBetAmount) >= d.games.items.reduce((s, g) => s + Number(g.betAmount), 0) - 0.01).to.be.true; });",
+                  "pm.test('覆盖率 totalBetAmountPct 已给出', () => { const d = pm.response.json().data; pm.expect(!!d.games.totalBetAmountPct).to.be.true; });",
+                  "pm.test('每行都有 name（投注明细补全，查不到时用 gameId 填充）', () => { const d = pm.response.json().data; pm.expect(d.games.items.every(g => !!g.name)).to.be.true; });",
+                  "const fill = pm.response.json().data.games.items.filter(g => g.name === g.gameId).length;",
+                  "console.log('游戏名用 gameId 填充的行数：' + fill + ' / ' + pm.response.json().data.games.items.length);",
+                  "pm.test('赠金最多 6 项', () => { const d = pm.response.json().data; pm.expect(d.bonus.items.length > 0 && d.bonus.items.length <= 6).to.be.true; });",
+                  "pm.test('赠金占比合计 ≈ 100%', () => { const d = pm.response.json().data; pm.expect(Math.abs(d.bonus.items.reduce((s, i) => s + Number(i.share || 0), 0) - 100) < 0.6).to.be.true; });",
+                  "pm.test('赠金 total 为全量（≥ 各项之和）', () => { const d = pm.response.json().data; pm.expect(Number(d.bonus.total) >= d.bonus.items.reduce((s, i) => s + Number(i.amount), 0) - 0.01).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 排行榜 · 传 topN=10 → 忽略，仍 Top 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/rankingboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "rankingboard"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"slotFrom\": \"{{rankFrom}}\",\n  \"slotTo\": \"{{rankTo}}\",\n  \"topN\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('notices 含 PARAM_IGNORED', () => { const d = pm.response.json().data; pm.expect(d.notices.some(n => n.code === 'PARAM_IGNORED')).to.be.true; });",
+                  "pm.test('仍为 Top 20', () => { const d = pm.response.json().data; pm.expect(d.games.topN === 20).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 注册渠道 · 同窗口（reg-source + reg-total 两次 /v1/query）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/reg-channels",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "reg-channels"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{rankFrom}}\",\n  \"slotTo\": \"{{rankTo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('totalRegistrations > 0（全量 reg-total）', () => { const d = pm.response.json().data; pm.expect(Number(d.totalRegistrations) > 0).to.be.true; });",
+                  "pm.test('[对账] 渠道 17 个（UDS reg-source rowCounts）', () => { const d = pm.response.json().data; pm.expect(d.channels.length === 17).to.be.true; });",
+                  "pm.test('渠道站点占比合计 ≈ 100%', () => { const d = pm.response.json().data; pm.expect(Math.abs(d.channels.reduce((s, i) => s + Number(i.shareOfTotal || 0), 0) - 100) < 0.6).to.be.true; });",
+                  "pm.test('有注册的分组占比合计 ≈ 100%', () => { const d = pm.response.json().data; pm.expect(Math.abs(d.groups.filter(g => g.registrations > 0).reduce((s, i) => s + Number(i.share || 0), 0) - 100) < 0.6).to.be.true; });",
+                  "pm.test('空渠道归入 unknown，不归自然流量', () => { const d = pm.response.json().data; pm.expect(!d.channels.some(c => c.groupCode === 'og' && c.name === '未标记')).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.4 留存与 LTV · 09-20~10-05 BOTH",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "cohort"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"2026-09-20\",\n  \"slotTo\": \"2026-10-05\",\n  \"type\": \"BOTH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('updateFrequency = day', () => { const d = pm.response.json().data; pm.expect(d.updateFrequency === 'day').to.be.true; });",
+                  "pm.test('留存 15 行（每个分群日一行）', () => { const d = pm.response.json().data; pm.expect(d.retention.rows.length === 15).to.be.true; });",
+                  "pm.test('LTV 15 行', () => { const d = pm.response.json().data; pm.expect(d.ltv.rows.length === 15).to.be.true; });",
+                  "pm.test('留存有 base', () => { const d = pm.response.json().data; pm.expect(d.retention.rows.some(r => r.base != null)).to.be.true; });",
+                  "pm.test('LTV 有 base', () => { const d = pm.response.json().data; pm.expect(d.ltv.rows.some(r => r.base != null)).to.be.true; });",
+                  "pm.test('[单位] 留存率为百分数 0~100（若全部 < 1 说明上游已是百分数或 ratio-metrics 配错）', () => { const d = pm.response.json().data; pm.expect(d.retention.rows.flatMap(r => r.values).filter(v => v != null).every(v => v >= 0 && v <= 100) && d.retention.rows.flatMap(r => r.values).filter(v => v != null).some(v => v >= 1)).to.be.true; });",
+                  "pm.test('未到观察期的格子一律为 null（分群日 + N 天晚于昨天）', () => {",
+                  "  const d = pm.response.json().data;",
+                  "  const days = [1, 2, 3, 4, 5, 6, 7, 15, 30];",
+                  "  const yst = new Date(Date.now() + 330 * 60000 - 86400000).toISOString().slice(0, 10);",
+                  "  const add = (s, n) => new Date(Date.parse(s + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);",
+                  "  [d.retention, d.ltv].forEach(t => t.rows.forEach(r => r.values.forEach((v, i) => {",
+                  "    if (add(r.cohortDate, days[i]) > yst) pm.expect(v, r.cohortDate + ' D+' + days[i]).to.equal(null);",
+                  "  })));",
+                  "});",
+                  "pm.test('无 LTV_NOT_MONOTONIC', () => { const d = pm.response.json().data; pm.expect(!d.notices.some(n => n.code === 'LTV_NOT_MONOTONIC')).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.5 留存 · 只要 RETENTION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/cohort",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "cohort"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"2026-09-20\",\n  \"slotTo\": \"2026-10-05\",\n  \"type\": \"RETENTION\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+                  "pm.test('ltv 为空', () => { const d = pm.response.json().data; pm.expect(d.ltv == null).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

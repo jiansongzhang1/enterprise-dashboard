@@ -4,10 +4,10 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
- * 会员明细行。一行一名会员。
+ * 会员明细一行（对齐原型 MVP-V1.0「会员明细」页，27 列）。
  * <p>
- * 累计类字段（首存、存款、投注、NGR）对未首存会员应为 <b>null 而非 0</b>，
- * 前端显示「—」。
+ * 后端始终返回全部字段；用户在页面上自选显示哪些列（本机记忆），列定义见 {@code columns}。
+ * 无数据的字段为 null，不要当作 0。
  *
  * @author fivetech
  */
@@ -15,11 +15,32 @@ public class MemberRecordVO implements Serializable
 {
     private static final long serialVersionUID = 1L;
 
-    /** 会员账号（脱敏后） */
-    private String account;
+    /** 用户ID */
+    private String userId;
 
-    /** 会员唯一标识，供下钻与导出使用 */
-    private String memberId;
+    /** 账号名称 */
+    private String username;
+
+    /** 用户状态编码 ok/pend/frozen/self/banned */
+    private String status;
+
+    /** 用户状态名称 */
+    private String statusLabel;
+
+    /** 用户类型编码 real/trial/test/agent */
+    private String userType;
+
+    /** 用户类型名称 */
+    private String userTypeLabel;
+
+    /** 用户等级 VIP1–VIP18 */
+    private String level;
+
+    /** 国家代码 */
+    private String country;
+
+    /** 国家名称 */
+    private String countryLabel;
 
     /** 注册时间 */
     private String registerTime;
@@ -27,13 +48,7 @@ public class MemberRecordVO implements Serializable
     /** 注册渠道 */
     private String registerChannel;
 
-    /** 注册设备 */
-    private String device;
-
-    /** 是否已首存 */
-    private Boolean hasFirstDeposit;
-
-    /** 首存时间 */
+    /** 首存时间；未首存为 null */
     private String firstDepositTime;
 
     /** 首存金额 */
@@ -42,60 +57,142 @@ public class MemberRecordVO implements Serializable
     /** 首存通道 */
     private String firstDepositChannel;
 
-    /** 注册到首存的小时数 */
+    /** 注册→首存时长（小时） */
     private Integer regToFtdHours;
 
-    /** 累计存款 */
-    private BigDecimal cumulativeDeposit;
+    /** 最近存款时间 */
+    private String lastDepositTime;
 
-    /** 累计提款 */
-    private BigDecimal cumulativeWithdraw;
+    /** 最近存款金额 */
+    private BigDecimal lastDepositAmount;
 
-    /** 累计投注 */
-    private BigDecimal cumulativeBet;
+    /** 历史累计存款金额 */
+    private BigDecimal cumulativeDepositAmount;
 
-    /** 累计 NGR */
-    private BigDecimal cumulativeNgr;
+    /** 历史累计存款笔数 */
+    private Long cumulativeDepositCount;
 
-    /** 流水倍数 */
+    /** 最近投注时间 */
+    private String lastBetTime;
+
+    /** 最近投注金额 */
+    private BigDecimal lastBetAmount;
+
+    /** 历史累计投注金额 */
+    private BigDecimal cumulativeBetAmount;
+
+    /** 历史累计投注笔数 */
+    private Long cumulativeBetCount;
+
+    /** 流水倍数 = 累计投注 ÷ 累计存款 */
     private BigDecimal turnoverMultiple;
 
-    /** 价值层级编码 */
-    private String tier;
+    /** 最近提款时间 */
+    private String lastWithdrawTime;
 
-    /** 价值层级名称 */
-    private String tierLabel;
+    /** 最近提款金额 */
+    private BigDecimal lastWithdrawAmount;
 
-    /** 生命周期阶段编码 */
-    private String stage;
+    /** 历史累计提款金额 */
+    private BigDecimal cumulativeWithdrawAmount;
 
-    /** 生命周期阶段名称 */
-    private String stageLabel;
+    /** 历史累计提款笔数 */
+    private Long cumulativeWithdrawCount;
 
-    /** 最近活跃时间 */
-    private String lastActiveTime;
+    /** 历史累计GGR */
+    private BigDecimal cumulativeGgr;
 
-    /** 最近投注距今，如 "< 24h"、"9d" */
-    private String lastBetGap;
+    /** 历史累计NGR */
+    private BigDecimal cumulativeNgr;
 
-    public String getAccount()
+    public String getUserId()
     {
-        return account;
+        return userId;
     }
 
-    public void setAccount(String account)
+    public void setUserId(String userId)
     {
-        this.account = account;
+        this.userId = userId;
     }
 
-    public String getMemberId()
+    public String getUsername()
     {
-        return memberId;
+        return username;
     }
 
-    public void setMemberId(String memberId)
+    public void setUsername(String username)
     {
-        this.memberId = memberId;
+        this.username = username;
+    }
+
+    public String getStatus()
+    {
+        return status;
+    }
+
+    public void setStatus(String status)
+    {
+        this.status = status;
+    }
+
+    public String getStatusLabel()
+    {
+        return statusLabel;
+    }
+
+    public void setStatusLabel(String statusLabel)
+    {
+        this.statusLabel = statusLabel;
+    }
+
+    public String getUserType()
+    {
+        return userType;
+    }
+
+    public void setUserType(String userType)
+    {
+        this.userType = userType;
+    }
+
+    public String getUserTypeLabel()
+    {
+        return userTypeLabel;
+    }
+
+    public void setUserTypeLabel(String userTypeLabel)
+    {
+        this.userTypeLabel = userTypeLabel;
+    }
+
+    public String getLevel()
+    {
+        return level;
+    }
+
+    public void setLevel(String level)
+    {
+        this.level = level;
+    }
+
+    public String getCountry()
+    {
+        return country;
+    }
+
+    public void setCountry(String country)
+    {
+        this.country = country;
+    }
+
+    public String getCountryLabel()
+    {
+        return countryLabel;
+    }
+
+    public void setCountryLabel(String countryLabel)
+    {
+        this.countryLabel = countryLabel;
     }
 
     public String getRegisterTime()
@@ -116,26 +213,6 @@ public class MemberRecordVO implements Serializable
     public void setRegisterChannel(String registerChannel)
     {
         this.registerChannel = registerChannel;
-    }
-
-    public String getDevice()
-    {
-        return device;
-    }
-
-    public void setDevice(String device)
-    {
-        this.device = device;
-    }
-
-    public Boolean getHasFirstDeposit()
-    {
-        return hasFirstDeposit;
-    }
-
-    public void setHasFirstDeposit(Boolean hasFirstDeposit)
-    {
-        this.hasFirstDeposit = hasFirstDeposit;
     }
 
     public String getFirstDepositTime()
@@ -178,44 +255,84 @@ public class MemberRecordVO implements Serializable
         this.regToFtdHours = regToFtdHours;
     }
 
-    public BigDecimal getCumulativeDeposit()
+    public String getLastDepositTime()
     {
-        return cumulativeDeposit;
+        return lastDepositTime;
     }
 
-    public void setCumulativeDeposit(BigDecimal cumulativeDeposit)
+    public void setLastDepositTime(String lastDepositTime)
     {
-        this.cumulativeDeposit = cumulativeDeposit;
+        this.lastDepositTime = lastDepositTime;
     }
 
-    public BigDecimal getCumulativeWithdraw()
+    public BigDecimal getLastDepositAmount()
     {
-        return cumulativeWithdraw;
+        return lastDepositAmount;
     }
 
-    public void setCumulativeWithdraw(BigDecimal cumulativeWithdraw)
+    public void setLastDepositAmount(BigDecimal lastDepositAmount)
     {
-        this.cumulativeWithdraw = cumulativeWithdraw;
+        this.lastDepositAmount = lastDepositAmount;
     }
 
-    public BigDecimal getCumulativeBet()
+    public BigDecimal getCumulativeDepositAmount()
     {
-        return cumulativeBet;
+        return cumulativeDepositAmount;
     }
 
-    public void setCumulativeBet(BigDecimal cumulativeBet)
+    public void setCumulativeDepositAmount(BigDecimal cumulativeDepositAmount)
     {
-        this.cumulativeBet = cumulativeBet;
+        this.cumulativeDepositAmount = cumulativeDepositAmount;
     }
 
-    public BigDecimal getCumulativeNgr()
+    public Long getCumulativeDepositCount()
     {
-        return cumulativeNgr;
+        return cumulativeDepositCount;
     }
 
-    public void setCumulativeNgr(BigDecimal cumulativeNgr)
+    public void setCumulativeDepositCount(Long cumulativeDepositCount)
     {
-        this.cumulativeNgr = cumulativeNgr;
+        this.cumulativeDepositCount = cumulativeDepositCount;
+    }
+
+    public String getLastBetTime()
+    {
+        return lastBetTime;
+    }
+
+    public void setLastBetTime(String lastBetTime)
+    {
+        this.lastBetTime = lastBetTime;
+    }
+
+    public BigDecimal getLastBetAmount()
+    {
+        return lastBetAmount;
+    }
+
+    public void setLastBetAmount(BigDecimal lastBetAmount)
+    {
+        this.lastBetAmount = lastBetAmount;
+    }
+
+    public BigDecimal getCumulativeBetAmount()
+    {
+        return cumulativeBetAmount;
+    }
+
+    public void setCumulativeBetAmount(BigDecimal cumulativeBetAmount)
+    {
+        this.cumulativeBetAmount = cumulativeBetAmount;
+    }
+
+    public Long getCumulativeBetCount()
+    {
+        return cumulativeBetCount;
+    }
+
+    public void setCumulativeBetCount(Long cumulativeBetCount)
+    {
+        this.cumulativeBetCount = cumulativeBetCount;
     }
 
     public BigDecimal getTurnoverMultiple()
@@ -228,63 +345,63 @@ public class MemberRecordVO implements Serializable
         this.turnoverMultiple = turnoverMultiple;
     }
 
-    public String getTier()
+    public String getLastWithdrawTime()
     {
-        return tier;
+        return lastWithdrawTime;
     }
 
-    public void setTier(String tier)
+    public void setLastWithdrawTime(String lastWithdrawTime)
     {
-        this.tier = tier;
+        this.lastWithdrawTime = lastWithdrawTime;
     }
 
-    public String getTierLabel()
+    public BigDecimal getLastWithdrawAmount()
     {
-        return tierLabel;
+        return lastWithdrawAmount;
     }
 
-    public void setTierLabel(String tierLabel)
+    public void setLastWithdrawAmount(BigDecimal lastWithdrawAmount)
     {
-        this.tierLabel = tierLabel;
+        this.lastWithdrawAmount = lastWithdrawAmount;
     }
 
-    public String getStage()
+    public BigDecimal getCumulativeWithdrawAmount()
     {
-        return stage;
+        return cumulativeWithdrawAmount;
     }
 
-    public void setStage(String stage)
+    public void setCumulativeWithdrawAmount(BigDecimal cumulativeWithdrawAmount)
     {
-        this.stage = stage;
+        this.cumulativeWithdrawAmount = cumulativeWithdrawAmount;
     }
 
-    public String getStageLabel()
+    public Long getCumulativeWithdrawCount()
     {
-        return stageLabel;
+        return cumulativeWithdrawCount;
     }
 
-    public void setStageLabel(String stageLabel)
+    public void setCumulativeWithdrawCount(Long cumulativeWithdrawCount)
     {
-        this.stageLabel = stageLabel;
+        this.cumulativeWithdrawCount = cumulativeWithdrawCount;
     }
 
-    public String getLastActiveTime()
+    public BigDecimal getCumulativeGgr()
     {
-        return lastActiveTime;
+        return cumulativeGgr;
     }
 
-    public void setLastActiveTime(String lastActiveTime)
+    public void setCumulativeGgr(BigDecimal cumulativeGgr)
     {
-        this.lastActiveTime = lastActiveTime;
+        this.cumulativeGgr = cumulativeGgr;
     }
 
-    public String getLastBetGap()
+    public BigDecimal getCumulativeNgr()
     {
-        return lastBetGap;
+        return cumulativeNgr;
     }
 
-    public void setLastBetGap(String lastBetGap)
+    public void setCumulativeNgr(BigDecimal cumulativeNgr)
     {
-        this.lastBetGap = lastBetGap;
+        this.cumulativeNgr = cumulativeNgr;
     }
 }

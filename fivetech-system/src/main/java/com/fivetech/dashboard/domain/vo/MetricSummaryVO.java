@@ -32,9 +32,6 @@ public class MetricSummaryVO implements Serializable
      */
     private Map<String, BigDecimal> totalRow = new LinkedHashMap<>();
 
-    /** 对比区间的合计 */
-    private Map<String, BigDecimal> compareTotalRow = new LinkedHashMap<>();
-
     public QueryContext getContext()
     {
         return context;
@@ -75,13 +72,4 @@ public class MetricSummaryVO implements Serializable
         this.totalRow = totalRow;
     }
 
-    public Map<String, BigDecimal> getCompareTotalRow()
-    {
-        return compareTotalRow;
-    }
-
-    public void setCompareTotalRow(Map<String, BigDecimal> compareTotalRow)
-    {
-        this.compareTotalRow = compareTotalRow;
-    }
 }

@@ -29,9 +29,6 @@ public class MetricSummaryRowVO implements Serializable
      */
     private Map<String, BigDecimal> values = new LinkedHashMap<>();
 
-    /** 对比期同位置的指标值，无对比时为空 */
-    private Map<String, BigDecimal> compareValues = new LinkedHashMap<>();
-
     /** 该时间片是否落在延迟窗口内 */
     private boolean delayed;
 
@@ -73,16 +70,6 @@ public class MetricSummaryRowVO implements Serializable
     public void setValues(Map<String, BigDecimal> values)
     {
         this.values = values;
-    }
-
-    public Map<String, BigDecimal> getCompareValues()
-    {
-        return compareValues;
-    }
-
-    public void setCompareValues(Map<String, BigDecimal> compareValues)
-    {
-        this.compareValues = compareValues;
     }
 
     public boolean isDelayed()

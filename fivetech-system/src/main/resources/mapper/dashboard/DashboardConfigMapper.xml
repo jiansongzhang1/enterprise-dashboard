@@ -11,7 +11,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="groupCode"       column="group_code"       />
 		<result property="sourceTable"     column="source_table"     />
 		<result property="sourceField"     column="source_field"     />
+		<result property="updateFrequency" column="update_frequency" />
+		<result property="singleDayOnly"   column="single_day_only"  />
 		<result property="chartType"       column="chart_type"       />
+		<result property="direction"       column="direction"        />
 		<result property="valueFormat"     column="value_format"     />
 		<result property="valueDecimals"   column="value_decimals"   />
 		<result property="showAsCard"      column="show_as_card"     />
@@ -41,7 +44,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	<!-- 不过滤 status：校验器要看见停用的行才能报「页面挂着已停用指标」 -->
 	<select id="selectAllMetricCards" resultMap="MetricCardResult">
 		select metric_code, metric_name, metric_name_en, group_code,
-		       source_table, source_field, chart_type, value_format, value_decimals,
+		       source_table, source_field, update_frequency, single_day_only, chart_type, direction, value_format, value_decimals,
 		       show_as_card, sort_no, calc_type, left_code, right_code,
 		       agg_type, weight_field, alert_enabled, alert_min, alert_max,
 		       tolerance_pct, status, remark
@@ -55,10 +58,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		 order by page_code, sort_no, metric_code
 	</select>
 
-	<select id="selectEnabledGroupCodes" resultType="java.lang.String">
-		select group_code from dashboard_metric_group
+	<resultMap type="com.fivetech.dashboard.domain.MetricGroupConfig" id="MetricGroupResult">
+		<result property="groupCode"   column="group_code"    />
+		<result property="groupName"   column="group_name"    />
+		<result property="groupNameEn" column="group_name_en" />
+		<result property="sortNo"      column="sort_no"       />
+	</resultMap>
+
+	<select id="selectEnabledGroups" resultMap="MetricGroupResult">
+		select group_code, group_name, group_name_en, sort_no
+		  from dashboard_metric_group
 		 where status = '0'
-		 order by sort_no
+		 order by sort_no, group_code
 	</select>
 
 </mapper>

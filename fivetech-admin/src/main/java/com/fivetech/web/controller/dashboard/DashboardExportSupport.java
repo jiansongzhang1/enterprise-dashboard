@@ -5,10 +5,9 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
- * CSV 下载的响应组装。
+ * 文件下载的响应组装（仪表板导出统一为 XLSX）。
  * <p>
  * 浏览器要弹出「下载」而不是把内容显示在页面里，靠的是两件事：
  * <ol>
@@ -23,26 +22,38 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  */
 final class DashboardExportSupport
 {
-    /** 文本类型显式带 charset，否则 Excel 可能忽略 BOM 之外的提示 */
-    private static final MediaType CSV = MediaType.parseMediaType("text/csv;charset=UTF-8");
-
     private DashboardExportSupport()
     {
     }
 
-    static ResponseEntity<StreamingResponseBody> csv(String fileName, StreamingResponseBody body)
+    /** xlsx 的 MIME，写错的话 Safari 会把文件存成 .zip */
+    private static final MediaType XLSX = MediaType
+        .parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    /**
+     * 整份生成完再返回的下载响应。
+     * <p>用 byte[] 而不是流：全量生成完再写第一个响应字节（明细用 SXSSF 流式写临时文件，内存可控），
+     * 生成途中失败时还能回一个正常的 JSON 错误体；边生成边 flush 的话响应头已经发出去，
+     * 前端只会拿到一个打不开的半截文件。</p>
+     */
+    static ResponseEntity<byte[]> xlsx(String fileName, byte[] body)
+    {
+        HttpHeaders headers = fileHeaders(fileName, XLSX);
+        headers.setContentLength(body.length);
+        return ResponseEntity.ok().headers(headers).body(body);
+    }
+
+    private static HttpHeaders fileHeaders(String fileName, MediaType type)
     {
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(CSV);
+        headers.setContentType(type);
         headers.set(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"" + asciiFallback(fileName) + "\"; filename*=UTF-8''" + encoded);
-        // 两个都给，前端无论用哪套都拿得到文件名
         headers.set("download-filename", encoded);
-        // 导出内容随筛选条件变化，不允许任何中间层缓存
         headers.setCacheControl("no-store, no-cache, must-revalidate");
         headers.setPragma("no-cache");
-        return ResponseEntity.ok().headers(headers).body(body);
+        return headers;
     }
 
     /**

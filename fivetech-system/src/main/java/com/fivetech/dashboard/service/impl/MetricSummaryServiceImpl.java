@@ -54,9 +54,13 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
 
     private final MetricDataGateway gateway;
 
+    private final com.fivetech.dashboard.service.MetricValueNormalizer normalizer;
+
     public MetricSummaryServiceImpl(DashboardProperties properties, TimeRangeResolver timeResolver,
-            MetricRegistry metricRegistry, MetricDataGateway gateway)
+            MetricRegistry metricRegistry, MetricDataGateway gateway,
+            com.fivetech.dashboard.service.MetricValueNormalizer normalizer)
     {
+        this.normalizer = normalizer;
         this.properties = properties;
         this.timeResolver = timeResolver;
         this.metricRegistry = metricRegistry;
@@ -71,10 +75,12 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
 
         // 1. 指标列：只做白名单校验。一期不做指标维度权限，
         //    能进到这个方法就说明已通过页面维度的 @PreAuthorize
-        List<String> columns = metricRegistry.resolveColumns(
-            DashboardPage.SUMMARY, query.getMetricCodes());
+        //    onlyCore=true 时只取核心指标，后面的序列与合计查询都只带这些列，不多查
+        List<String> columns = Boolean.TRUE.equals(query.getOnlyCore())
+            ? metricRegistry.resolveCoreColumns(DashboardPage.SUMMARY, query.getMetricCodes())
+            : metricRegistry.resolveColumns(DashboardPage.SUMMARY, query.getMetricCodes());
 
-        // 2. 时间：解析区间、粒度、对比期，全部在服务端完成
+        // 2. 时间：解析区间与粒度，全部在服务端完成（指标汇总不做对比期）
         DataFreshness freshness = timeResolver.resolveFreshness(siteCode);
         List<String> warnings = new ArrayList<>();
         ResolvedRange main = timeResolver.resolveMain(query, freshness.getAsOf());
@@ -86,40 +92,33 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
             warnings.add("GRANULARITY_DOWNGRADED");
         }
         main.setGranularity(granularity);
-        ResolvedRange compare = timeResolver.resolveCompare(
-            query.getCompareType(), query.getCompareFrom(), query.getCompareTo(), main, warnings);
 
         // 3. 时间片：标签与起止一次算好，下钻时直接写进明细表的筛选
         List<MetricSummaryRowVO> rows = buildSlots(main, granularity, freshness);
         main.setPoints(rows.size());
 
         // 4. 取数
-        Map<String, List<BigDecimal>> series = gateway.querySeries(slotRequest(siteCode, main, columns));
-        fill(rows, series, false);
-        if (compare != null)
-        {
-            compare.setGranularity(granularity);
-            Map<String, List<BigDecimal>> compareSeries =
-                gateway.querySeries(slotRequest(siteCode, compare, columns));
-            fill(rows, compareSeries, true);
-        }
+        // 网关保持 UDS 原始量纲（比率 0～1、时长秒），换算成展示量纲只在 normalizer 这一处，与运营总览一致
+        Map<String, List<BigDecimal>> series = new java.util.LinkedHashMap<>();
+        gateway.querySeries(slotRequest(siteCode, main, columns))
+            .forEach((code, values) -> series.put(code, normalizer.normalizeSeries(code, values)));
+        fill(rows, series);
 
         // 5. 排序与分页
         sort(rows, metricRegistry.resolveSortColumn(query.getSortColumn(), columns), query.getSortDirection());
         PageResultVO<MetricSummaryRowVO> page = paginate(rows, query.getPageNum(), query.getPageSize());
 
         MetricSummaryVO vo = new MetricSummaryVO();
-        QueryContext context = timeResolver.buildContext(siteCode, main, compare, freshness, warnings);
+        QueryContext context = timeResolver.buildContext(siteCode, main, freshness, warnings);
         context.setAvailableGranularities(available);
         vo.setContext(context);
         vo.setColumns(buildColumns(columns));
         vo.setPage(page);
         // 6. 合计：独立重算，不是把上面的行加起来
-        vo.setTotalRow(gateway.queryTotals(slotRequest(siteCode, main, columns)));
-        if (compare != null)
-        {
-            vo.setCompareTotalRow(gateway.queryTotals(slotRequest(siteCode, compare, columns)));
-        }
+        Map<String, BigDecimal> totalRow = new java.util.LinkedHashMap<>();
+        gateway.queryTotals(slotRequest(siteCode, main, columns))
+            .forEach((code, value) -> totalRow.put(code, normalizer.normalize(code, value)));
+        vo.setTotalRow(totalRow);
         return vo;
     }
 
@@ -199,7 +198,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
      * 把序列填进行。序列长度与时间片数不一致时按短的来，缺的位置保持 null，
      * 绝不补 0——无数据和 0 在业务上不是一回事。
      */
-    private void fill(List<MetricSummaryRowVO> rows, Map<String, List<BigDecimal>> series, boolean compare)
+    private void fill(List<MetricSummaryRowVO> rows, Map<String, List<BigDecimal>> series)
     {
         if (series == null)
         {
@@ -213,9 +212,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
             int size = Math.min(rows.size(), values.size());
             for (int i = 0; i < size; i++)
             {
-                Map<String, BigDecimal> target = compare
-                    ? rows.get(i).getCompareValues() : rows.get(i).getValues();
-                target.put(code, values.get(i));
+                rows.get(i).getValues().put(code, values.get(i));
             }
         });
     }
@@ -251,6 +248,11 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     {
         List<ColumnMetaVO> columns = new ArrayList<>();
         columns.add(ColumnMetaVO.of("time", "时间", "TEXT").sortable(true));
+        // 核心指标标记：前端据此给核心指标列做强调
+        java.util.Set<String> core = metricRegistry.coreMetricCodes();
+        // 下钻标记：前端据此决定单元格是否可点
+        java.util.Set<String> drillable = properties.getSummaryDrillableMetrics() == null
+            ? java.util.Set.of() : new java.util.HashSet<>(properties.getSummaryDrillableMetrics());
         for (String code : codes)
         {
             MetricDefinition definition = metricRegistry.get(code);
@@ -259,7 +261,8 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
                 continue;
             }
             columns.add(ColumnMetaVO.of(code, definition.getLabel(), definition.getFormat())
-                .group(definition.getGroup()).sortable(true));
+                .group(definition.getGroup()).sortable(true).core(core.contains(code))
+                .drillable(drillable.contains(code)));
         }
         return columns;
     }

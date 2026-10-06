@@ -33,6 +33,9 @@ server:
 logging:
   level:
     com.fivetech: debug
+    # UDS 调用的请求体按 DEBUG 记录，默认关闭；排查时设环境变量 UDS_LOG_LEVEL=debug 重启即可看到
+    # （失败请求的请求体始终会记：4403 记 INFO，其他错误记 WARN）
+    com.fivetech.dashboard.gateway.uds: ${UDS_LOG_LEVEL:info}
     org.springframework: warn
 
 # 用户配置
@@ -138,6 +141,12 @@ dashboard:
   delay-window-hours: ${DASHBOARD_DELAY_HOURS:2}
   # 在线查询行数上限，超过引导走异步导出
   row-limit: ${DASHBOARD_ROW_LIMIT:100000}
+  # 从指标下钻到存款 / 提款明细时按哪个时间筛：createTime 创建时间 / finishTime 完成时间。
+  # 必须与数据平台「存款总额 / 提款总额」的时间归属一致，否则下钻金额对不上。TODO：待数据团队确认
+  deposit-drill-time-field: ${DASHBOARD_DEPOSIT_DRILL_TIME_FIELD:createTime}
+  withdraw-drill-time-field: ${DASHBOARD_WITHDRAW_DRILL_TIME_FIELD:createTime}
+  # 指标汇总支持下钻的指标编码（/summary 返回 columns[].drillable）。一期放配置，不进数据库
+  summary-drillable-metrics: ${DASHBOARD_SUMMARY_DRILLABLE_METRICS:reg,ftd,ftdA,dep,arppu,dOkR,dT,wd,wOkR,wT,active,bet}
   # 单次查询最大数据点数，超过自动降级粒度
   max-points-per-granularity: ${DASHBOARD_MAX_POINTS:744}
   # 会员账号是否脱敏
@@ -145,80 +154,364 @@ dashboard:
   gateway:
     # UDS 统一数据服务对接
     uds:
-      # POC 走本机 SSM 端口转发；端口转发断了这里就连不通，不是应用的问题
-      base-url: ${UDS_BASE_URL:http://172.29.106.105:18082}
+      # 线上走 HTTPS + 双向 TLS：UDS_BASE_URL=https://10.32.16.83:8443，并配置下面的 tls 证书。
+      # 本地调试走 SSM 隧道直连：UDS_BASE_URL=http://127.0.0.1:28080（http、无证书、靠 X-Uds-* 头识别身份）
+      # 注意协议必须是 https：用 http 访问 8443 会得到 nginx 的 400「plain HTTP request was sent to HTTPS port」
+      base-url: ${UDS_BASE_URL:http://127.0.0.1:28080}
+      # TLS 证书（PEM 路径）。base-url 为 https 时生效；只配 ca-cert 为单向 TLS，再配 client-cert/key 为双向 TLS
+      # 触发 UDS 限流（HTTP 429 / code=4290）时按 retryAfterMillis 等待后重试的次数与单次最长等待
+      rate-limit-retries: ${UDS_RATE_LIMIT_RETRIES:3}
+      rate-limit-max-wait-millis: ${UDS_RATE_LIMIT_MAX_WAIT_MILLIS:2000}
+      tls:
+        ca-cert: ${UDS_TLS_CA_CERT:}
+        client-cert: ${UDS_TLS_CLIENT_CERT:}
+        client-key: ${UDS_TLS_CLIENT_KEY:}
       query-path: ${UDS_QUERY_PATH:/v1/query}
-      # X-Uds-* 是测试身份头，不是认证。生产请用服务账号而不是个人账号
-      principal: ${UDS_PRINCIPAL:fivetech-dashboard}
+      # 异步导出作业：POST 提交，GET/DELETE /{jobId} 查状态与取消
+      jobs-path: ${UDS_JOBS_PATH:/v1/jobs}
+      # 异步导出（UDS 生成、S3 直连下载）的文件格式与压缩：CSV / PARQUET，GZIP / ZSTD / SNAPPY。
+      # 注意：这是数据平台生成的文件，与本服务同步导出（统一 XLSX）无关；平台目前不支持 XLSX
+      export-format: ${UDS_EXPORT_FORMAT:CSV}
+      export-compression: ${UDS_EXPORT_COMPRESSION:GZIP}
+      # 压测数据集（3200 万行压测表，只开放 2026-09-10 一天），仅用于验证大文件下载链路
+      benchmark:
+        dataset: ${UDS_BENCHMARK_DATASET:bulk_bets}
+        date: ${UDS_BENCHMARK_DATE:2026-09-10}
+      # 身份头 X-Uds-*（为空的不发）：
+      #  - 本地调试（SSM 隧道直连 EC2 本机 8080，UDS-EC2直连 Postman 包）：UDS 按这三个头识别调用方，必须带；
+      #    启动时设 UDS_BASE_URL=http://127.0.0.1:28080，先在本机保持隧道运行：
+      #    aws ssm start-session --target i-09f193a56e56e2297 --region ap-southeast-1 \
+      #      --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["8080"],"localPortNumber":["28080"]}'
+      #  - 服务器经 8443 mTLS 网关：身份由客户端证书决定（cmp1-backend），这些头被网关忽略，带上无害
+      # X-Request-Id 每次调用唯一（traceId + 序号）
+      principal: ${UDS_PRINCIPAL:backend-local-debug}
       tenant: ${UDS_TENANT:site:SITE-IN}
       roles: ${UDS_ROLES:dashboard_ops}
-      # ops_hourly 是站点级 ADS 汇总，不做商户隔离，因此不传 merchant-codes。
-      # 只有 merchant_bet_hourly 那条下钻链路才需要它
-      merchant-codes: ${UDS_MERCHANT_CODES:}
+      # 批量查询（列表 + COUNT、周序列），Body 为数组，最多 50 项
+      batch-path: ${UDS_BATCH_PATH:/v1/query/batch}
       connect-timeout-seconds: ${UDS_CONNECT_TIMEOUT:5}
       # 留 25 秒：CloudFront 源站超时是 30 秒，要给自己留出返回和序列化的余量
       read-timeout-seconds: ${UDS_READ_TIMEOUT:25}
       # 上游水位低于请求上界时（HTTP 400 code=4403）：已拿到过上游水位就直接截到水位，
       # 只有冷启动还没有水位时，才按粒度逐格回退，最多回退这么多格
       not-ready-retries: ${UDS_NOT_READY_RETRIES:6}
-      # 探到的水位缓存秒数；过期后重新试满区间，上游追上进度时自动恢复
-      watermark-cache-seconds: ${UDS_WATERMARK_CACHE_SECONDS:120}
-      # 指标映射：本系统指标编码 -> UDS 数据集与指标名。改口径只改这里，不用发版
+      # 指标映射（联调手册 2026-10-05 第 4、6 节）：本系统指标编码 -> UDS 指标名。改口径只改这里，不用发版。
+      # 三个 v2 数据集按粒度路由（见下方 overview），同步查询通道统一 ONLINE（可用 UDS_QUERY_CHANNEL 覆盖）。
+      # 网关保持 UDS 原始量纲：比率 0～1（页面 ×100）、时长秒（页面 ÷60），换算只在 MetricValueNormalizer
       datasets:
-        # 运营看板 21 个指标全部来自这一个数据集，一次查询就能取全
-        ops_hourly:
-          time-dimension: biz_hh
+        # 小时行：小时序列、单小时合计。active_hour / dep_users_hour 是该小时独立人数，不能跨小时相加
+        overview_hour:
+          name: dashboard_overview_hour_v2
+          time-dimension: uds_hh
           grain: HOUR
-          dimensions:
-            - biz_hh
           options:
-            channel: ADHOC
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
           metrics:
             # eg1 获客与转化
-            login: login_users
-            reg: register_users
-            ftd: first_deposit_users
-            ftdr: first_deposit_conversion_rate
-            ftdA: first_deposit_arppu
-            # eg2 资金流
-            dep: deposit_amount
-            wd: withdrawal_amount
-            net: net_deposit
-            arppu: arppu
-            turnX: turnover_multiple
+            reg: reg
+            ftd: ftd
+            ftdAmt: ftd_amount
+            ftdr: ftdr
+            ftdA: ftdA
+            # eg2 资金流（net 由后端相减，见 overview.subtract）
+            dep: dep
+            wd: wd
+            turnX: turnX
             # eg3 支付健康度
-            dOkR: deposit_success_rate
-            dT: avg_deposit_time
-            wOkR: withdrawal_success_rate
-            wT: avg_withdrawal_time
-            # eg4 投注与盈收
-            active: active_users
-            bet: bet_amount
+            dOkR: dOkR
+            dOk: dep_ok
+            dTry: dep_try
+            dT: dT_seconds
+            wOkR: wOkR
+            wOk: wd_ok
+            wTry: wd_try
+            wT: wT_seconds
+            # eg4 投注与盈收（ngr 由后端相减；派彩 pay 无对应字段，保持 NULL）
+            bet: bet
             ggr: ggr
-            killR: average_kill_rate
-            bonus: bonus_amount
-            bonusR: bonus_ratio
-            # 口径差异：UDS 侧 ngr = ggr - bonus_amount - refund - overflow，比原型多两项扣减
-            ngr: ngr
-      # 明细数据集：UDS 是否支持明细查询待确认，未配置时明细接口返回空结果。
-      # 注意不要写成 details: {} —— Spring Boot 会把空 map 压成空字符串导致绑定失败，
-      # 需要时按下面的结构补齐即可：
-      #   details:
-      #     member:
-      #       dataset: member_detail
-      #       time-dimension: dt
-      #       fields:
-      #         account: member_account
-      #         registerTime: reg_time
-  # CSV 导出（请求体传 export_csv=true 触发）
+            killR: killR
+            bonus: bonus
+            bonusR: bonusR
+            # 小时去重人数（只在小时行有效）
+            active: active_hour
+            arppu: arppu_hour
+            depU: dep_users_hour
+            # login：可查原始小时值，但「是否含登出事件」未核验、日登录缺源，正式页面先占位，确认后取消注释
+            # login: login
+        # 完整日行：只取只能按日去重的人数类，uds_dt 只写日期
+        overview_day:
+          name: dashboard_overview_day_v2
+          time-dimension: uds_dt
+          time-format: DATE
+          grain: DAY
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          metrics:
+            arppu: arppu_day
+            depU: dep_users_day
+            # active_day：日字段有效历史范围数据团队未确认，日正式值先占位（NULL），确认后取消注释
+            # active: active_day
+        # 金额 / 普通比率：日、周序列与区间总值（dimensions=[]）
+        overview_amount:
+          name: dashboard_overview_amount_v2
+          time-dimension: uds_hh
+          grain: HOUR
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          metrics:
+            # eg1 获客与转化
+            reg: reg
+            ftd: ftd
+            ftdAmt: ftd_amount
+            ftdr: ftdr
+            ftdA: ftdA
+            # eg2 资金流（net 由后端相减，见 overview.subtract）
+            dep: dep
+            wd: wd
+            turnX: turnX
+            # eg3 支付健康度
+            dOkR: dOkR
+            dOk: dep_ok
+            dTry: dep_try
+            dT: dT_seconds
+            wOkR: wOkR
+            wOk: wd_ok
+            wTry: wd_try
+            wT: wT_seconds
+            # eg4 投注与盈收（ngr 由后端相减；派彩 pay 无对应字段，保持 NULL）
+            bet: bet
+            ggr: ggr
+            killR: killR
+            bonus: bonus
+            bonusR: bonusR
+      # 指标路由：值为上面 datasets 的 key
+      overview:
+        hour: overview_hour
+        day: overview_day
+        amount: overview_amount
+        # 后端相减组装（产品口径）：任一操作数为 NULL 则结果为 NULL，负值合法。
+        # 不取旧 ngr_net / ops_hourly.ngr（旧口径多扣 refund、overflow）
+        subtract:
+          net: [dep, wd]
+          ngr: [ggr, bonus]
+      # 明细数据集（联调手册第 9 节，字段见 detail-contracts.json）。
+      # fields：key = 列编码（RecordColumnRegistry），value = UDS 字段名；未映射的列返回 null
+      # 列表与 COUNT 用 /v1/query/batch 一次发出；排序固定以 uds_rowkey ASC 收尾；limit ≤ 1000、offset ≤ 100000
+      details:
+        member:
+          dataset: dashboard_player_detail_v2
+          time-dimension: uds_hh
+          time-column: register_date_india
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          fields:
+            userId: player_id
+            username: login_name          # 已脱敏；login_search 只能筛选，不能放 dimensions 返回
+            status: account_status
+            userType: utype
+            level: player_level
+            country: country_code
+            registerTime: register_date_india
+            registerChannel: channel
+            firstDepositTime: first_deposit_time_india
+            firstDepositAmount: first_deposit_amount
+            firstDepositChannel: first_deposit_channel_name
+            regToFtdHours: gap_hours
+            lastDepositTime: last_deposit_time_india
+            lastDepositAmount: last_deposit_amount
+            cumulativeDepositAmount: total_deposit_amount
+            cumulativeDepositCount: total_deposit_cnt
+            lastBetTime: last_bet_time_india
+            lastBetAmount: last_bet_amount
+            cumulativeBetAmount: total_bet_amount
+            cumulativeBetCount: total_bet_cnt
+            turnoverMultiple: turnover_multiple
+            lastWithdrawTime: last_withdraw_time_india
+            lastWithdrawAmount: last_withdraw_amount
+            cumulativeWithdrawAmount: total_withdraw_amount
+            cumulativeWithdrawCount: total_withdraw_cnt
+            cumulativeGgr: total_ggr
+            cumulativeNgr: total_ngr
+          search-fields:
+            # 关键字：玩家 ID 精确，账号 LIKE 包含（% 和 _ 会被去掉）
+            keyword: [player_id, "login_search~"]
+        deposit:
+          dataset: dashboard_deposit_detail_v2
+          time-dimension: uds_hh
+          time-column: created_date_india
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          fields:
+            orderNo: billno
+            userId: player_id
+            username: login_name
+            amount: amount                # 原币；跨币种排序 / 筛选用基准币 default_amount（见 filter-fields）
+            currency: currency
+            status: status
+            createTime: created_date_india
+            finishTime: bill_date_india   # 入账时间
+            costMinutes: duration_min
+          filter-fields:
+            amount: default_amount
+          search-fields:
+            keyword: [player_id, billno, "login_search~"]
+          value-maps:
+            # 存款状态（产品确认）：成功 = 30，其他一律视为失败
+            status:
+              succ: "30"
+          value-defaults:
+            status: fail                  # 非 30 → fail；按 fail 筛选下推为 status < 30 OR status >= 31
+        withdraw:
+          dataset: dashboard_withdraw_detail_v2
+          time-dimension: uds_hh
+          time-column: created_date_india
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          fields:
+            orderNo: billno
+            userId: player_id
+            username: login_name
+            amount: amount                # 原币
+            currency: currency
+            status: status                # 支付状态
+            auditStatus: detail_status    # TODO：确认 detail_status 是否就是审核状态
+            auditor: audit_approve_by
+            payer: payment_approve_by
+            payTime: payment_approve_date_india
+            bankName: bank_name
+            bankCode: bank_code
+            bankCountry: country
+            createTime: created_date_india
+            finishTime: payment_approve_date_india
+            costMinutes: duration_min
+            auditNote: remark
+          filter-fields:
+            amount: default_amount
+          search-fields:
+            keyword: [player_id, billno, "login_search~"]
+          # TODO：提款状态 / 审核状态枚举待数据团队提供后配置 value-maps（未配置时筛选值原样下推）
+        bet:
+          dataset: dashboard_bet_detail_v2
+          time-dimension: uds_hh
+          time-column: bet_time_india
+          options:
+            channel: ${UDS_QUERY_CHANNEL:ONLINE}
+          fields:
+            orderNo: bill_no
+            userId: player_id
+            username: login_name
+            vendorCode: provider_code
+            vendorName: provider_name
+            gameType: game_type
+            gameId: game_id
+            gameName: game_name
+            betAmount: default_bet_amount
+            payout: default_payout_amount
+            winLoss: default_ggr          # 平台视角 = 投注 − 派彩，避开 default_win_loss_amount 的正负号问题
+            settleStatus: status          # 结算状态，取值映射见下方 value-maps
+            betTime: bet_time_india
+            settleTime: settled_date_india
+          search-fields:
+            keyword: [player_id, bill_no, "login_search~"]
+            game: [game_id, "game_name~"]
+          value-maps:
+            # 投注结算状态（数据团队确认）：0 未结算 / 1 已结算 / -9 已取消
+            settleStatus:
+              open: "0"
+              done: "1"
+              cancel: "-9"
+      # 运营总览板块（联调手册第 10 节）。key 固定（见 OverviewBreakdowns），dimensions / metrics 的 key 是本系统编码。
+      # 榜单数据集目前只有 2026-07-27 20:00 ~ 07-28 19:00 的历史窗口，其他时间返回空或 4403
+      breakdowns:
+        bonus_items:                      # 排行榜 · 赠金项目
+          dataset: dashboard_bonus_ranking
+          time-dimension: India_DDHH
+          grain: HOUR
+          limit: 100
+          with-total: true                # 另查全量作占比分母
+          batch: true                     # 排名 + 全量一次 /v1/query/batch（bonus-batch）
+          dimensions: { name: bonus_name }
+          metrics: { amount: bonus_amount }
+          order-by:
+            - { field: bonus_amount, dir: DESC }
+            - { field: bonus_name, dir: ASC }
+          options: { channel: ONLINE, withLabel: false }
+        hot_games:                        # 排行榜 · 热销游戏 Top 20
+          dataset: dashboard_game_ranking
+          time-dimension: India_DDHH
+          grain: HOUR
+          limit: 20
+          with-total: true
+          batch: true                     # 排名 + 全量一次 /v1/query/batch（game-batch）
+          # 游戏类型 game_type 直接取游戏榜数据集；名称 / 厂商名由下方 enrich 从投注明细按同窗口补全，查不到名称时用 game_id 填充
+          dimensions: { platformCode: provider_code, gameId: game_id, gameType: game_type }
+          # betUsers = bet_player_visits：小时人数累加的「人次」，不是区间独立人数
+          metrics: { betAmount: bet_amount, ggr: ggr, betUsers: bet_player_visits, betCount: bet_times }
+          order-by:
+            - { field: bet_amount, dir: DESC }
+            - { field: provider_code, dir: ASC }
+            - { field: game_id, dir: ASC }
+            - { field: game_type, dir: ASC }
+          options: { channel: ONLINE, withLabel: false }
+          enrich:
+            dataset: dashboard_bet_detail_v2
+            time-dimension: uds_hh
+            filter-key: gameId
+            keys: { platformCode: provider_code, gameId: game_id }
+            fields: { name: game_name, vendorName: provider_name }
+        reg_channels:                     # 注册渠道：Reg_channel 为大类，Reg_source 为子渠道
+          dataset: dashboard_reg_source
+          time-dimension: India_DDHH
+          grain: HOUR
+          limit: 100
+          with-total: true                # 站点占比用全量
+          batch: false                    # 分两次 /v1/query：reg-source + reg-total
+          dimensions: { groupCode: Reg_channel, channelCode: Reg_source }
+          metrics: { registrations: registrations }
+          order-by:
+            - { field: Reg_channel, dir: ASC }
+            - { field: Reg_source, dir: ASC }
+          options: { channel: ONLINE, withLabel: false }
+        # 留存 / LTV：ADS 已准备（T+1，按日分群），时间维只写日期。
+        # 未到观察期的格子由服务端置 null（分群日 + N 天晚于昨天），上游给了值也不采纳
+        cohort_retention:                 # 留存：按投注日分群，第 N 日仍投注的比例
+          dataset: dashboard_retention_1d
+          time-dimension: india_bet_dt
+          time-format: DATE
+          grain: DAY
+          limit: 90                       # UDS 分群查询最多 90 个日期（超出返回 4001），offset 必须为 0
+          dimensions: { cohortDate: india_bet_dt }
+          metrics: { base: bet_player_cnt, d1: d1_retention, d2: d2_retention, d3: d3_retention, d4: d4_retention,
+                     d5: d5_retention, d6: d6_retention, d7: d7_retention, d15: d15_retention, d30: d30_retention }
+          # TODO：联调核对单位。按 UDS 比率惯例返回 0～1，这里 ×100 成页面百分数；若实际已是百分数，删掉这一行
+          ratio-metrics: [d1, d2, d3, d4, d5, d6, d7, d15, d30]
+          order-by:
+            - { field: india_bet_dt, dir: ASC }
+          options: { channel: ONLINE }
+        cohort_ltv:                       # LTV：按首存日分群，N 日累计 NGR ÷ 当日首存人数
+          dataset: dashboard_ltv_1d
+          time-dimension: India_FD_dt
+          time-format: DATE
+          grain: DAY
+          limit: 90                       # UDS 分群查询最多 90 个日期（超出返回 4001），offset 必须为 0
+          dimensions: { cohortDate: India_FD_dt }
+          metrics: { base: first_deposit_player_cnt, d1: D1_LTV, d2: D2_LTV, d3: D3_LTV, d4: D4_LTV,
+                     d5: D5_LTV, d6: D6_LTV, d7: D7_LTV, d15: D15_LTV, d30: D30_LTV }
+          order-by:
+            - { field: India_FD_dt, dir: ASC }
+          options: { channel: ONLINE }
+  # 同步导出（请求体传 export_csv=true 或 export=true 触发），文件格式统一为 XLSX：「数据」+「口径说明」两张 sheet
   export:
     enabled: ${DASHBOARD_EXPORT_ENABLED:true}
     # ALL_FILTERED = 当前筛选条件下的全部数据（忽略分页）；CURRENT_PAGE = 只导当前页
     scope: ${DASHBOARD_EXPORT_SCOPE:ALL_FILTERED}
     # 是否在文件开头写口径说明区（程序消费时建议关闭）
     include-meta: ${DASHBOARD_EXPORT_INCLUDE_META:true}
-    # 单次导出最大行数
-    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:100000}
+    # 同步导出最大行数。UDS 单次最多返回 1000 行，明细同步导出按 1000 行一段顺序翻页，
+    # 1 万行约 10 次调用；更大的量请走异步导出（/v1/jobs，文件由数据平台直接生成）
+    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:10000}
+    # 明细异步导出（UDS /v1/jobs）行数上限；文件由数据平台直接写对象存储，不经本服务内存。0 = 平台默认（5000 万）
+    async-max-rows: ${DASHBOARD_EXPORT_ASYNC_MAX_ROWS:5000000}
     # 明细含个人信息，导出默认要求独立权限点
     require-permission: ${DASHBOARD_EXPORT_REQUIRE_PERMISSION:true}
     permission: ${DASHBOARD_EXPORT_PERMISSION:dashboard:export:csv}

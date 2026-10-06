@@ -1,7 +1,7 @@
 package com.fivetech.dashboard.config;
 
 /**
- * CSV 导出配置，挂在 {@code dashboard.export.*} 下。
+ * 导出配置（同步导出统一为 XLSX），挂在 {@code dashboard.export.*} 下。
  *
  * @author fivetech
  */
@@ -11,16 +11,22 @@ public class ExportProperties
     private boolean enabled = true;
 
     /**
-     * 是否在文件开头写口径说明区。
+     * 「口径说明」sheet 里是否写站点、时区、区间、口径版本等上下文。
      * <p>
-     * 开启时文件前几行是「导出时间/站点/时区/区间/口径版本/免责声明」等键值对，
-     * 空行之后才是表头与数据。Excel 打开无碍，但会让严格的 CSV 解析器多读几行——
-     * 若下游是程序消费，关掉它。
+     * XLSX 里口径说明是单独的 sheet，不影响「数据」sheet 的表头与读取；
+     * 关闭后只保留报表名称、导出时间、导出人和空值说明。
      */
     private boolean includeMeta = true;
 
     /** 单次导出的最大行数，超过则拒绝并提示缩小范围 */
     private int maxRows = 100000;
+
+    /**
+     * 明细异步导出（UDS /v1/jobs）的行数上限。
+     * 同步导出受内存与 30 秒网关超时限制，所以上限低；异步导出由数据平台直接落对象存储，
+     * 不经本服务内存，可以放宽。0 表示用数据平台默认上限（5000 万）。
+     */
+    private long asyncMaxRows = 5000000L;
 
     /**
      * 导出范围。
@@ -110,5 +116,15 @@ public class ExportProperties
     public void setPermission(String permission)
     {
         this.permission = permission;
+    }
+
+    public long getAsyncMaxRows()
+    {
+        return asyncMaxRows;
+    }
+
+    public void setAsyncMaxRows(long asyncMaxRows)
+    {
+        this.asyncMaxRows = asyncMaxRows;
     }
 }
