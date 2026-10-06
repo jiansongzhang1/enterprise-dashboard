@@ -358,8 +358,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             String name = nameOf(ov.getAmount(), d);
             amountCodes.forEach(code -> out.computeIfAbsent(code, k -> nulls(points)));
-            // 先按上游自报水位夹住：整格都在水位之上的不发，最后一格截到水位
-            LocalDateTime limit = clampByReported(name, from, to, "HOUR");
+            // 不按缓存水位预截断（见 queryRetreating）；某一格 4403 时整批失败，下面退回逐格查询各自退避
+            LocalDateTime limit = to;
             List<Integer> indexes = new ArrayList<>();
             List<Map<String, Object>> bodies = new ArrayList<>();
             for (int i = 0; i < slots.size(); i++)
@@ -669,8 +669,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
         boolean done = false;
         if (bd.isWithTotal() && bd.isBatch())
         {
-            // 先按已知水位夹住上界，再把排名与全量一次发出：两项必然是同一个时间范围
-            LocalDateTime end = clampByReported(bd.getDataset(), from, to, bd.getGrain());
+            // 排名与全量一次发出，两项必然是同一个时间范围；4403 时退回下面的逐条查询（各自按水位退避）
+            LocalDateTime end = to;
             if (!end.isAfter(from))
             {
                 return BreakdownResult.notReady();
@@ -1611,14 +1611,17 @@ public class UdsMetricDataGateway implements MetricDataGateway
             List<String> codes, LocalDateTime from, LocalDateTime to, String granularity,
             List<String> dimensions, int limit, Map<String, Object> extras)
     {
-        // 预夹只用上游自报的水位。它是上游给的数，不是我们猜的，而且每次成功响应都会把它
-        // 往前刷新，不存在「自己写进去、下次又拿出来夹自己」的自我强化。
-        // 同一次请求里的 4 次查询（当期/对比期 × 序列/合计）因此夹到同一个上界，
-        // 合计与序列的口径自动一致——这是原来那个探测缓存唯一真正干的活，这里照样保住。
-        LocalDateTime end = clampByReported(datasetName, from, to, granularity);
+        // 不再按缓存的上游水位预先截断：UDS 自报的 meta.freshness.watermark 不是权威完成信号
+        // （联调手册第 8 节，部分数据集是手工 / 观察源上界），实测水位停在 09-30 21:00 时
+        // UDS 仍接受并返回 10-05 的数据。预截断会让请求根本不发出去，水位也就永远刷新不了，
+        // 整段区间被锁死成 null。所以总是按原区间先查，只有 UDS 真的返回 4403 时才截到水位或回退。
+        LocalDateTime end = to;
         int retries = Math.max(0, properties.getNotReadyRetries());
         UdsQueryException last = null;
-        boolean clampedToReported = end.isBefore(to);
+        boolean clampedToReported = false;
+        // 小时事实表（uds_hh / India_DDHH）上卷到 DAY / WEEK 时允许部分日：截到水位所在的整点，
+        // 不能按整天截——否则 09-30 21:00 的水位会把 09-30 当天已有的 21 个小时一起丢掉
+        String alignUnit = "DATE".equalsIgnoreCase(dataset.getTimeFormat()) ? granularity : "HOUR";
 
         for (int attempt = 0; attempt <= retries; attempt++)
         {
@@ -1660,7 +1663,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
                     return null;
                 }
                 LocalDateTime reported = reportedWatermarks.get(datasetName);
-                LocalDateTime clamped = reported == null ? null : alignDown(from, reported, granularity);
+                LocalDateTime clamped = reported == null ? null : alignDown(from, reported, alignUnit);
                 if (clamped != null && clamped.isBefore(end))
                 {
                     log.info("[uds] 数据未就绪，按上游水位 {} 把上界 {} 截到 {}，dataset={}",
@@ -1727,21 +1730,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return end.minusDays(1);
     }
 
-    /**
-     * 用上游自报的水位预夹上界。上游没报过就原样返回 {@code to}，请求照常打出去。
-     * <p>上游追上进度后水位自然前进，这里不需要过期时间，也不需要重启。</p>
-     */
-    private LocalDateTime clampByReported(String datasetName, LocalDateTime from, LocalDateTime to,
-            String granularity)
-    {
-        LocalDateTime reported = reportedWatermarks.get(datasetName);
-        if (reported == null || !reported.isBefore(to))
-        {
-            return to;
-        }
-        LocalDateTime clamped = alignDown(from, reported, granularity);
-        return clamped.isBefore(to) ? clamped : to;
-    }
 
     /**
      * 指标 / 榜单查询的请求体。
