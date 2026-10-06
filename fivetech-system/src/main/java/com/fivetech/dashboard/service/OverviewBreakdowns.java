@@ -34,7 +34,10 @@ public final class OverviewBreakdowns
 
     // ===================== 队列列 =====================
 
-    /** 队列矩阵固定 9 列：列名 → 指标编码。上游是预聚合固定列，不是我们自己 pivot */
+    /**
+     * 队列矩阵固定 10 列：列名 → 指标编码。上游是预聚合固定列，不是我们自己 pivot。
+     * 「Pre D+0」= 分群日当天（LTV 取 Pre_D0_LTV）；留存数据集没有对应字段，这一列为 null
+     */
     public static final Map<String, String> COHORT_COLUMNS = new LinkedHashMap<>();
 
     /** 每列对应的观察天数，用来判断「未到观察期」 */
@@ -42,7 +45,7 @@ public final class OverviewBreakdowns
 
     static
     {
-        String[][] cols = {{"D+1", "d1", "1"}, {"D+2", "d2", "2"}, {"D+3", "d3", "3"}, {"D+4", "d4", "4"},
+        String[][] cols = {{"Pre D+0", "d0", "0"}, {"D+1", "d1", "1"}, {"D+2", "d2", "2"}, {"D+3", "d3", "3"}, {"D+4", "d4", "4"},
             {"D+5", "d5", "5"}, {"D+6", "d6", "6"}, {"D+7", "d7", "7"}, {"D+15", "d15", "15"}, {"D+30", "d30", "30"}};
         for (String[] c : cols)
         {

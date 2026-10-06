@@ -21,7 +21,7 @@ public class CohortVO extends OverviewSectionVO
     /** SNAPSHOT_T1 */
     private String asOfKind = "SNAPSHOT_T1";
 
-    /** 固定 9 列 D+1…D+30 */
+    /** 固定 10 列：Pre D+0、D+1…D+30 */
     private List<String> columns = new ArrayList<>();
 
     /** 留存率；type=LTV 时为 null */

@@ -21,7 +21,7 @@ public class MemberRecordVO implements Serializable
     /** 账号名称 */
     private String username;
 
-    /** 用户状态编码 ok/pend/frozen/self/banned */
+    /** 用户状态编码（account_status）：1 启用 / 0 禁用 */
     private String status;
 
     /** 用户状态名称 */
@@ -33,8 +33,17 @@ public class MemberRecordVO implements Serializable
     /** 用户类型名称 */
     private String userTypeLabel;
 
-    /** 用户等级 VIP1–VIP18 */
+    /** 用户等级编码（player_level）：0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2 */
     private String level;
+
+    /** 用户等级名称 */
+    private String levelLabel;
+
+    /** 风险等级编码（risk_level）：0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利 */
+    private String riskLevel;
+
+    /** 风险等级名称 */
+    private String riskLevelLabel;
 
     /** 国家代码 */
     private String country;
@@ -44,9 +53,6 @@ public class MemberRecordVO implements Serializable
 
     /** 注册时间 */
     private String registerTime;
-
-    /** 注册渠道 */
-    private String registerChannel;
 
     /** 首存时间；未首存为 null */
     private String firstDepositTime;
@@ -175,6 +181,36 @@ public class MemberRecordVO implements Serializable
         this.level = level;
     }
 
+    public String getLevelLabel()
+    {
+        return levelLabel;
+    }
+
+    public void setLevelLabel(String levelLabel)
+    {
+        this.levelLabel = levelLabel;
+    }
+
+    public String getRiskLevel()
+    {
+        return riskLevel;
+    }
+
+    public void setRiskLevel(String riskLevel)
+    {
+        this.riskLevel = riskLevel;
+    }
+
+    public String getRiskLevelLabel()
+    {
+        return riskLevelLabel;
+    }
+
+    public void setRiskLevelLabel(String riskLevelLabel)
+    {
+        this.riskLevelLabel = riskLevelLabel;
+    }
+
     public String getCountry()
     {
         return country;
@@ -203,16 +239,6 @@ public class MemberRecordVO implements Serializable
     public void setRegisterTime(String registerTime)
     {
         this.registerTime = registerTime;
-    }
-
-    public String getRegisterChannel()
-    {
-        return registerChannel;
-    }
-
-    public void setRegisterChannel(String registerChannel)
-    {
-        this.registerChannel = registerChannel;
     }
 
     public String getFirstDepositTime()

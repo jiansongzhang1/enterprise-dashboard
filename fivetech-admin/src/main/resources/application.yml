@@ -310,12 +310,12 @@ dashboard:
           fields:
             userId: player_id
             username: login_name          # 已脱敏；login_search 只能筛选，不能放 dimensions 返回
-            status: account_status
+            status: account_status        # 0 禁用 / 1 启用
             userType: utype
-            level: player_level
+            level: player_level           # 0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2
+            riskLevel: risk_level         # 0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利
             country: country_code
             registerTime: register_date_india
-            registerChannel: channel
             firstDepositTime: first_deposit_time_india
             firstDepositAmount: first_deposit_amount
             firstDepositChannel: first_deposit_channel_name
@@ -339,8 +339,8 @@ dashboard:
             # 关键字：玩家 ID 精确，账号 LIKE 包含（% 和 _ 会被去掉）
             keyword: [player_id, "login_search~"]
         deposit:
-          dataset: dashboard_deposit_detail_v2
-          time-dimension: uds_hh
+          dataset: dashboard_deposit_detail_v3
+          time-dimension: snapshot_at
           time-column: created_date_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -365,8 +365,8 @@ dashboard:
           value-defaults:
             status: fail                  # 非 30 → fail；按 fail 筛选下推为 status < 30 OR status >= 31
         withdraw:
-          dataset: dashboard_withdraw_detail_v2
-          time-dimension: uds_hh
+          dataset: dashboard_withdraw_detail_v3
+          time-dimension: snapshot_at
           time-column: created_date_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -394,8 +394,8 @@ dashboard:
             keyword: [player_id, billno, "login_search~"]
           # TODO：提款状态 / 审核状态枚举待数据团队提供后配置 value-maps（未配置时筛选值原样下推）
         bet:
-          dataset: dashboard_bet_detail_v2
-          time-dimension: uds_hh
+          dataset: dashboard_bet_detail_v3
+          time-dimension: snapshot_at
           time-column: bet_time_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -499,7 +499,7 @@ dashboard:
           grain: DAY
           limit: 90                       # UDS 分群查询最多 90 个日期（超出返回 4001），offset 必须为 0
           dimensions: { cohortDate: India_FD_dt }
-          metrics: { base: first_deposit_player_cnt, d1: D1_LTV, d2: D2_LTV, d3: D3_LTV, d4: D4_LTV,
+          metrics: { base: first_deposit_player_cnt, d0: Pre_D0_LTV, d1: D1_LTV, d2: D2_LTV, d3: D3_LTV, d4: D4_LTV,
                      d5: D5_LTV, d6: D6_LTV, d7: D7_LTV, d15: D15_LTV, d30: D30_LTV }
           order-by:
             - { field: India_FD_dt, dir: ASC }

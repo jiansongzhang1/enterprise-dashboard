@@ -19,16 +19,34 @@ public final class MemberDict
     /** 用户类型：测试与代理账号不计入运营口径，但明细表要看得见 */
     public static final Map<String, String> USER_TYPE = new LinkedHashMap<>();
 
+    /** 用户等级（player_level） */
+    public static final Map<String, String> LEVEL = new LinkedHashMap<>();
+
+    /** 风险等级（risk_level） */
+    public static final Map<String, String> RISK_LEVEL = new LinkedHashMap<>();
+
     /** 国家：站点主体在印度，但同一套站群会收到周边国家流量 */
     public static final Map<String, String> COUNTRY = new LinkedHashMap<>();
 
     static
     {
-        STATUS.put("ok", "正常");
-        STATUS.put("pend", "待验证");
-        STATUS.put("frozen", "冻结");
-        STATUS.put("self", "自我排除");
-        STATUS.put("banned", "已封禁");
+        // 账号状态（account_status），数据团队口径
+        STATUS.put("1", "启用");
+        STATUS.put("0", "禁用");
+
+        LEVEL.put("0", "老铁");
+        LEVEL.put("1", "青铜");
+        LEVEL.put("2", "白银");
+        LEVEL.put("3", "黄金");
+        LEVEL.put("4", "铂金1");
+        LEVEL.put("5", "铂金2");
+
+        RISK_LEVEL.put("0", "普通");
+        RISK_LEVEL.put("1", "观察");
+        RISK_LEVEL.put("2", "风险用户");
+        RISK_LEVEL.put("3", "黑名单");
+        RISK_LEVEL.put("4", "真套利");
+        RISK_LEVEL.put("5", "伪套利");
 
         USER_TYPE.put("real", "正式用户");
         USER_TYPE.put("trial", "试玩用户");

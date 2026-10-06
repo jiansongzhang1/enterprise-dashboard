@@ -864,11 +864,15 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setUserTypeLabel(com.fivetech.dashboard.service.MemberDict.label(
                 com.fivetech.dashboard.service.MemberDict.USER_TYPE, vo.getUserType()));
             vo.setLevel(str(row, d, "level"));
+            vo.setLevelLabel(com.fivetech.dashboard.service.MemberDict.label(
+                com.fivetech.dashboard.service.MemberDict.LEVEL, vo.getLevel()));
+            vo.setRiskLevel(str(row, d, "riskLevel"));
+            vo.setRiskLevelLabel(com.fivetech.dashboard.service.MemberDict.label(
+                com.fivetech.dashboard.service.MemberDict.RISK_LEVEL, vo.getRiskLevel()));
             vo.setCountry(str(row, d, "country"));
             vo.setCountryLabel(com.fivetech.dashboard.service.MemberDict.label(
                 com.fivetech.dashboard.service.MemberDict.COUNTRY, vo.getCountry()));
             vo.setRegisterTime(str(row, d, "registerTime"));
-            vo.setRegisterChannel(str(row, d, "registerChannel"));
             vo.setFirstDepositTime(str(row, d, "firstDepositTime"));
             vo.setFirstDepositAmount(num(row, d, "firstDepositAmount"));
             vo.setFirstDepositChannel(str(row, d, "firstDepositChannel"));

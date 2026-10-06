@@ -49,24 +49,24 @@ public class MemberRecordQuery extends BaseRecordQuery
     private String lastBetTimeTo;
 
     /** 用户状态：ok 正常 / pend 待验证 / frozen 冻结 / self 自我排除 / banned 已封禁 */
-    @Pattern(regexp = "^(ok|pend|frozen|self|banned)?$", message = "status 取值应为 ok/pend/frozen/self/banned")
+    @Pattern(regexp = "^[01]?$", message = "status 取值应为 1（启用）/ 0（禁用）")
     private String status;
 
     /** 用户类型：real 正式用户 / trial 试玩用户 / test 测试账号 / agent 代理账号 */
     @Pattern(regexp = "^(real|trial|test|agent)?$", message = "userType 取值应为 real/trial/test/agent")
     private String userType;
 
-    /** 用户等级 VIP1–VIP18 */
-    @Pattern(regexp = "^(VIP([1-9]|1[0-8]))?$", message = "level 取值应为 VIP1–VIP18")
+    /** 用户等级：0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2 */
+    @Pattern(regexp = "^[0-5]?$", message = "level 取值应为 0–5")
     private String level;
+
+    /** 风险等级：0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利 */
+    @Pattern(regexp = "^[0-5]?$", message = "riskLevel 取值应为 0–5")
+    private String riskLevel;
 
     /** 国家，ISO 3166-1 两位代码，如 IN / NP / BD / LK / PK */
     @Pattern(regexp = "^([A-Z]{2})?$", message = "country 应为两位大写国家代码")
     private String country;
-
-    /** 注册渠道，如 LP-01 / organic */
-    @Size(max = 64)
-    private String registerChannel;
 
     /** 历史累计存款金额下限（含） */
     @DecimalMin(value = "0", message = "累计存款金额不能为负")
@@ -105,8 +105,8 @@ public class MemberRecordQuery extends BaseRecordQuery
     public void setLevel(String level) { this.level = level; }
     public String getCountry() { return country; }
     public void setCountry(String country) { this.country = country; }
-    public String getRegisterChannel() { return registerChannel; }
-    public void setRegisterChannel(String registerChannel) { this.registerChannel = registerChannel; }
+    public String getRiskLevel() { return riskLevel; }
+    public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
     public BigDecimal getCumulativeDepositMin() { return cumulativeDepositMin; }
     public void setCumulativeDepositMin(BigDecimal cumulativeDepositMin) { this.cumulativeDepositMin = cumulativeDepositMin; }
     public BigDecimal getCumulativeDepositMax() { return cumulativeDepositMax; }

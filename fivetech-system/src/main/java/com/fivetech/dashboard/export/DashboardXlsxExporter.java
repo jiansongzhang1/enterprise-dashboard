@@ -301,10 +301,10 @@ public class DashboardXlsxExporter
                 case "username": line.add(r.getUsername()); break;
                 case "status": line.add(label(r.getStatusLabel(), r.getStatus())); break;
                 case "userType": line.add(label(r.getUserTypeLabel(), r.getUserType())); break;
-                case "level": line.add(r.getLevel()); break;
+                case "level": line.add(label(r.getLevelLabel(), r.getLevel())); break;
+                case "riskLevel": line.add(label(r.getRiskLevelLabel(), r.getRiskLevel())); break;
                 case "country": line.add(label(r.getCountryLabel(), r.getCountry())); break;
                 case "registerTime": line.add(r.getRegisterTime()); break;
-                case "registerChannel": line.add(r.getRegisterChannel()); break;
                 case "firstDepositTime": line.add(r.getFirstDepositTime()); break;
                 case "firstDepositAmount": line.add(r.getFirstDepositAmount()); break;
                 case "firstDepositChannel": line.add(r.getFirstDepositChannel()); break;

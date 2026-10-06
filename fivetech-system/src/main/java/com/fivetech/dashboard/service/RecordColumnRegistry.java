@@ -50,10 +50,10 @@ public class RecordColumnRegistry
         member("status", "用户状态", "TAG", G_BASE).defaultVisible(true).filterable(true);
         member("userType", "用户类型", "TAG", G_BASE).defaultVisible(true).filterable(true);
         member("level", "用户等级", "TAG", G_BASE).defaultVisible(true).filterable(true);
+        member("riskLevel", "风险等级", "TAG", G_BASE).filterable(true);
         member("country", "国家", "TAG", G_BASE).defaultVisible(true).filterable(true);
         // 注册与来源
         member("registerTime", "注册时间", "TIME", G_REG).defaultVisible(true).sortable(true).filterable(true);
-        member("registerChannel", "注册渠道", "TEXT", G_REG).filterable(true);
         // 存款指标
         member("firstDepositTime", "首存时间", "TIME", G_DEP).sortable(true).filterable(true);
         member("firstDepositAmount", "首存金额", "MONEY", G_DEP).defaultVisible(true).sortable(true);
