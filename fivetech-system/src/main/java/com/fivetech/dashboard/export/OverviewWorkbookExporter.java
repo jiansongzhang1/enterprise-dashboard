@@ -156,9 +156,11 @@ public class OverviewWorkbookExporter
             writeBonus(wb.createSheet(SHEET_BONUS), styles, query, ranking);
             writeGames(wb.createSheet(SHEET_GAMES), styles, query, ranking);
             writeCohort(wb.createSheet(SHEET_RETENTION), styles, cohort, cohortSpan,
-                cohort.data == null ? null : cohort.data.getRetention(), "留存率(%)");
+                cohort.data == null ? null : cohort.data.getRetention(),
+                cohort.data == null ? null : cohort.data.getRetentionColumns(), "留存率(%)");
             writeCohort(wb.createSheet(SHEET_LTV), styles, cohort, cohortSpan,
-                cohort.data == null ? null : cohort.data.getLtv(), "LTV(₹)");
+                cohort.data == null ? null : cohort.data.getLtv(),
+                cohort.data == null ? null : cohort.data.getLtvColumns(), "LTV(₹)");
             wb.write(out);
             return out.toByteArray();
         }
@@ -487,7 +489,8 @@ public class OverviewWorkbookExporter
 
     // ===================== sheet 5 / 6 留存率、LTV =====================
 
-    private void writeCohort(Sheet sheet, Styles s, Part<CohortVO> part, String span, CohortTableVO table, String unitLabel)
+    private void writeCohort(Sheet sheet, Styles s, Part<CohortVO> part, String span, CohortTableVO table,
+            List<String> columns, String unitLabel)
     {
         CohortVO vo = part.data;
         int r = banner(sheet, s, 0, span, vo == null ? null : vo.getAsOf());
@@ -503,7 +506,6 @@ public class OverviewWorkbookExporter
         }
         r = kv(sheet, s, r, "口径", "T-1 快照；未到观察期的格子留空");
         r++;
-        List<String> columns = vo.getColumns();
         String[] head = new String[columns.size() + 2];
         head[0] = table.getCohortLabel() == null ? "分群日" : table.getCohortLabel();
         head[1] = table.getBaseLabel() == null ? "基数" : table.getBaseLabel();

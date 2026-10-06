@@ -352,7 +352,6 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         LocalDate end = to.isAfter(lastDay.plusDays(1)) ? lastDay.plusDays(1) : to;   // 右开
         fillCommon(vo, query, slot(from.format(YMD), to.format(YMD), null));
         vo.setAsOf(lastDay.plusDays(1).atStartOfDay().format(SLOT));
-        vo.setColumns(new ArrayList<>(OverviewBreakdowns.COHORT_COLUMNS.keySet()));
         if (end.isBefore(to))
         {
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "分群日截至 " + lastDay.format(YMD),
@@ -363,15 +362,17 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (!"LTV".equals(type))
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_RETENTION, "留存率", "FIRST_BET_DATE",
-                "首投日", "投注人数", "PCT", from, end, lastDay, false, notices);
+                "首投日", "投注人数", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
             vo.setRetention(t);
+            vo.setRetentionColumns(new ArrayList<>(OverviewBreakdowns.RETENTION_COLUMNS.keySet()));
             any |= hasBase(t);
         }
         if (!"RETENTION".equals(type))
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_LTV, "LTV", "FIRST_DEPOSIT_DATE",
-                "首存日", "首存人数", "MONEY", from, end, lastDay, true, notices);
+                "首存日", "首存人数", "MONEY", OverviewBreakdowns.LTV_COLUMNS, from, end, lastDay, true, notices);
             vo.setLtv(t);
+            vo.setLtvColumns(new ArrayList<>(OverviewBreakdowns.LTV_COLUMNS.keySet()));
             any |= hasBase(t);
         }
         vo.setEmpty(!any);
@@ -379,7 +380,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
     }
 
     private CohortTableVO cohortTable(String key, String title, String cohortBy, String cohortLabel,
-            String baseLabel, String format, LocalDate from, LocalDate end, LocalDate lastDay,
+            String baseLabel, String format, Map<String, String> columns, LocalDate from, LocalDate end, LocalDate lastDay,
             boolean checkMonotonic, List<OverviewNoticeVO> notices)
     {
         CohortTableVO t = new CohortTableVO();
@@ -416,7 +417,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             row.setBase(r == null ? null : toLong(r.num("base")));
             List<BigDecimal> values = new ArrayList<>();
             BigDecimal prev = null;
-            for (Map.Entry<String, String> col : OverviewBreakdowns.COHORT_COLUMNS.entrySet())
+            for (Map.Entry<String, String> col : columns.entrySet())
             {
                 int days = OverviewBreakdowns.COHORT_DAYS.get(col.getKey());
                 // 未到观察期一律 null：上游即使给了 0 也不采纳，0 会让留存曲线多出一段贴地的尾巴
