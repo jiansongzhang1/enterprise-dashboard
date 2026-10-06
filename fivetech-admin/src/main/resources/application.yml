@@ -249,8 +249,8 @@ dashboard:
           metrics:
             arppu: arppu_day
             depU: dep_users_day
-            # active_day：日字段有效历史范围数据团队未确认，日正式值先占位（NULL），确认后取消注释
-            # active: active_day
+            # active_day：日去重投注人数（2026-09-10 联调核对：14，落在小时人数 max 4 ~ 合计 19 之间）
+            active: active_day
         # 金额 / 普通比率：日、周序列与区间总值（dimensions=[]）
         overview_amount:
           name: dashboard_overview_amount_v2
