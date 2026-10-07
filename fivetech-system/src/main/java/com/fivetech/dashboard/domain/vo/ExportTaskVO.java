@@ -27,6 +27,12 @@ public class ExportTaskVO implements Serializable
     /** 建议文件名（预签名链接跨域，浏览器实际保存名以对象存储 key 为准） */
     private String suggestedFileName;
 
+    /** 给用户看的中文状态提示（按 job.status / job.errorCode 生成）；列表接口里为 null */
+    private String message;
+
+    /** 是否终态（DONE / FAILED / CANCELLED），为 true 时前端停止轮询；列表接口里为 null */
+    private Boolean terminal;
+
     /** 数据平台作业状态；列表接口里为 null（列表不逐个查询平台） */
     private ExportJob job;
 
@@ -40,6 +46,10 @@ public class ExportTaskVO implements Serializable
     public void setSubmittedAt(String submittedAt) { this.submittedAt = submittedAt; }
     public String getSuggestedFileName() { return suggestedFileName; }
     public void setSuggestedFileName(String suggestedFileName) { this.suggestedFileName = suggestedFileName; }
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+    public Boolean getTerminal() { return terminal; }
+    public void setTerminal(Boolean terminal) { this.terminal = terminal; }
     public ExportJob getJob() { return job; }
     public void setJob(ExportJob job) { this.job = job; }
 }

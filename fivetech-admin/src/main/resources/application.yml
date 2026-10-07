@@ -530,6 +530,11 @@ dashboard:
     # 明细含个人信息，导出默认要求独立权限点
     require-permission: ${DASHBOARD_EXPORT_REQUIRE_PERMISSION:true}
     permission: ${DASHBOARD_EXPORT_PERMISSION:dashboard:export:csv}
+    # 异步导出失败（job.status=FAILED）时，UDS error.code → 给用户看的中文提示。
+    # 平台尚未提供完整错误码清单，遇到新码在这里补；未配置的码提示「导出失败，请稍后重试（错误码 xxx）」
+    error-messages: {}
+      # 示例（错误码以平台实际返回为准）：
+      # "4402": 时间范围超出可导出的数据范围，请缩小区间后重试
 
 # 健康检查与监控端点
 # 独立端口 8081，安全组只对内网/探活来源开放，绝不暴露公网

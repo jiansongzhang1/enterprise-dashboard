@@ -52,6 +52,23 @@ public class ExportProperties
     /** 独立权限点标识 */
     private String permission = "dashboard:export:csv";
 
+    /**
+     * 异步导出失败时，UDS 错误码（{@code error.code}）→ 给用户看的中文提示。
+     * <p>平台的失败错误码目前没有完整清单，遇到新码在配置里补即可，不用改代码；
+     * 未配置的错误码统一提示「导出失败，请稍后重试」并附错误码，原文仍保留在 job.errorMessage 供排查。</p>
+     */
+    private java.util.Map<String, String> errorMessages = new java.util.LinkedHashMap<>();
+
+    public java.util.Map<String, String> getErrorMessages()
+    {
+        return errorMessages;
+    }
+
+    public void setErrorMessages(java.util.Map<String, String> errorMessages)
+    {
+        this.errorMessages = errorMessages;
+    }
+
     public boolean isEnabled()
     {
         return enabled;

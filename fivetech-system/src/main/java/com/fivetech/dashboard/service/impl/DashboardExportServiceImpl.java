@@ -125,8 +125,6 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         return accept("bet", "投注明细", () -> gateway.submitDetailExport("bet", request, maxRows()));
     }
 
-    /** 明细同步导出受 UDS offset ≤ 100000 限制，再大的 max-rows 也取不到 */
-    private static final long SYNC_HARD_LIMIT = 100_000L;
 
     private static final Map<String, String> DETAIL_LABELS = Map.of(
         "member", "会员明细", "deposit", "存款明细", "withdraw", "提款明细", "bet", "投注明细");
@@ -139,7 +137,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         {
             throw new ServiceException("导出功能未开启");
         }
-        long limit = Math.min(Math.max(1, export.getMaxRows()), SYNC_HARD_LIMIT);
+        long limit = Math.max(1, export.getMaxRows());
 
         // 1. explain：只编译不执行，开销最小。它按底表估算、不看筛选条件，是结果总数的上界——
         //    不超过上限就一定能同步导完；explain 失败不影响导出，继续用 count 判断
@@ -376,7 +374,51 @@ public class DashboardExportServiceImpl implements IDashboardExportService
             }
         }
         vo.setJob(job);
+        if (job != null)
+        {
+            vo.setTerminal(job.isTerminal());
+            vo.setMessage(messageOf(record.get("label"), job));
+        }
         return vo;
+    }
+
+    /**
+     * 作业状态 → 中文提示。UDS 的 errorMessage 是给开发看的原文，不直接给用户；
+     * 失败原因按错误码查 {@code dashboard.export.error-messages}，查不到给通用提示并带上错误码方便反馈。
+     */
+    private String messageOf(String label, ExportJob job)
+    {
+        String name = StringUtils.isEmpty(label) ? "导出文件" : label;
+        String status = job.getStatus() == null ? "" : job.getStatus();
+        switch (status)
+        {
+            case ExportJob.PENDING:
+                return "排队中，" + name + "即将开始生成";
+            case ExportJob.RUNNING:
+                return name + "正在生成，请稍候";
+            case ExportJob.DONE:
+                if (job.getFiles().isEmpty())
+                {
+                    return name + "已生成，但没有可下载的文件，请重新导出";
+                }
+                return name + "已生成" + (job.getRowCount() == null ? "" : "，共 " + job.getRowCount() + " 行")
+                    + (job.getFiles().size() > 1 ? "，分为 " + job.getFiles().size() + " 个文件" : "")
+                    + "，下载链接 1 小时内有效";
+            case ExportJob.FAILED:
+                String code = job.getErrorCode();
+                String mapped = code == null ? null : properties.getExport().getErrorMessages().get(code);
+                log.warn("[export] 导出作业失败 jobId={} code={} message={}", job.getJobId(), code, job.getErrorMessage());
+                if (StringUtils.isNotEmpty(mapped))
+                {
+                    return name + "导出失败：" + mapped;
+                }
+                return name + "导出失败，请稍后重试；如多次失败请联系管理员"
+                    + (StringUtils.isEmpty(code) ? "" : "（错误码 " + code + "）");
+            case ExportJob.CANCELLED:
+                return name + "导出已取消";
+            default:
+                return "导出状态未知（" + status + "），请稍后刷新";
+        }
     }
 
     private String taskKey(Long userId, String jobId)

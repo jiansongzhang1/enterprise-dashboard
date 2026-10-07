@@ -44,33 +44,6 @@ public class DashboardExportController extends BaseController
         this.exportService = exportService;
     }
 
-    //@PreAuthorize("@ss.hasPermi('dashboard:record:member')")
-    @PostMapping("/member")
-    public AjaxResult member(@Validated @RequestBody MemberRecordQuery query)
-    {
-        return AjaxResult.success(exportService.submitMembers(query));
-    }
-
-    //@PreAuthorize("@ss.hasPermi('dashboard:record:deposit')")
-    @PostMapping("/deposit")
-    public AjaxResult deposit(@Validated @RequestBody DepositRecordQuery query)
-    {
-        return AjaxResult.success(exportService.submitDeposits(query));
-    }
-
-    //@PreAuthorize("@ss.hasPermi('dashboard:record:withdraw')")
-    @PostMapping("/withdraw")
-    public AjaxResult withdraw(@Validated @RequestBody WithdrawRecordQuery query)
-    {
-        return AjaxResult.success(exportService.submitWithdrawals(query));
-    }
-
-    //@PreAuthorize("@ss.hasPermi('dashboard:record:bet')")
-    @PostMapping("/bet")
-    public AjaxResult bet(@Validated @RequestBody BetRecordQuery query)
-    {
-        return AjaxResult.success(exportService.submitBets(query));
-    }
 
     /**
      * 压测导出：UDS 的 bulk_bets 压测表（只开放 2026-09-10 一天），用来测大文件的生成耗时与浏览器下载速度。
