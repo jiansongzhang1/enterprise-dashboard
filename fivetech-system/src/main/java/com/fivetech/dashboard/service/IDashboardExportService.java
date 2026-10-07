@@ -44,11 +44,9 @@ public interface IDashboardExportService
     ExportTaskVO submitBenchmark(String merchantCode, boolean detailRows, long maxRows);
 
     /** 查询任务状态，只能查自己的任务 */
-    ExportTaskVO getTask(String jobId);
+    com.fivetech.dashboard.domain.vo.ExportTaskStatusVO getTask(String jobId);
 
     /** 取消任务，只能取消自己的任务 */
     ExportTaskVO cancelTask(String jobId);
 
-    /** 当前用户最近的导出任务（仅本系统记录，不含平台状态） */
-    List<ExportTaskVO> listMyTasks();
 }

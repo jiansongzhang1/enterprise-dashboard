@@ -69,12 +69,6 @@ public class DashboardExportController extends BaseController
         return AjaxResult.success(exportService.cancelTask(jobId));
     }
 
-    @GetMapping("/tasks")
-    public AjaxResult myTasks()
-    {
-        return AjaxResult.success(exportService.listMyTasks());
-    }
-
     /** 压测导出参数 */
     public static class BenchmarkRequest
     {

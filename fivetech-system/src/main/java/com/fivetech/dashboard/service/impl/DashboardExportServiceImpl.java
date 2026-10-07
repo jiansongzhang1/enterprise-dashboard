@@ -233,17 +233,35 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     // ===================== 查询 / 取消 / 列表 =====================
 
     @Override
-    public ExportTaskVO getTask(String jobId)
+    public com.fivetech.dashboard.domain.vo.ExportTaskStatusVO getTask(String jobId)
     {
         Map<String, String> record = ownRecord(jobId);
+        ExportTaskVO task;
         try
         {
-            return toVO(record, gateway.getExportJob(jobId));
+            task = toVO(record, gateway.getExportJob(jobId));
         }
         catch (UdsQueryException e)
         {
             throw translate(e);
         }
+        // 轮询只回前端需要的：是否终态、下载链接、提示文案
+        com.fivetech.dashboard.domain.vo.ExportTaskStatusVO vo = new com.fivetech.dashboard.domain.vo.ExportTaskStatusVO();
+        vo.setJobId(jobId);
+        vo.setTerminal(Boolean.TRUE.equals(task.getTerminal()));
+        vo.setMessage(task.getMessage());
+        ExportJob job = task.getJob();
+        if (job != null && ExportJob.DONE.equals(job.getStatus()))
+        {
+            for (ExportJob.ExportFile f : job.getFiles())
+            {
+                if (StringUtils.isNotEmpty(f.getUrl()))
+                {
+                    vo.getUrls().add(f.getUrl());
+                }
+            }
+        }
+        return vo;
     }
 
     @Override
@@ -260,31 +278,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         }
     }
 
-    @Override
-    public List<ExportTaskVO> listMyTasks()
-    {
-        Long userId = SecurityUtils.getUserId();
-        Set<String> ids = redisCache.getCacheSet(USER_KEY + userId);
-        List<ExportTaskVO> list = new ArrayList<>();
-        if (ids == null)
-        {
-            return list;
-        }
-        for (String id : ids)
-        {
-            Map<String, String> record = redisCache.getCacheMap(taskKey(userId, id));
-            if (record == null || record.isEmpty())
-            {
-                continue;   // 已过期
-            }
-            // 列表不逐个查平台（N 次远程调用），前端点开某一条再查实时状态
-            ExportTaskVO vo = toVO(record, null);
-            vo.setJobId(id);
-            list.add(vo);
-        }
-        list.sort(Comparator.comparing(ExportTaskVO::getSubmittedAt, Comparator.nullsLast(Comparator.reverseOrder())));
-        return list.size() > 20 ? list.subList(0, 20) : list;
-    }
+
 
     private Map<String, String> ownRecord(String jobId)
     {
