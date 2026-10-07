@@ -29,7 +29,7 @@ public class BetRecordVO implements Serializable
     /** 平台厂商名 */
     private String vendorName;
 
-    /** 游戏类型编码 slots / live / mini */
+    /** 游戏类型编码（game_catalog）1 真人 / 2 电游 / 3 体育 / 4 捕鱼 / 5 彩票 / 6 棋牌 / 7 电竞 */
     private String gameType;
 
     /** 游戏类型名称 */

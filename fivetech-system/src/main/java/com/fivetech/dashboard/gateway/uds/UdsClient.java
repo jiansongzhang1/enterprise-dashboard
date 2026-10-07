@@ -361,6 +361,25 @@ public class UdsClient
         return null;
     }
 
+    /**
+     * 扫描量预估：{@code POST /v1/query/explain}，请求体与 {@code /v1/query} 相同。
+     * <p>只编译查询、不执行明细 SQL；响应根节点带 {@code scanRowsEst}（按底表统计估算，不考虑 filters 选择率）
+     * 和 {@code costTier}。非 2xx 按普通查询异常抛出，不能当作 0 行。</p>
+     */
+    public JsonNode explain(Map<String, Object> body)
+    {
+        String json;
+        try
+        {
+            json = objectMapper.writeValueAsString(body);
+        }
+        catch (Exception e)
+        {
+            throw new UdsQueryException("UDS 请求体序列化失败", 0, e);
+        }
+        return readJson(post(properties.getExplainPath(), json));
+    }
+
     // ===================== 异步导出作业 =====================
 
     /** jobId 只允许这些字符，防止拼进路径时被注入 */

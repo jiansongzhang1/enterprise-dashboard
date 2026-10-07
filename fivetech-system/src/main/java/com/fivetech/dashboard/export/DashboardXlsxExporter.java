@@ -379,7 +379,7 @@ public class DashboardXlsxExporter
             BetRecordVO::getVendorCode));
         BET.add(f("vendorName", Col.text("平台廠商名", 16), "遊戲平台廠商的名稱（如 Evolution Gaming）。", U_TEXT,
             BetRecordVO::getVendorName));
-        BET.add(f("gameType", Col.text("遊戲類型", 10), "老虎機 / 真人 / 小遊戲等，由廠商側提供。", U_ENUM,
+        BET.add(f("gameType", Col.text("遊戲類型", 10), "真人 / 電遊 / 體育 / 捕魚 / 彩票 / 棋牌 / 電競。", U_ENUM,
             r -> label(r.getGameTypeLabel(), r.getGameType())));
         BET.add(f("gameId", Col.text("遊戲ID", 18), "遊戲的唯一編號。", U_TEXT, BetRecordVO::getGameId));
         BET.add(f("gameName", Col.text("遊戲名稱", 24), "遊戲名稱。", U_TEXT, BetRecordVO::getGameName));
@@ -692,19 +692,14 @@ public class DashboardXlsxExporter
     // ===================== 校验 / 分页 / 审计 =====================
 
     /**
-     * 导出前的校验：开关、权限。
+     * 导出前的校验：只看总开关。
+     * <p>不再单独校验导出权限：能查询页面就能导出，权限由 Controller 上查询接口的 @PreAuthorize 控制。</p>
      */
     private void precheck(BaseDashboardQuery query)
     {
         if (!properties.getExport().isEnabled())
         {
             throw new ServiceException("导出功能未开启");
-        }
-        if (properties.getExport().isRequirePermission()
-            && !SecurityUtils.hasPermi(properties.getExport().getPermission()))
-        {
-            // 明细含个人信息，「能看」不等于「能批量导出」
-            throw new ServiceException("没有导出权限，请联系管理员授权");
         }
     }
 

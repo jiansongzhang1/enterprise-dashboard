@@ -25,6 +25,9 @@ public final class OrderDict
     /** 游戏类型 */
     public static final Map<String, String> GAME_TYPE = new LinkedHashMap<>();
 
+    /** 投注明细游戏类型（UDS game_catalog） */
+    public static final Map<String, String> GAME_CATALOG = new LinkedHashMap<>();
+
     /** 注单结算状态 */
     public static final Map<String, String> SETTLE_STATUS = new LinkedHashMap<>();
 
@@ -47,6 +50,14 @@ public final class OrderDict
         GAME_TYPE.put("live", "真人");
         GAME_TYPE.put("mini", "小游戏");
 
+        GAME_CATALOG.put("1", "真人");
+        GAME_CATALOG.put("2", "电游");
+        GAME_CATALOG.put("3", "体育");
+        GAME_CATALOG.put("4", "捕鱼");
+        GAME_CATALOG.put("5", "彩票");
+        GAME_CATALOG.put("6", "棋牌");
+        GAME_CATALOG.put("7", "电竞");
+
         SETTLE_STATUS.put("done", "已结算");
         SETTLE_STATUS.put("open", "未结算");
         SETTLE_STATUS.put("cancel", "已取消");
@@ -60,5 +71,20 @@ public final class OrderDict
     public static String label(Map<String, String> dict, String code)
     {
         return MemberDict.label(dict, code);
+    }
+
+    /** 整数编码规整：UDS 数值列可能以 "2.0" 返回，统一成 "2"；非数值原样返回 */
+    public static String intCode(String raw)
+    {
+        if (raw == null)
+        {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.matches("-?\\d+\\.0+"))
+        {
+            return s.substring(0, s.indexOf('.'));
+        }
+        return s;
     }
 }

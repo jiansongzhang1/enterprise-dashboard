@@ -46,7 +46,7 @@ public class MetricSummaryController extends BaseController
     /**
      * 查询指标汇总表；export_csv=true 时下载 XLSX
      */
-//    @PreAuthorize("@ss.hasPermi('dashboard:metric:summary')")
+    @PreAuthorize("@ss.hasPermi('dashboard:metric:summary')")
     @PostMapping("/summary")
     public ResponseEntity<?> summary(@Validated @RequestBody MetricSummaryQuery query)
     {

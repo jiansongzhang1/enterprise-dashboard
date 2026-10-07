@@ -89,6 +89,21 @@ public interface MetricDataGateway
     // ===================== 异步导出 =====================
 
     /**
+     * 明细查询的扫描量预估（UDS /v1/query/explain）。按底表统计估算，<b>不考虑筛选条件</b>，
+     * 只能作为上界参考，不是结果总数。
+     *
+     * @return 预估扫描行数；未配置数据集或平台没给时返回 null
+     */
+    Long explainDetailScanRows(String tab, RecordPageRequest request);
+
+    /**
+     * 明细查询在当前筛选条件下的结果总数（与分页查询同条件的 COUNT）。
+     *
+     * @return 结果总数；未配置数据集或平台没给时返回 null
+     */
+    Long countDetailRows(String tab, RecordPageRequest request);
+
+    /**
      * 提交明细异步导出。筛选、排序、时间与同名分页查询完全同源，只是不分页。
      *
      * @param tab member / deposit / withdraw / bet

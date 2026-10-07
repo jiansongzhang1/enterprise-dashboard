@@ -2261,7 +2261,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"vendorCode\": \"JILI\",\n  \"gameType\": \"slots\",\n  \"game\": \"Super Ace\",\n  \"sortColumn\": \"betAmount\",\n  \"sortDirection\": \"desc\"\n}",
+                  "raw": "{\n  \"vendorCode\": \"JILI\",\n  \"gameType\": \"2\",\n  \"game\": \"Super Ace\",\n  \"sortColumn\": \"betAmount\",\n  \"sortDirection\": \"desc\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

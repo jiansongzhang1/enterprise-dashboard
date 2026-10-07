@@ -26,6 +26,19 @@ public class UdsProperties
     /** 批量查询接口路径：Body 为 JSON 数组（不包 queries 字段），最多 50 项，响应按顺序返回 */
     private String batchPath = "/v1/query/batch";
 
+    /** 查询预估接口路径：请求体与 /v1/query 相同，只编译不执行，返回 scanRowsEst / costTier */
+    private String explainPath = "/v1/query/explain";
+
+    public String getExplainPath()
+    {
+        return explainPath;
+    }
+
+    public void setExplainPath(String explainPath)
+    {
+        this.explainPath = explainPath;
+    }
+
     /** 运营总览 / 指标汇总的数据集路由（见 {@link Overview}） */
     private Overview overview = new Overview();
 

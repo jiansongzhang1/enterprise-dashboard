@@ -4,6 +4,7 @@ import java.util.Date;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -79,17 +80,16 @@ public class OverviewController extends BaseController
     /**
      * 查询指标墙；{@code export=true} 时下载 xlsx。
      *
-     * <p>权限点与设计文档一致；监控管理上线前四个 Tab 是否分权待定，
-     * 所以查询的权限注解先注释掉，与同目录下另外两个 Controller 的现状保持一致。
-     * <b>导出权限不能跟着一起放开</b>——导出会把整屏数据带出系统，所以在方法内单独校验。</p>
+     * <p>查询需要 {@code dashboard:overview:metrics}；能查询就能导出，{@code export=true} 时只校验导出总开关，
+     * 并写入操作日志审计。</p>
      */
-//    @PreAuthorize("@ss.hasPermi('dashboard:overview:metrics')")
+    @PreAuthorize("@ss.hasPermi('dashboard:overview:metrics')")
     @PostMapping("/overview")
     public ResponseEntity<?> overview(@Validated @RequestBody OverviewQuery query)
     {
         if (query.isExport())
         {
-            checkExportPermission();
+            checkExportEnabled();
         }
 
         OverviewVO data = overviewService.query(query);
@@ -100,8 +100,7 @@ public class OverviewController extends BaseController
         }
 
         byte[] file = xlsxExporter.export(data);
-        // todo 一期是否需要，可以先不做
-        //audit(query, file.length);
+        audit(query, file.length);
         return DashboardExportSupport.xlsx(xlsxExporter.fileName(data), file);
     }
 
@@ -111,7 +110,7 @@ public class OverviewController extends BaseController
      *
      * 前端按 leaderboard 调用，两个路径都映射到这里，以 leaderboard 为准。</p>
      */
-//    @PreAuthorize("@ss.hasPermi('dashboard:overview:leaderboard')")
+    @PreAuthorize("@ss.hasPermi('dashboard:overview:leaderboard')")
     @PostMapping({"/rankingboard"})
     public AjaxResult rankingBoard(@Validated @RequestBody RankingBoardQuery query)
     {
@@ -121,7 +120,7 @@ public class OverviewController extends BaseController
     /**
      * 留存与 LTV：按首投日 / 首存日分群的两张 T-1 队列矩阵。
      */
-//    @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
+    @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
     @PostMapping("/cohort")
     public AjaxResult cohort(@Validated @RequestBody CohortQuery query)
     {
@@ -131,7 +130,7 @@ public class OverviewController extends BaseController
     /**
      * 注册渠道：渠道分组 + 全部渠道，筛选在前端完成。
      */
-//    @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
+    @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
     @PostMapping("/reg-channels")
     public AjaxResult regChannels(@Validated @RequestBody RegChannelQuery query)
     {
@@ -144,10 +143,11 @@ public class OverviewController extends BaseController
      * <p>sheet 名与原型一致：核心指标 / 注册渠道 / 赠金项目结构 / 热销游戏 / 留存率 / LTV。
      * 任一块取数失败时对应 sheet 写明原因，其余照常导出。</p>
      */
+    @PreAuthorize("@ss.hasPermi('dashboard:overview:metrics')")
     @PostMapping("/overview/export")
     public ResponseEntity<?> exportOverview(@Validated @RequestBody OverviewExportQuery query)
     {
-        checkExportPermission();
+        checkExportEnabled();
         byte[] file = workbookExporter.export(query);
         audit("运营总览整页导出", "/dashboard/metrics/overview/export",
             "slot=" + query.getSlotFrom() + "~" + query.getSlotTo() + ", granularity=" + query.getGranularity()
@@ -156,16 +156,13 @@ public class OverviewController extends BaseController
         return DashboardExportSupport.xlsx(workbookExporter.fileName(query), file);
     }
 
-    private void checkExportPermission()
+    /** 能查询就能导出，这里只看导出总开关 */
+    private void checkExportEnabled()
     {
         ExportProperties export = properties.getExport();
         if (!export.isEnabled())
         {
             throw new ServiceException("导出功能未开启");
-        }
-        if (export.isRequirePermission() && !SecurityUtils.hasPermi(export.getPermission()))
-        {
-            throw new ServiceException("没有导出权限，请联系管理员授权");
         }
     }
 

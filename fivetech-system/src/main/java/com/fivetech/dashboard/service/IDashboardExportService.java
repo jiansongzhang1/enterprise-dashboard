@@ -26,6 +26,15 @@ public interface IDashboardExportService
     ExportTaskVO submitBets(BetRecordQuery query);
 
     /**
+     * 明细查询页导出分流：先预估行数，不超过 {@code dashboard.export.max-rows} 返回 null（调用方走同步 XLSX）；
+     * 超过则提交异步导出并返回任务，前端轮询 {@code GET /dashboard/export/tasks/{jobId}}。
+     * <p>能查询就能导出：这里不校验 {@code dashboard:export:csv}，权限由查询接口的 @PreAuthorize 控制。</p>
+     *
+     * @param tab member / deposit / withdraw / bet
+     */
+    ExportTaskVO submitIfOverLimit(String tab, com.fivetech.dashboard.gateway.RecordPageRequest request);
+
+    /**
      * 压测导出：只用于验证大文件链路与浏览器下载性能
      *
      * @param merchantCode 商户，空表示全部

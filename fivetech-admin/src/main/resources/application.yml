@@ -191,6 +191,8 @@ dashboard:
       roles: ${UDS_ROLES:dashboard_ops}
       # 批量查询（列表 + COUNT、周序列），Body 为数组，最多 50 项
       batch-path: ${UDS_BATCH_PATH:/v1/query/batch}
+      # 扫描量预估：明细导出前用它判断走同步 XLSX 还是异步导出（只编译不执行，不返回结果总数）
+      explain-path: ${UDS_EXPLAIN_PATH:/v1/query/explain}
       connect-timeout-seconds: ${UDS_CONNECT_TIMEOUT:5}
       # 留 25 秒：CloudFront 源站超时是 30 秒，要给自己留出返回和序列化的余量
       read-timeout-seconds: ${UDS_READ_TIMEOUT:25}
@@ -412,7 +414,7 @@ dashboard:
             username: login_name
             vendorCode: provider_code
             vendorName: provider_name
-            gameType: game_type
+            gameType: game_catalog
             gameId: game_id
             gameName: game_name
             betAmount: default_bet_amount
@@ -519,8 +521,10 @@ dashboard:
     # 是否在文件开头写口径说明区（程序消费时建议关闭）
     include-meta: ${DASHBOARD_EXPORT_INCLUDE_META:true}
     # 同步导出最大行数。UDS 单次最多返回 1000 行，明细同步导出按 1000 行一段顺序翻页，
-    # 1 万行约 10 次调用；更大的量请走异步导出（/v1/jobs，文件由数据平台直接生成）
-    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:10000}
+    # 1 万行约 10 次调用。明细查询页导出会先 explain / count 预估行数：
+    # 不超过本值走同步 XLSX，超过则自动转异步导出（/v1/jobs），返回 jobId 供前端轮询。
+    # 受 UDS offset ≤ 100000 限制，同步上限最多按 100000 生效
+    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:1000000}
     # 明细异步导出（UDS /v1/jobs）行数上限；文件由数据平台直接写对象存储，不经本服务内存。0 = 平台默认（5000 万）
     async-max-rows: ${DASHBOARD_EXPORT_ASYNC_MAX_ROWS:5000000}
     # 明细含个人信息，导出默认要求独立权限点

@@ -125,6 +125,60 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         return accept("bet", "投注明细", () -> gateway.submitDetailExport("bet", request, maxRows()));
     }
 
+    /** 明细同步导出受 UDS offset ≤ 100000 限制，再大的 max-rows 也取不到 */
+    private static final long SYNC_HARD_LIMIT = 100_000L;
+
+    private static final Map<String, String> DETAIL_LABELS = Map.of(
+        "member", "会员明细", "deposit", "存款明细", "withdraw", "提款明细", "bet", "投注明细");
+
+    @Override
+    public ExportTaskVO submitIfOverLimit(String tab, RecordPageRequest request)
+    {
+        ExportProperties export = properties.getExport();
+        if (!export.isEnabled())
+        {
+            throw new ServiceException("导出功能未开启");
+        }
+        long limit = Math.min(Math.max(1, export.getMaxRows()), SYNC_HARD_LIMIT);
+
+        // 1. explain：只编译不执行，开销最小。它按底表估算、不看筛选条件，是结果总数的上界——
+        //    不超过上限就一定能同步导完；explain 失败不影响导出，继续用 count 判断
+        try
+        {
+            Long scan = gateway.explainDetailScanRows(tab, request);
+            if (scan != null && scan <= limit)
+            {
+                log.info("[export] {} 预估扫描 {} 行 ≤ {}，走同步导出", tab, scan, limit);
+                return null;
+            }
+        }
+        catch (UdsQueryException e)
+        {
+            log.warn("[export] {} explain 失败（{}），改用 count 判断", tab, e.getMessage());
+        }
+
+        // 2. 扫描量超过上限不代表结果多（如加了账号筛选），再用同条件 COUNT 取准确总数
+        Long total;
+        try
+        {
+            total = gateway.countDetailRows(tab, request);
+        }
+        catch (UdsQueryException e)
+        {
+            throw translate(e);
+        }
+        if (total != null && total <= limit)
+        {
+            log.info("[export] {} 结果 {} 行 ≤ {}，走同步导出", tab, total, limit);
+            return null;
+        }
+
+        // 3. 超过上限：转异步导出，文件由数据平台生成，前端轮询任务状态后直连下载
+        log.info("[export] {} 结果 {} 行 > {}，转异步导出", tab, total, limit);
+        String label = DETAIL_LABELS.getOrDefault(tab, tab);
+        return accept(tab, label, () -> gateway.submitDetailExport(tab, request, maxRows()));
+    }
+
     @Override
     public ExportTaskVO submitBenchmark(String merchantCode, boolean detailRows, long maxRows)
     {

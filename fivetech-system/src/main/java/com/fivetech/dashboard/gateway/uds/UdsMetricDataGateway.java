@@ -1058,8 +1058,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setUsername(str(row, d, "username"));
             vo.setVendorCode(str(row, d, "vendorCode"));
             vo.setVendorName(str(row, d, "vendorName"));
-            vo.setGameType(decoded(row, d, "gameType"));
-            vo.setGameTypeLabel(OrderDict.label(OrderDict.GAME_TYPE, vo.getGameType()));
+            // 游戏类型取 game_catalog：1 真人 / 2 电游 / 3 体育 / 4 捕鱼 / 5 彩票 / 6 棋牌 / 7 电竞
+            vo.setGameType(OrderDict.intCode(decoded(row, d, "gameType")));
+            vo.setGameTypeLabel(OrderDict.label(OrderDict.GAME_CATALOG, vo.getGameType()));
             vo.setGameId(str(row, d, "gameId"));
             vo.setGameName(str(row, d, "gameName"));
             vo.setBetAmount(num(row, d, "betAmount"));
@@ -1504,6 +1505,37 @@ public class UdsMetricDataGateway implements MetricDataGateway
     }
 
     // ===================== 异步导出 =====================
+
+    @Override
+    public Long explainDetailScanRows(String tab, RecordPageRequest request)
+    {
+        UdsProperties.DetailDataset detail = detailOf(tab);
+        if (detail == null)
+        {
+            return null;
+        }
+        // 与分页查询第一页完全相同的请求体，只是换成 explain 地址
+        tools.jackson.databind.JsonNode root = client.explain(detailBody(detail, request, DetailMode.LIST, MAX_LIMIT, 0));
+        Long scan = num(root, "scanRowsEst");
+        log.info("[uds] 明细 {} explain dataset={} costTier={} scanRowsEst={}",
+            tab, detail.getDataset(), text(root, "costTier"), scan);
+        return scan;
+    }
+
+    @Override
+    public Long countDetailRows(String tab, RecordPageRequest request)
+    {
+        UdsProperties.DetailDataset detail = detailOf(tab);
+        if (detail == null)
+        {
+            return null;
+        }
+        UdsRow count = singleRow(client.queryWithMeta(detailBody(detail, request, DetailMode.COUNT, 0, 0)),
+            detail.getDataset());
+        BigDecimal total = count == null ? null : count.num(detail.getCountMetric());
+        log.info("[uds] 明细 {} count dataset={} total={}", tab, detail.getDataset(), total);
+        return total == null ? null : total.longValue();
+    }
 
     @Override
     public ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows)

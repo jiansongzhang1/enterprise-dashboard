@@ -21,8 +21,8 @@ public class BetRecordQuery extends BaseRecordQuery
     @Pattern(regexp = "^([A-Za-z0-9_-]{1,32})?$", message = "vendorCode 只能包含字母、数字、下划线和横线")
     private String vendorCode;
 
-    /** 游戏类型：slots 老虎机 / live 真人 / mini 小游戏 */
-    @Pattern(regexp = "^(slots|live|mini)?$", message = "gameType 取值应为 slots/live/mini")
+    /** 游戏类型（game_catalog）：1 真人 / 2 电游 / 3 体育 / 4 捕鱼 / 5 彩票 / 6 棋牌 / 7 电竞 */
+    @Pattern(regexp = "^[1-7]?$", message = "gameType 取值应为 1-7")
     private String gameType;
 
     /** 游戏名称或游戏ID，模糊匹配 */
