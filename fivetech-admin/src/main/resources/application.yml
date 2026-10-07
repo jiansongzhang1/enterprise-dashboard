@@ -339,8 +339,10 @@ dashboard:
             # 关键字：玩家 ID 精确，账号 LIKE 包含（% 和 _ 会被去掉）
             keyword: [player_id, "login_search~"]
         deposit:
-          dataset: dashboard_deposit_detail_v3
+          # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
+          dataset: dashboard_deposit_snapshot_v3
           time-dimension: snapshot_at
+          snapshot: true
           time-column: created_date_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -365,8 +367,10 @@ dashboard:
           value-defaults:
             status: fail                  # 非 30 → fail；按 fail 筛选下推为 status < 30 OR status >= 31
         withdraw:
-          dataset: dashboard_withdraw_detail_v3
+          # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
+          dataset: dashboard_withdraw_snapshot_v3
           time-dimension: snapshot_at
+          snapshot: true
           time-column: created_date_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
@@ -394,8 +398,10 @@ dashboard:
             keyword: [player_id, billno, "login_search~"]
           # TODO：提款状态 / 审核状态枚举待数据团队提供后配置 value-maps（未配置时筛选值原样下推）
         bet:
-          dataset: dashboard_bet_detail_v3
+          # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 bet_time_india 筛选上
+          dataset: dashboard_bet_snapshot_v3
           time-dimension: snapshot_at
+          snapshot: true
           time-column: bet_time_india
           options:
             channel: ${UDS_QUERY_CHANNEL:ONLINE}
