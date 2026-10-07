@@ -1,7 +1,5 @@
 package com.fivetech.dashboard.export;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,17 +7,15 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.CreationHelper;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -47,27 +43,23 @@ import com.fivetech.dashboard.domain.vo.overview.RegChannelItemVO;
 import com.fivetech.dashboard.domain.vo.overview.RegChannelVO;
 import com.fivetech.dashboard.enums.CompareType;
 import com.fivetech.dashboard.enums.Granularity;
+import com.fivetech.dashboard.export.ExportTemplate.Book;
+import com.fivetech.dashboard.export.ExportTemplate.Col;
 import com.fivetech.dashboard.service.IOverviewSectionService;
 import com.fivetech.dashboard.service.IOverviewService;
 
 /**
- * 运营总览整页导出：四个接口、六个子页面汇成一个 xlsx，一个子页面一张 sheet。
- *
- * <p>sheet 名与原型 Tab / 面板名一致，顺序与页面一致：</p>
+ * 运营总览整页导出（《导出模板样例-v1_5》「總覽-」9 个工作表）：
  * <ol>
- *   <li>核心指标 —— /overview（指标卡 + 时间序列）</li>
- *   <li>注册渠道 —— /reg-channels（渠道分组 + 渠道明细）</li>
- *   <li>赠金项目结构 —— /rankingboard 的 bonus</li>
- *   <li>热销游戏 —— /rankingboard 的 games（Top 20）</li>
- *   <li>留存率 —— /cohort 的 retention</li>
- *   <li>LTV —— /cohort 的 ltv</li>
+ *   <li>導出說明 —— 导出时间、导出人、站点、筛选条件、免责声明（另附本次的提示与取数失败）；</li>
+ *   <li>指標快照 —— 一行一个指标：统计 / 对比起止、当前值、单位、上期值、变化率、口径；</li>
+ *   <li>時間序列 —— 一行一个时间片、一列一个指标；</li>
+ *   <li>註冊渠道、贈金項目結構、熱銷遊戲 —— 每行带「統計開始 / 統計結束」；</li>
+ *   <li>投注留存率矩陣、LTV矩陣 —— 每行带「資料截至」；</li>
+ *   <li>口徑說明 —— 每列一行，同一页面每次导出内容相同。</li>
  * </ol>
- *
- * <p><b>一块失败不拖垮整份文件</b>：每个接口单独取数，失败时对应 sheet 照常创建，
- * 写明「取数失败」与原因，其余 sheet 正常导出——拿到文件的人能看出哪块缺了、为什么缺。</p>
- *
- * <p>数值一律写成数字（单位放表头），null 留空单元格、不写 0；整份在内存里生成完再返回，
- * 生成途中出错仍能回 JSON 错误体。数据量很小（最多几百行），不需要流式。</p>
+ * <p>第 1 行即表头，表头上方、表格下方都不加说明行。某块取数失败时对应工作表只留表头，
+ * 原因写在「導出說明」里，其余工作表照常导出。</p>
  *
  * @author fivetech
  */
@@ -76,17 +68,25 @@ public class OverviewWorkbookExporter
 {
     private static final Logger log = LoggerFactory.getLogger(OverviewWorkbookExporter.class);
 
-    public static final String SHEET_CORE = "核心指标";
+    public static final String PAGE = "運營總覽";
 
-    public static final String SHEET_REG = "注册渠道";
+    private static final String S_INFO = "導出說明";
 
-    public static final String SHEET_BONUS = "赠金项目结构";
+    private static final String S_SNAPSHOT = "指標快照";
 
-    public static final String SHEET_GAMES = "热销游戏";
+    private static final String S_SERIES = "時間序列";
 
-    public static final String SHEET_RETENTION = "留存率";
+    private static final String S_REG = "註冊渠道";
 
-    public static final String SHEET_LTV = "LTV";
+    private static final String S_BONUS = "贈金項目結構";
+
+    private static final String S_GAMES = "熱銷遊戲";
+
+    private static final String S_RETENTION = "投注留存率矩陣";
+
+    private static final String S_LTV = "LTV矩陣";
+
+    private static final String S_NOTES = "口徑說明";
 
     private static final DateTimeFormatter SLOT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -126,7 +126,6 @@ public class OverviewWorkbookExporter
         }
         catch (RuntimeException e)
         {
-            // 参数错误（ServiceException）与数据平台故障都在文件里写明，不让整份导出失败
             log.warn("[overview-export] {} 取数失败：{}", name, e.getMessage());
             part.error = e instanceof com.fivetech.dashboard.gateway.uds.UdsQueryException
                 ? ((com.fivetech.dashboard.gateway.uds.UdsQueryException) e).userMessage() : e.getMessage();
@@ -141,49 +140,39 @@ public class OverviewWorkbookExporter
     {
         validate(query);
 
-        Part<OverviewVO> core = fetch(SHEET_CORE, () -> overviewService.query(overviewQuery(query)));
-        Part<RegChannelVO> reg = fetch(SHEET_REG, () -> sectionService.regChannels(regQuery(query)));
+        Part<OverviewVO> core = fetch(S_SNAPSHOT, () -> overviewService.query(overviewQuery(query)));
+        Part<RegChannelVO> reg = fetch(S_REG, () -> sectionService.regChannels(regQuery(query)));
         Part<RankingBoardVO> ranking = fetch("排行榜", () -> sectionService.rankingBoard(rankingQuery(query)));
         CohortQuery cq = cohortQuery(query);
-        String cohortSpan = cq.getSlotFrom() + " ~ " + cq.getSlotTo() + "（分群日，左闭右开）";
-        Part<CohortVO> cohort = fetch("留存与 LTV", () -> sectionService.cohort(cq));
+        Part<CohortVO> cohort = fetch("留存與 LTV", () -> sectionService.cohort(cq));
 
-        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream())
+        try (Book book = new Book(false))
         {
-            Styles styles = new Styles(wb);
-            writeCore(wb.createSheet(SHEET_CORE), styles, query, core);
-            writeReg(wb.createSheet(SHEET_REG), styles, query, reg);
-            writeBonus(wb.createSheet(SHEET_BONUS), styles, query, ranking);
-            writeGames(wb.createSheet(SHEET_GAMES), styles, query, ranking);
-            writeCohort(wb.createSheet(SHEET_RETENTION), styles, cohort, cohortSpan,
+            book.info(S_INFO, info(query, cq, core, reg, ranking, cohort));
+            writeSnapshot(book, core);
+            writeSeries(book, core);
+            writeReg(book, query, reg);
+            writeBonus(book, query, ranking);
+            writeGames(book, query, ranking);
+            writeCohort(book, S_RETENTION, "投注日", "投注人數", "(%)", "0.0", cohort,
                 cohort.data == null ? null : cohort.data.getRetention(),
-                cohort.data == null ? null : cohort.data.getRetentionColumns(), "留存率(%)");
-            writeCohort(wb.createSheet(SHEET_LTV), styles, cohort, cohortSpan,
+                cohort.data == null ? null : cohort.data.getRetentionColumns());
+            writeCohort(book, S_LTV, "首存日", "首存人數", "(INR)", "0", cohort,
                 cohort.data == null ? null : cohort.data.getLtv(),
-                cohort.data == null ? null : cohort.data.getLtvColumns(), "LTV(₹)");
-            wb.write(out);
-            return out.toByteArray();
-        }
-        catch (IOException e)
-        {
-            throw new ServiceException("导出文件生成失败：" + e.getMessage(), 5002);
+                cohort.data == null ? null : cohort.data.getLtvColumns());
+            book.notes(S_NOTES, notes(cohort.data));
+            return book.toBytes();
         }
     }
 
-    /** 文件名带上区间，导出多次之后还能分清 */
+    /** 文件名：運營總覽-yyyyMMdd-HHmmss.xlsx */
     public String fileName(OverviewExportQuery query)
     {
-        return "运营总览_" + safe(query.getSlotFrom()) + "_" + safe(query.getSlotTo()) + ".xlsx";
-    }
-
-    private static String safe(String text)
-    {
-        return text == null ? "" : text.replace(":", "").replace(" ", "_").replace("-", "");
+        return ExportTemplate.fileName(properties, PAGE);
     }
 
     // ===================== 参数 =====================
 
-    /** 只做导出特有的校验；各接口自己的校验（区间、对齐、跨度）由对应服务负责 */
     private void validate(OverviewExportQuery query)
     {
         LocalDateTime from = parseSlot(query.getSlotFrom(), "slotFrom");
@@ -206,13 +195,18 @@ public class OverviewWorkbookExporter
         }
     }
 
+    private static Granularity granularity(OverviewExportQuery q)
+    {
+        return StringUtils.isEmpty(q.getGranularity()) ? Granularity.HOUR : Granularity.valueOf(q.getGranularity());
+    }
+
     private OverviewQuery overviewQuery(OverviewExportQuery q)
     {
         OverviewQuery o = new OverviewQuery();
         o.setSiteCode(q.getSiteCode());
         o.setSlotFrom(q.getSlotFrom());
         o.setSlotTo(q.getSlotTo());
-        o.setGranularity(StringUtils.isEmpty(q.getGranularity()) ? Granularity.HOUR : Granularity.valueOf(q.getGranularity()));
+        o.setGranularity(granularity(q));
         o.setCompareType(StringUtils.isEmpty(q.getCompareType()) ? CompareType.PREV_PERIOD : CompareType.valueOf(q.getCompareType()));
         o.setCompareFrom(q.getCompareFrom());
         o.setCompareTo(q.getCompareTo());
@@ -237,18 +231,13 @@ public class OverviewWorkbookExporter
         r.setSiteCode(q.getSiteCode());
         r.setSlotFrom(q.getSlotFrom());
         r.setSlotTo(q.getSlotTo());
-        r.setGranularity(StringUtils.isEmpty(q.getGranularity()) ? "HOUR" : q.getGranularity());
+        r.setGranularity(granularity(q).name());
         return r;
     }
 
     /**
-     * 留存与 LTV 的分群日区间（左闭右开，日期）。
-     * <ul>
-     *   <li>传了 cohortFrom / cohortTo 就用它们；</li>
-     *   <li>否则取 slot 的日期：开始 = slotFrom 当天，结束 = slotTo 所在日（slotTo 恰为 00:00 时就是这一天，否则是次日）；</li>
-     *   <li>得到的区间里没有任何已完结的分群日（如只看今天）时，改为截至昨天的最近 30 天——留存是 T-1 快照，今天没有数据；</li>
-     *   <li>超过 90 天时保留最近的 90 天（UDS 分群查询上限）。</li>
-     * </ul>
+     * 留存与 LTV 的分群日区间（左闭右开，日期）：传了 cohortFrom / cohortTo 就用它们；否则取 slot 的日期；
+     * 没有已完结的分群日时改为截至昨天的最近 30 天；超过 90 天时保留最近 90 天。
      */
     private CohortQuery cohortQuery(OverviewExportQuery q)
     {
@@ -285,456 +274,460 @@ public class OverviewWorkbookExporter
         return c;
     }
 
-    // ===================== sheet 1 核心指标 =====================
+    // ===================== 導出說明 =====================
 
-    private void writeCore(Sheet sheet, Styles s, OverviewExportQuery q, Part<OverviewVO> part)
+    private Map<String, String> info(OverviewExportQuery q, CohortQuery cq, Part<OverviewVO> core,
+            Part<RegChannelVO> reg, Part<RankingBoardVO> ranking, Part<CohortVO> cohort)
     {
-        int r = banner(sheet, s, 0, q.getSlotFrom() + " ~ " + q.getSlotTo() + "（" + q.getGranularity() + "）",
-            part.data == null ? null : part.data.getAsOf());
-        if (part.error != null)
+        StringBuilder filter = new StringBuilder();
+        filter.append("時間範圍 ").append(ExportTemplate.range(q.getSlotFrom(), q.getSlotTo()));
+        filter.append(" · 粒度 ").append(granularityText(granularity(q)));
+        if (core.data != null && core.data.getCompare() != null)
         {
-            failed(sheet, s, r, part.error);
-            return;
-        }
-        OverviewVO vo = part.data;
-        Object block = vo.getBlocks().get("METRICS");
-        if (!(block instanceof MetricsBlockVO))
-        {
-            r = kv(sheet, s, r, "说明", vo.getBlockErrors().isEmpty() ? "无指标数据" : "指标墙取数失败");
-            notices(sheet, s, r + 1, vo.getNotices());
-            return;
-        }
-        MetricsBlockVO metrics = (MetricsBlockVO) block;
-        if (vo.getCompare() != null)
-        {
-            r = kv(sheet, s, r, "对比期", vo.getCompare().getFrom() + " ~ " + vo.getCompare().getTo());
-        }
-        r++;
-
-        String[] head = { "指标", "分组", "核心", "当期值", "单位", "对比期值", "变化量", "变化率(%)", "变化(百分点)", "口径" };
-        head(sheet, s, r++, head);
-        List<MetricCardVO> cards = metrics.getItems();
-        for (MetricCardVO c : cards)
-        {
-            Row row = sheet.createRow(r++);
-            CellStyle vs = s.of(c.getValueFormat(), c.getDecimals());
-            text(row, 0, c.getLabel(), s.body);
-            text(row, 1, c.getGroupLabel() == null ? c.getGroup() : c.getGroupLabel(), s.body);
-            text(row, 2, "CORE".equals(c.getEmphasis()) ? "是" : "", s.center);
-            num(row, 3, c.getValue(), vs);
-            text(row, 4, unitOf(c.getValueFormat()), s.center);
-            num(row, 5, c.getPrevValue(), vs);
-            num(row, 6, c.getDelta(), vs);
-            num(row, 7, c.getDeltaPct(), s.d2);
-            num(row, 8, c.getDeltaPt(), s.d2);
-            text(row, 9, c.getExpression(), s.body);
-        }
-
-        // 时间序列：一行一个时间片、一列一个指标，导出后可以直接在 Excel 里画折线
-        List<MetricCardVO> withSeries = new ArrayList<>();
-        cards.forEach(c -> {
-            if (c.getSeries() != null && !c.getSeries().isEmpty())
-            {
-                withSeries.add(c);
-            }
-        });
-        if (!withSeries.isEmpty() && vo.getSlot() != null)
-        {
-            r++;
-            Row title = sheet.createRow(r++);
-            text(title, 0, "时间序列", s.head);
-            String[] seriesHead = new String[withSeries.size() + 1];
-            seriesHead[0] = "时间片";
-            for (int i = 0; i < withSeries.size(); i++)
-            {
-                MetricCardVO c = withSeries.get(i);
-                String unit = unitOf(c.getValueFormat());
-                seriesHead[i + 1] = c.getLabel() + (unit.isEmpty() ? "" : "(" + unit + ")");
-            }
-            head(sheet, s, r++, seriesHead);
-            List<String> labels = vo.getSlot().getLabels();
-            for (int p = 0; p < vo.getSlot().getPoints(); p++)
-            {
-                Row row = sheet.createRow(r++);
-                text(row, 0, labels != null && p < labels.size() ? labels.get(p) : String.valueOf(p + 1), s.body);
-                for (int i = 0; i < withSeries.size(); i++)
-                {
-                    MetricCardVO c = withSeries.get(i);
-                    num(row, i + 1, p < c.getSeries().size() ? c.getSeries().get(p) : null, s.of(c.getValueFormat(), c.getDecimals()));
-                }
-            }
-            width(sheet, Math.max(head.length, seriesHead.length));
+            filter.append(" · 對比 ").append(compareText(core.data.getCompare().getType()))
+                .append("（").append(ExportTemplate.range(core.data.getCompare().getFrom(), core.data.getCompare().getTo()))
+                .append("）");
         }
         else
         {
-            width(sheet, head.length);
+            CompareType type = StringUtils.isEmpty(q.getCompareType()) ? CompareType.PREV_PERIOD
+                : CompareType.valueOf(q.getCompareType());
+            filter.append(" · 對比 ").append(compareText(type));
         }
-        notices(sheet, s, r + 1, vo.getNotices());
+        LocalDate cohortEnd = LocalDate.parse(cq.getSlotTo(), YMD).minusDays(1);
+        filter.append(" · 留存與 LTV 分群日 ").append(cq.getSlotFrom()).append(" – ").append(cohortEnd.format(YMD));
+        if (!q.getMetrics().isEmpty())
+        {
+            filter.append(" · 指標 ").append(q.getMetrics().size()).append(" 項");
+        }
+
+        Map<String, String> extra = new LinkedHashMap<>();
+        List<String> failed = new ArrayList<>();
+        addFailure(failed, S_SNAPSHOT + "、" + S_SERIES, core.error);
+        addFailure(failed, S_REG, reg.error);
+        addFailure(failed, S_BONUS + "、" + S_GAMES, ranking.error);
+        addFailure(failed, S_RETENTION + "、" + S_LTV, cohort.error);
+        if (!failed.isEmpty())
+        {
+            extra.put("取數失敗", String.join("；", failed));
+        }
+        Set<String> tips = new LinkedHashSet<>();
+        collect(tips, core.data == null ? null : core.data.getNotices());
+        collect(tips, sectionNotices(reg.data));
+        collect(tips, sectionNotices(ranking.data));
+        collect(tips, sectionNotices(cohort.data));
+        if (!tips.isEmpty())
+        {
+            extra.put("提示", String.join("；", tips));
+        }
+        return ExportTemplate.exportInfo(properties, q.getSiteCode(), filter.toString(), extra);
     }
 
-    // ===================== sheet 2 注册渠道 =====================
-
-    private void writeReg(Sheet sheet, Styles s, OverviewExportQuery q, Part<RegChannelVO> part)
+    private static void addFailure(List<String> out, String sheets, String error)
     {
-        int r = banner(sheet, s, 0, q.getSlotFrom() + " ~ " + q.getSlotTo(), asOf(part.data));
-        if (part.error != null)
+        if (error != null)
         {
-            failed(sheet, s, r, part.error);
-            return;
-        }
-        RegChannelVO vo = part.data;
-        r = kvNum(sheet, s, r, "注册总数", vo.getTotalRegistrations() == null ? null : BigDecimal.valueOf(vo.getTotalRegistrations()), s.i0);
-        r++;
-
-        Row t1 = sheet.createRow(r++);
-        text(t1, 0, "渠道分组", s.head);
-        head(sheet, s, r++, new String[] { "分组编码", "分组名称", "注册人数", "占比(%)", "渠道数" });
-        for (RegChannelGroupVO g : vo.getGroups())
-        {
-            Row row = sheet.createRow(r++);
-            text(row, 0, g.getCode(), s.body);
-            text(row, 1, g.getName(), s.body);
-            num(row, 2, g.getRegistrations() == null ? null : BigDecimal.valueOf(g.getRegistrations()), s.i0);
-            num(row, 3, g.getShare(), s.d1);
-            num(row, 4, g.getChannelCount() == null ? null : BigDecimal.valueOf(g.getChannelCount()), s.i0);
-        }
-        r++;
-
-        Row t2 = sheet.createRow(r++);
-        text(t2, 0, "渠道明细", s.head);
-        head(sheet, s, r++, new String[] { "分组", "渠道", "注册人数", "站点占比(%)", "组内占比(%)" });
-        for (RegChannelItemVO c : vo.getChannels())
-        {
-            Row row = sheet.createRow(r++);
-            text(row, 0, c.getGroupName() == null ? c.getGroupCode() : c.getGroupName(), s.body);
-            text(row, 1, c.getName(), s.body);
-            num(row, 2, c.getRegistrations() == null ? null : BigDecimal.valueOf(c.getRegistrations()), s.i0);
-            num(row, 3, c.getShareOfTotal(), s.d1);
-            num(row, 4, c.getShareOfGroup(), s.d1);
-        }
-        width(sheet, 5);
-        notices(sheet, s, r + 1, vo.getNotices());
-    }
-
-    // ===================== sheet 3 赠金项目结构 =====================
-
-    private void writeBonus(Sheet sheet, Styles s, OverviewExportQuery q, Part<RankingBoardVO> part)
-    {
-        int r = banner(sheet, s, 0, q.getSlotFrom() + " ~ " + q.getSlotTo(), asOf(part.data));
-        if (part.error != null)
-        {
-            failed(sheet, s, r, part.error);
-            return;
-        }
-        RankingBoardVO vo = part.data;
-        r = kvNum(sheet, s, r, "发放赠金总额(₹)", vo.getBonus() == null ? null : vo.getBonus().getTotal(), s.money);
-        r++;
-        head(sheet, s, r++, new String[] { "排名", "赠金项目", "金额(₹)", "占比(%)" });
-        if (vo.getBonus() != null)
-        {
-            for (BonusItemVO b : vo.getBonus().getItems())
-            {
-                Row row = sheet.createRow(r++);
-                num(row, 0, b.getRank() == null ? null : BigDecimal.valueOf(b.getRank()), s.i0);
-                text(row, 1, b.getName(), s.body);
-                num(row, 2, b.getAmount(), s.money);
-                num(row, 3, b.getShare(), s.d1);
-            }
-        }
-        width(sheet, 4);
-        notices(sheet, s, r + 1, vo.getNotices());
-    }
-
-    // ===================== sheet 4 热销游戏 =====================
-
-    private void writeGames(Sheet sheet, Styles s, OverviewExportQuery q, Part<RankingBoardVO> part)
-    {
-        int r = banner(sheet, s, 0, q.getSlotFrom() + " ~ " + q.getSlotTo(), asOf(part.data));
-        if (part.error != null)
-        {
-            failed(sheet, s, r, part.error);
-            return;
-        }
-        RankingBoardVO vo = part.data;
-        if (vo.getGames() != null)
-        {
-            r = kvNum(sheet, s, r, "投注总额(₹)", vo.getGames().getTotalBetAmount(), s.money);
-            r = kvNum(sheet, s, r, "Top " + vo.getGames().getTopN() + " 覆盖率(%)", pct(vo.getGames().getTotalBetAmountPct()), s.d1);
-        }
-        r++;
-        String[] head = { "排名", "游戏名称", "游戏ID", "游戏平台Code", "平台厂商名", "游戏类型",
-            "投注金额(₹)", "盈利率(%)", "投注占比(%)", "投注人次", "投注笔数" };
-        head(sheet, s, r++, head);
-        if (vo.getGames() != null)
-        {
-            for (GameItemVO g : vo.getGames().getItems())
-            {
-                Row row = sheet.createRow(r++);
-                num(row, 0, g.getRank() == null ? null : BigDecimal.valueOf(g.getRank()), s.i0);
-                text(row, 1, g.getName(), s.body);
-                text(row, 2, g.getGameId(), s.body);
-                text(row, 3, g.getPlatformCode(), s.body);
-                text(row, 4, g.getVendorName(), s.body);
-                text(row, 5, g.getGameType(), s.body);
-                num(row, 6, g.getBetAmount(), s.money);
-                num(row, 7, pct(g.getProfitRate()), s.d1);
-                num(row, 8, pct(g.getRateForBetAmount()), s.d1);
-                num(row, 9, g.getBetUsers() == null ? null : BigDecimal.valueOf(g.getBetUsers()), s.i0);
-                num(row, 10, g.getBetCount() == null ? null : BigDecimal.valueOf(g.getBetCount()), s.i0);
-            }
-        }
-        width(sheet, head.length);
-        notices(sheet, s, r + 1, vo.getNotices());
-    }
-
-    // ===================== sheet 5 / 6 留存率、LTV =====================
-
-    private void writeCohort(Sheet sheet, Styles s, Part<CohortVO> part, String span, CohortTableVO table,
-            List<String> columns, String unitLabel)
-    {
-        CohortVO vo = part.data;
-        int r = banner(sheet, s, 0, span, vo == null ? null : vo.getAsOf());
-        if (part.error != null)
-        {
-            failed(sheet, s, r, part.error);
-            return;
-        }
-        if (table == null)
-        {
-            kv(sheet, s, r, "说明", "无数据");
-            return;
-        }
-        r = kv(sheet, s, r, "口径", "T-1 快照；未到观察期的格子留空");
-        r++;
-        String[] head = new String[columns.size() + 2];
-        head[0] = table.getCohortLabel() == null ? "分群日" : table.getCohortLabel();
-        head[1] = table.getBaseLabel() == null ? "基数" : table.getBaseLabel();
-        for (int i = 0; i < columns.size(); i++)
-        {
-            head[i + 2] = columns.get(i) + " " + unitLabel;
-        }
-        head(sheet, s, r++, head);
-        CellStyle vs = "PCT".equalsIgnoreCase(table.getValueFormat()) ? s.d1 : s.money;
-        for (CohortRowVO row : table.getRows())
-        {
-            Row x = sheet.createRow(r++);
-            text(x, 0, row.getCohortDate(), s.body);
-            num(x, 1, row.getBase() == null ? null : BigDecimal.valueOf(row.getBase()), s.i0);
-            for (int i = 0; i < columns.size(); i++)
-            {
-                num(x, i + 2, i < row.getValues().size() ? row.getValues().get(i) : null, vs);
-            }
-        }
-        width(sheet, head.length);
-        notices(sheet, s, r + 1, vo.getNotices());
-    }
-
-    // ===================== 公共 =====================
-
-    private static String asOf(OverviewSectionVO vo)
-    {
-        return vo == null ? null : vo.getAsOf();
-    }
-
-    /** "13.4%" → 13.4；解析失败或为空返回 null */
-    private static BigDecimal pct(String text)
-    {
-        if (StringUtils.isEmpty(text))
-        {
-            return null;
-        }
-        try
-        {
-            return new BigDecimal(text.replace("%", "").trim());
-        }
-        catch (NumberFormatException e)
-        {
-            return null;
+            out.add(sheets + "：" + ExportTemplate.t(error));
         }
     }
 
-    private int banner(Sheet sheet, Styles s, int r, String span, String asOf)
+    private static List<OverviewNoticeVO> sectionNotices(OverviewSectionVO vo)
     {
-        Row row = sheet.createRow(r);
-        text(row, 0, "统计区间", s.head);
-        text(row, 1, span, s.body);
-        text(row, 3, "数据截至", s.head);
-        text(row, 4, asOf == null ? "—" : asOf, s.body);
-        Row tz = sheet.createRow(r + 1);
-        text(tz, 0, "时区 / 币种", s.head);
-        text(tz, 1, properties.getTimezone() + " / " + properties.getCurrency(), s.body);
-        return r + 2;
+        return vo == null ? null : vo.getNotices();
     }
 
-    private void failed(Sheet sheet, Styles s, int r, String error)
+    private static void collect(Set<String> out, List<OverviewNoticeVO> notices)
     {
-        Row row = sheet.createRow(r + 1);
-        text(row, 0, "取数失败", s.head);
-        text(row, 1, error, s.body);
-        width(sheet, 2);
-    }
-
-    private int kv(Sheet sheet, Styles s, int r, String key, String value)
-    {
-        Row row = sheet.createRow(r);
-        text(row, 0, key, s.head);
-        text(row, 1, value, s.body);
-        return r + 1;
-    }
-
-    private int kvNum(Sheet sheet, Styles s, int r, String key, BigDecimal value, CellStyle style)
-    {
-        Row row = sheet.createRow(r);
-        text(row, 0, key, s.head);
-        num(row, 1, value, style);
-        return r + 1;
-    }
-
-    /** 页面上的提示（数据未就绪、参数被忽略、口径不一致……）写在表尾，文件脱离页面流转时也看得到 */
-    private void notices(Sheet sheet, Styles s, int r, List<OverviewNoticeVO> notices)
-    {
-        if (notices == null || notices.isEmpty())
+        if (notices == null)
         {
             return;
         }
-        head(sheet, s, r++, new String[] { "提示", "编码", "说明", "详情" });
         for (OverviewNoticeVO n : notices)
         {
-            Row row = sheet.createRow(r++);
-            text(row, 0, n.getLevel(), s.center);
-            text(row, 1, n.getCode(), s.body);
-            text(row, 2, n.getMessage(), s.body);
-            text(row, 3, n.getDetail(), s.body);
+            if (StringUtils.isNotEmpty(n.getMessage()))
+            {
+                out.add(ExportTemplate.t(n.getMessage()));
+            }
         }
     }
 
-    private static void head(Sheet sheet, Styles s, int r, String[] titles)
+    private static String granularityText(Granularity g)
     {
-        Row row = sheet.createRow(r);
-        for (int i = 0; i < titles.length; i++)
+        if (g == null)
         {
-            text(row, i, titles[i], s.head);
+            return "小時";
+        }
+        switch (g)
+        {
+            case DAY:
+                return "日";
+            case HOUR:
+                return "小時";
+            default:
+                return "週";
         }
     }
 
-    private static void text(Row row, int column, String value, CellStyle style)
+    private static String compareText(CompareType type)
     {
-        Cell cell = row.createCell(column);
-        // Excel 单元格上限 32767 字符；以 = + - @ 开头的文本会被当成公式，前面加单引号前缀
-        String v = value == null ? "" : value.length() > 32000 ? value.substring(0, 32000) : value;
-        cell.setCellValue(v);
-        if (!v.isEmpty() && "=+-@".indexOf(v.charAt(0)) >= 0)
+        if (type == null)
         {
-            CellStyle quoted = row.getSheet().getWorkbook().createCellStyle();
-            quoted.cloneStyleFrom(style);
-            quoted.setQuotePrefixed(true);
-            cell.setCellStyle(quoted);
+            return "無";
+        }
+        switch (type)
+        {
+            case PREV_PERIOD:
+                return "上一週期";
+            case LAST_YEAR:
+                return "去年同期";
+            case CUSTOM:
+                return "自訂";
+            default:
+                return "無";
+        }
+    }
+
+    // ===================== 指標快照 / 時間序列 =====================
+
+    /** 指标卡按模板顺序排列；模板之外的指标排在后面 */
+    private static List<MetricCardVO> cards(OverviewVO vo)
+    {
+        if (vo == null || !(vo.getBlocks().get("METRICS") instanceof MetricsBlockVO))
+        {
+            return new ArrayList<>();
+        }
+        List<MetricCardVO> cards = new ArrayList<>(((MetricsBlockVO) vo.getBlocks().get("METRICS")).getItems());
+        List<String> order = ExportMetricText.order();
+        cards.sort(Comparator.comparingInt(c -> {
+            int i = order.indexOf(c.getCode());
+            return i < 0 ? Integer.MAX_VALUE : i;
+        }));
+        return cards;
+    }
+
+    private static ExportMetricText.M text(MetricCardVO c)
+    {
+        return ExportMetricText.of(c.getCode(), c.getLabel(), c.getGroupLabel() == null ? c.getGroup() : c.getGroupLabel(),
+            c.getExpression(), c.getValueFormat());
+    }
+
+    private void writeSnapshot(Book book, Part<OverviewVO> part)
+    {
+        Sheet sheet = book.sheet(S_SNAPSHOT);
+        List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.slot("對比開始"), Col.slot("對比結束"),
+            Col.text("指標", 12), Col.text("分組", 11), Col.num("當前值", null), Col.text("單位", 6),
+            Col.num("上期值", null), Col.num("變化率(%)", "0.0"), Col.text("口徑", 60));
+        int r = book.header(sheet, cols);
+        OverviewVO vo = part.data;
+        if (vo == null)
+        {
             return;
         }
-        cell.setCellStyle(style);
+        String from = vo.getSlot() == null ? null : vo.getSlot().getFrom();
+        String to = vo.getSlot() == null ? null : vo.getSlot().getTo();
+        String cmpFrom = vo.getCompare() == null ? null : vo.getCompare().getFrom();
+        String cmpTo = vo.getCompare() == null ? null : vo.getCompare().getTo();
+        for (MetricCardVO c : cards(vo))
+        {
+            ExportMetricText.M m = text(c);
+            book.row(sheet, r++, cols, Arrays.asList(from, to, cmpFrom, cmpTo, m.label, m.group, c.getValue(),
+                m.unit, c.getPrevValue(), ExportTemplate.changePct(c.getValue(), c.getPrevValue()), m.note));
+        }
     }
 
-    /** null 留空单元格，不写 0 */
-    private static void num(Row row, int column, BigDecimal value, CellStyle style)
+    private void writeSeries(Book book, Part<OverviewVO> part)
     {
-        Cell cell = row.createCell(column);
-        if (value != null)
+        Sheet sheet = book.sheet(S_SERIES);
+        OverviewVO vo = part.data;
+        List<MetricCardVO> cards = cards(vo);
+        List<Col> cols = new ArrayList<>();
+        cols.add(Col.slot("時間片開始"));
+        cols.add(Col.slot("時間片結束"));
+        for (MetricCardVO c : cards)
         {
-            cell.setCellValue(value.doubleValue());
+            ExportMetricText.M m = text(c);
+            cols.add(Col.num(m.header(), m.format));
         }
-        cell.setCellStyle(style);
+        int r = book.header(sheet, cols);
+        if (vo == null || vo.getSlot() == null)
+        {
+            return;
+        }
+        LocalDateTime from = ExportTemplate.toDateTime(vo.getSlot().getFrom());
+        LocalDateTime to = ExportTemplate.toDateTime(vo.getSlot().getTo());
+        if (from == null || to == null)
+        {
+            return;
+        }
+        Granularity g = vo.getSlot().getGranularity() == null ? Granularity.HOUR : vo.getSlot().getGranularity();
+        int points = vo.getSlot().getPoints();
+        for (int p = 0; p < points; p++)
+        {
+            LocalDateTime start = slotStart(from, g, p);
+            LocalDateTime end = slotStart(from, g, p + 1);
+            if (end.isAfter(to))
+            {
+                end = to;
+            }
+            List<Object> line = new ArrayList<>();
+            line.add(start);
+            line.add(end);
+            for (MetricCardVO c : cards)
+            {
+                line.add(c.getSeries() != null && p < c.getSeries().size() ? c.getSeries().get(p) : null);
+            }
+            book.row(sheet, r++, cols, line);
+        }
     }
 
-    private static String unitOf(String valueFormat)
+    /** 第 p 个时间片的开始：小时按整点、日按 0 点、周按 7 天推进；第 0 片从区间起点开始 */
+    private static LocalDateTime slotStart(LocalDateTime from, Granularity g, int p)
     {
-        if (valueFormat == null)
+        if (p == 0)
         {
-            return "";
+            return from;
         }
-        switch (valueFormat.toUpperCase())
+        switch (g)
         {
-            case "PCT":
-                return "%";
-            case "MIN":
-                return "分钟";
-            case "MULTIPLE":
-                return "倍";
-            case "MONEY":
-                return "₹";
+            case DAY:
+                return from.toLocalDate().atStartOfDay().plusDays(p);
+            case HOUR:
+                return from.truncatedTo(ChronoUnit.HOURS).plusHours(p);
             default:
-                return "";
+                return from.toLocalDate().atStartOfDay().plusWeeks(p);
         }
     }
 
-    private static void width(Sheet sheet, int columns)
+    // ===================== 註冊渠道 =====================
+
+    private static String[] span(OverviewSectionVO vo, OverviewExportQuery q)
     {
-        for (int i = 0; i < columns; i++)
+        if (vo != null && vo.getSlot() != null && StringUtils.isNotEmpty(vo.getSlot().getFrom()))
         {
-            // autoSizeColumn 不认中文字宽，固定宽度更稳定：首列宽一些放标签
-            sheet.setColumnWidth(i, (i == 0 ? 22 : 16) * 256);
+            return new String[] { vo.getSlot().getFrom(), vo.getSlot().getTo() };
+        }
+        return new String[] { q.getSlotFrom(), q.getSlotTo() };
+    }
+
+    private void writeReg(Book book, OverviewExportQuery q, Part<RegChannelVO> part)
+    {
+        Sheet sheet = book.sheet(S_REG);
+        List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.text("渠道分組", 12),
+            Col.text("渠道", 22), Col.num("註冊人數", null), Col.num("佔總註冊(%)", "0.0"), Col.num("佔分組(%)", "0.0"));
+        int r = book.header(sheet, cols);
+        RegChannelVO vo = part.data;
+        if (vo == null)
+        {
+            return;
+        }
+        String[] s = span(vo, q);
+        // 按分组（分组注册数降序）聚在一起，组内按注册数降序
+        Map<String, String> groupNames = new LinkedHashMap<>();
+        for (RegChannelGroupVO g : vo.getGroups())
+        {
+            groupNames.put(g.getCode(), ExportTemplate.t(g.getName() == null ? g.getCode() : g.getName()));
+        }
+        List<RegChannelItemVO> channels = new ArrayList<>(vo.getChannels());
+        List<String> order = new ArrayList<>(groupNames.keySet());
+        channels.sort(Comparator
+            .comparingInt((RegChannelItemVO c) -> {
+                int i = order.indexOf(c.getGroupCode());
+                return i < 0 ? Integer.MAX_VALUE : i;
+            })
+            .thenComparing((RegChannelItemVO c) -> c.getRegistrations() == null ? 0L : c.getRegistrations(),
+                Comparator.reverseOrder()));
+        for (RegChannelItemVO c : channels)
+        {
+            String group = groupNames.getOrDefault(c.getGroupCode(),
+                ExportTemplate.t(c.getGroupName() == null ? c.getGroupCode() : c.getGroupName()));
+            book.row(sheet, r++, cols, Arrays.asList(s[0], s[1], group, ExportTemplate.t(c.getName()),
+                c.getRegistrations(), c.getShareOfTotal(), c.getShareOfGroup()));
         }
     }
 
-    /** 样式池：POI 样式数量有上限，必须复用 */
-    private static final class Styles
+    // ===================== 贈金項目結構 =====================
+
+    private void writeBonus(Book book, OverviewExportQuery q, Part<RankingBoardVO> part)
     {
-        private final CellStyle head;
-
-        private final CellStyle body;
-
-        private final CellStyle center;
-
-        private final CellStyle i0;
-
-        private final CellStyle d1;
-
-        private final CellStyle d2;
-
-        private final CellStyle money;
-
-        private Styles(Workbook wb)
+        Sheet sheet = book.sheet(S_BONUS);
+        List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.text("贈金項目", 40),
+            Col.num("金額(INR)", "0.00"), Col.num("佔比(%)", "0.0"));
+        int r = book.header(sheet, cols);
+        RankingBoardVO vo = part.data;
+        if (vo == null || vo.getBonus() == null)
         {
-            CreationHelper helper = wb.getCreationHelper();
-            Font bold = wb.createFont();
-            bold.setBold(true);
-            head = wb.createCellStyle();
-            head.setFont(bold);
-            body = wb.createCellStyle();
-            center = wb.createCellStyle();
-            center.setAlignment(HorizontalAlignment.CENTER);
-            i0 = wb.createCellStyle();
-            i0.setDataFormat(helper.createDataFormat().getFormat("#,##0"));
-            d1 = wb.createCellStyle();
-            d1.setDataFormat(helper.createDataFormat().getFormat("#,##0.0"));
-            d2 = wb.createCellStyle();
-            d2.setDataFormat(helper.createDataFormat().getFormat("#,##0.00"));
-            money = wb.createCellStyle();
-            money.setDataFormat(helper.createDataFormat().getFormat("#,##0.00"));
+            return;
         }
-
-        /** 只决定小数位与千分位，不做数值换算（比率已在服务层 ×100） */
-        private CellStyle of(String valueFormat, Integer decimals)
+        String[] s = span(vo, q);
+        BonusItemVO others = null;
+        for (BonusItemVO b : vo.getBonus().getItems())
         {
-            if (decimals != null)
+            if (isOthers(b))
             {
-                return decimals <= 0 ? i0 : (decimals == 1 ? d1 : d2);
+                others = b;
+                continue;
             }
-            if (valueFormat == null)
-            {
-                return i0;
-            }
-            switch (valueFormat.toUpperCase())
-            {
-                case "PCT":
-                case "MULTIPLE":
-                    return d2;
-                case "MIN":
-                    return d1;
-                case "MONEY":
-                    return money;
-                default:
-                    return i0;
-            }
+            book.row(sheet, r++, cols, Arrays.asList(s[0], s[1], bonusName(b.getName()), b.getAmount(), b.getShare()));
         }
+        // 「Others」固定最后
+        if (others != null)
+        {
+            book.row(sheet, r, cols, Arrays.asList(s[0], s[1], "Others", others.getAmount(), others.getShare()));
+        }
+    }
+
+    private static boolean isOthers(BonusItemVO b)
+    {
+        return "other".equalsIgnoreCase(b.getCode()) || "其他".equals(b.getName()) || "Others".equalsIgnoreCase(b.getName());
+    }
+
+    /** 赠金项目写完整的英文项目名：服务端名称是「英文|中文」，取英文一段 */
+    private static String bonusName(String name)
+    {
+        if (StringUtils.isEmpty(name))
+        {
+            return name;
+        }
+        int bar = name.indexOf('|');
+        return bar > 0 ? name.substring(0, bar).trim() : name;
+    }
+
+    // ===================== 熱銷遊戲 =====================
+
+    private void writeGames(Book book, OverviewExportQuery q, Part<RankingBoardVO> part)
+    {
+        Sheet sheet = book.sheet(S_GAMES);
+        List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.num("序", null), Col.text("遊戲名稱", 24),
+            Col.text("平台廠商名", 16), Col.text("遊戲平台Code", 14), Col.text("遊戲類型", 10), Col.text("遊戲ID", 18),
+            Col.num("投注額(INR)", "0.00"), Col.num("盈利率(%)", "0.0"), Col.num("投注額佔比(%)", "0.0"));
+        int r = book.header(sheet, cols);
+        RankingBoardVO vo = part.data;
+        if (vo == null || vo.getGames() == null)
+        {
+            return;
+        }
+        String[] s = span(vo, q);
+        for (GameItemVO g : vo.getGames().getItems())
+        {
+            String type = StringUtils.isNotEmpty(g.getGameType()) ? g.getGameType() : g.getGameTypeCode();
+            book.row(sheet, r++, cols, Arrays.asList(s[0], s[1], g.getRank(), g.getName(), g.getVendorName(),
+                g.getPlatformCode(), ExportTemplate.t(type), g.getGameId(), g.getBetAmount(),
+                ExportTemplate.toDecimal(g.getProfitRate()), ExportTemplate.toDecimal(g.getRateForBetAmount())));
+        }
+    }
+
+    // ===================== 留存 / LTV 矩陣 =====================
+
+    private void writeCohort(Book book, String sheetName, String dateHead, String baseHead, String unit,
+            String format, Part<CohortVO> part, CohortTableVO table, List<String> columns)
+    {
+        Sheet sheet = book.sheet(sheetName);
+        List<String> heads = columns == null || columns.isEmpty() ? defaultCohortColumns(sheetName) : columns;
+        List<Col> cols = new ArrayList<>();
+        cols.add(Col.date(dateHead));
+        cols.add(Col.date("資料截至"));
+        cols.add(Col.num(baseHead, null));
+        for (String h : heads)
+        {
+            cols.add(Col.num(h + unit, format));
+        }
+        int r = book.header(sheet, cols);
+        if (part.data == null || table == null)
+        {
+            return;
+        }
+        LocalDate asOf = dataThrough(part.data);
+        List<CohortRowVO> rows = new ArrayList<>(table.getRows());
+        // 最近的分群日在上
+        rows.sort(Comparator.comparing(CohortRowVO::getCohortDate, Comparator.nullsLast(Comparator.reverseOrder())));
+        for (CohortRowVO row : rows)
+        {
+            List<Object> line = new ArrayList<>();
+            line.add(row.getCohortDate());
+            line.add(asOf);
+            line.add(row.getBase());
+            for (int i = 0; i < heads.size(); i++)
+            {
+                line.add(row.getValues() != null && i < row.getValues().size() ? row.getValues().get(i) : null);
+            }
+            book.row(sheet, r++, cols, line);
+        }
+    }
+
+    private static List<String> defaultCohortColumns(String sheetName)
+    {
+        List<String> base = new ArrayList<>(List.of("D+1", "D+2", "D+3", "D+4", "D+5", "D+6", "D+7", "D+15", "D+30"));
+        if (S_LTV.equals(sheetName))
+        {
+            base.add(0, "Pre D+0");
+        }
+        return base;
+    }
+
+    /** 资料截至 = 昨天：队列是 T-1 快照，asOf 为「昨天 + 1 天」的 00:00 */
+    private LocalDate dataThrough(CohortVO vo)
+    {
+        LocalDateTime asOf = ExportTemplate.toDateTime(vo.getAsOf());
+        if (asOf != null)
+        {
+            return asOf.toLocalDate().minusDays(1);
+        }
+        return LocalDate.now(ZoneId.of(properties.getTimezone())).minusDays(1);
+    }
+
+    // ===================== 口徑說明 =====================
+
+    private List<String[]> notes(CohortVO cohort)
+    {
+        List<String[]> l = ExportTemplate.commonNotes(false);
+        String slotUnit = "YYYY-MM-DD HH:mm";
+        l.add(new String[] { S_SNAPSHOT, "統計開始 / 統計結束", "當前值的統計區間", slotUnit });
+        l.add(new String[] { S_SNAPSHOT, "對比開始 / 對比結束", "上期值的統計區間，按頁面「對比」設定（上一週期 / 去年同期 / 自訂）", slotUnit });
+        l.add(new String[] { S_SNAPSHOT, "指標、分組", "固定指標與所屬分組；跨多個自然日時，僅支持單日的指標（活躍人數、ARPPU）不導出", "" });
+        l.add(new String[] { S_SNAPSHOT, "當前值 / 上期值", "按「口徑」列計算的區間值；比率、時長、倍數、去重人數按整個區間重算，不是逐小時相加", "見「單位」列" });
+        l.add(new String[] { S_SNAPSHOT, "變化率(%)", "(當前值 − 上期值) ÷ 上期值 × 100；上期值為 0 或無資料時為空", "百分數值，1 位小數" });
+        l.add(new String[] { S_SNAPSHOT, "口徑", "該指標的定義，與下方各指標列相同", "" });
+        l.add(new String[] { S_SERIES, "時間片開始 / 時間片結束", "一行一個時間片，粒度按頁面「粒度」設定", slotUnit });
+        for (ExportMetricText.M m : ExportMetricText.ALL.values())
+        {
+            l.add(new String[] { S_SERIES, m.header(), m.note, m.unitNote });
+        }
+        String sectionSpan = "本表數據的統計區間，與指標卡相同（小時級）；零點後今日尚無完整小時時為昨日全天";
+        l.add(new String[] { S_REG, "統計開始 / 統計結束", sectionSpan, slotUnit });
+        l.add(new String[] { S_REG, "渠道分組", "渠道所屬的分組（註冊來源的上級分類）", "" });
+        l.add(new String[] { S_REG, "渠道", "按註冊時的渠道歸因，註冊後不再改變；空渠道歸為「未知來源」", "" });
+        l.add(new String[] { S_REG, "註冊人數", "統計區間內在該渠道完成註冊的人數；各渠道相加＝指標「註冊人數」", "人數，整數" });
+        l.add(new String[] { S_REG, "佔總註冊(%)", "渠道註冊人數 ÷ 統計區間註冊人數 × 100", "百分數值，1 位小數" });
+        l.add(new String[] { S_REG, "佔分組(%)", "渠道註冊人數 ÷ 所屬分組註冊人數 × 100", "百分數值，1 位小數" });
+        l.add(new String[] { S_BONUS, "統計開始 / 統計結束", sectionSpan, slotUnit });
+        l.add(new String[] { S_BONUS, "贈金項目", "業務配置的贈金類目，寫完整的英文項目名，不截斷；「Others」固定最後", "" });
+        l.add(new String[] { S_BONUS, "金額(INR)", "統計區間內該項目實際發放的贈金；各項相加＝指標「發放贈金總額」", "INR，純數值" });
+        l.add(new String[] { S_BONUS, "佔比(%)", "該項金額 ÷ 發放贈金總額 × 100", "百分數值，1 位小數" });
+        l.add(new String[] { S_GAMES, "統計開始 / 統計結束", sectionSpan, slotUnit });
+        l.add(new String[] { S_GAMES, "序", "按投注額取前 20 的名次", "" });
+        l.add(new String[] { S_GAMES, "遊戲名稱 … 遊戲ID", "遊戲與所屬平台、類型的識別資訊；遊戲名稱查不到時以遊戲ID填充", "" });
+        l.add(new String[] { S_GAMES, "投注額(INR)", "統計區間內該遊戲的投注金額加總", "INR，純數值" });
+        l.add(new String[] { S_GAMES, "盈利率(%)", "該遊戲 GGR ÷ 該遊戲投注額 × 100，可為負", "百分數值，1 位小數" });
+        l.add(new String[] { S_GAMES, "投注額佔比(%)", "該遊戲投注額 ÷ 全站投注總額 × 100；20 行相加不等於 100", "百分數值，1 位小數" });
+        l.add(new String[] { S_RETENTION, "投注日", "分群日：當日有投注的用戶為一群", "YYYY-MM-DD" });
+        l.add(new String[] { S_RETENTION, "資料截至", "每日計算（T+1），資料截至昨日", "YYYY-MM-DD" });
+        l.add(new String[] { S_RETENTION, "投注人數", "分群日有投注的去重用戶數", "人數，整數" });
+        l.add(new String[] { S_RETENTION, "D+1 … D+30(%)", "該群第 N 日仍有投注的比例；分群日 + N 天晚於資料截至時為空（未到觀察期），不是 0", "百分數值，1 位小數" });
+        l.add(new String[] { S_LTV, "首存日", "分群日：當日完成首存的用戶為一群", "YYYY-MM-DD" });
+        l.add(new String[] { S_LTV, "資料截至", "每日計算（T+1），資料截至昨日", "YYYY-MM-DD" });
+        l.add(new String[] { S_LTV, "首存人數", "分群日完成首存的人數", "人數，整數" });
+        boolean pre = cohort == null || cohort.getLtvColumns() == null || cohort.getLtvColumns().contains("Pre D+0");
+        if (pre)
+        {
+            l.add(new String[] { S_LTV, "Pre D+0(INR)", "首存當日累計 NGR ÷ 首存人數", "INR，整數" });
+        }
+        l.add(new String[] { S_LTV, "D+1 … D+30(INR)", "首存後 N 日內累計 NGR ÷ 首存人數；未到觀察期為空，不是 0", "INR，整數" });
+        return l;
+    }
+
+    /** 取数用的数字（保留给测试） */
+    static BigDecimal pct(String text)
+    {
+        return ExportTemplate.toDecimal(text);
     }
 }

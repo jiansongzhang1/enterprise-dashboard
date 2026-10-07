@@ -129,6 +129,8 @@ notification:
 dashboard:
   # 默认站点，一期单站点
   default-site: ${DASHBOARD_SITE:SITE-IN}
+  # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
+  site-name: ${DASHBOARD_SITE_NAME:Uwin}
   # 统计时区，日切与环比同比都依此时区
   timezone: ${DASHBOARD_TIMEZONE:Asia/Kolkata}
   # 币别，一期单币别不做汇率折算
@@ -313,7 +315,6 @@ dashboard:
             status: account_status        # 0 禁用 / 1 启用
             userType: utype
             level: player_level           # 0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2
-            riskLevel: risk_level         # 0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利
             country: country_code
             registerTime: register_date_india
             firstDepositTime: first_deposit_time_india

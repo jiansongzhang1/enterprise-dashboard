@@ -15,6 +15,9 @@ public class DashboardProperties
     /** 默认站点编码 */
     private String defaultSite = "SITE-IN";
 
+    /** 站点显示名（导出文件「導出說明」的站点写作「{siteName} · {siteCode}」） */
+    private String siteName = "Uwin";
+
     /** 统计时区。日切与环比同比都依此时区 */
     private String timezone = "Asia/Kolkata";
 
@@ -187,5 +190,15 @@ public class DashboardProperties
     public void setExport(ExportProperties export)
     {
         this.export = export;
+    }
+
+    public String getSiteName()
+    {
+        return siteName;
+    }
+
+    public void setSiteName(String siteName)
+    {
+        this.siteName = siteName;
     }
 }

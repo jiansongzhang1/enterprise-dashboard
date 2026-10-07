@@ -39,12 +39,6 @@ public class MemberRecordVO implements Serializable
     /** 用户等级名称 */
     private String levelLabel;
 
-    /** 风险等级编码（risk_level）：0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利 */
-    private String riskLevel;
-
-    /** 风险等级名称 */
-    private String riskLevelLabel;
-
     /** 国家代码 */
     private String country;
 
@@ -189,26 +183,6 @@ public class MemberRecordVO implements Serializable
     public void setLevelLabel(String levelLabel)
     {
         this.levelLabel = levelLabel;
-    }
-
-    public String getRiskLevel()
-    {
-        return riskLevel;
-    }
-
-    public void setRiskLevel(String riskLevel)
-    {
-        this.riskLevel = riskLevel;
-    }
-
-    public String getRiskLevelLabel()
-    {
-        return riskLevelLabel;
-    }
-
-    public void setRiskLevelLabel(String riskLevelLabel)
-    {
-        this.riskLevelLabel = riskLevelLabel;
     }
 
     public String getCountry()

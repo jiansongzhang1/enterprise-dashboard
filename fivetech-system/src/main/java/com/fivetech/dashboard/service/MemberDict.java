@@ -22,9 +22,6 @@ public final class MemberDict
     /** 用户等级（player_level） */
     public static final Map<String, String> LEVEL = new LinkedHashMap<>();
 
-    /** 风险等级（risk_level） */
-    public static final Map<String, String> RISK_LEVEL = new LinkedHashMap<>();
-
     /** 国家：站点主体在印度，但同一套站群会收到周边国家流量 */
     public static final Map<String, String> COUNTRY = new LinkedHashMap<>();
 
@@ -41,12 +38,6 @@ public final class MemberDict
         LEVEL.put("4", "铂金1");
         LEVEL.put("5", "铂金2");
 
-        RISK_LEVEL.put("0", "普通");
-        RISK_LEVEL.put("1", "观察");
-        RISK_LEVEL.put("2", "风险用户");
-        RISK_LEVEL.put("3", "黑名单");
-        RISK_LEVEL.put("4", "真套利");
-        RISK_LEVEL.put("5", "伪套利");
 
         USER_TYPE.put("real", "正式用户");
         USER_TYPE.put("trial", "试玩用户");

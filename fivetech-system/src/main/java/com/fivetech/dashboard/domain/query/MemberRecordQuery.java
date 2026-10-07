@@ -60,10 +60,6 @@ public class MemberRecordQuery extends BaseRecordQuery
     @Pattern(regexp = "^[0-5]?$", message = "level 取值应为 0–5")
     private String level;
 
-    /** 风险等级：0 普通 / 1 观察 / 2 风险用户 / 3 黑名单 / 4 真套利 / 5 伪套利 */
-    @Pattern(regexp = "^[0-5]?$", message = "riskLevel 取值应为 0–5")
-    private String riskLevel;
-
     /** 国家，ISO 3166-1 两位代码，如 IN / NP / BD / LK / PK */
     @Pattern(regexp = "^([A-Z]{2})?$", message = "country 应为两位大写国家代码")
     private String country;
@@ -105,8 +101,6 @@ public class MemberRecordQuery extends BaseRecordQuery
     public void setLevel(String level) { this.level = level; }
     public String getCountry() { return country; }
     public void setCountry(String country) { this.country = country; }
-    public String getRiskLevel() { return riskLevel; }
-    public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
     public BigDecimal getCumulativeDepositMin() { return cumulativeDepositMin; }
     public void setCumulativeDepositMin(BigDecimal cumulativeDepositMin) { this.cumulativeDepositMin = cumulativeDepositMin; }
     public BigDecimal getCumulativeDepositMax() { return cumulativeDepositMax; }

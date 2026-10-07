@@ -128,7 +128,6 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         putIfPresent(request, "userType", query.getUserType());
         putIfPresent(request, "level", query.getLevel());
         putIfPresent(request, "country", query.getCountry());
-        putIfPresent(request, "riskLevel", query.getRiskLevel());
 
         java.math.BigDecimal depMin = query.getCumulativeDepositMin();
         java.math.BigDecimal depMax = query.getCumulativeDepositMax();
