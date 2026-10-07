@@ -282,8 +282,12 @@ public class RecordQueryServiceImpl implements IRecordQueryService
             ? properties.getDefaultSite() : query.getSiteCode();
         ctx.freshness = timeResolver.resolveFreshness(ctx.siteCode);
         ctx.warnings = new ArrayList<>();
-        // 会员表不走统一时间范围（见 memberContext），订单表按 from/to（或 slotFrom/slotTo）解析
-        ctx.range = useMainRange
+        // 会员表不走统一时间范围（见 memberContext），订单表按 from/to（或 slotFrom/slotTo）解析。
+        // 订单表一个时间参数都不传时不限业务日期：快照数据集 time 固定 now~now 即「返回全部数据」，
+        // 不再默认「今天」——默认今天会按水位截到某一天，列表只剩零星几行
+        boolean noTime = StringUtils.isEmpty(query.getFrom()) && StringUtils.isEmpty(query.getTo())
+            && StringUtils.isEmpty(query.getSlotFrom()) && StringUtils.isEmpty(query.getSlotTo());
+        ctx.range = useMainRange && !noTime
             ? timeResolver.resolveMain(query, ctx.freshness.getAsOf())
             : ResolvedRange.unbounded();
 
