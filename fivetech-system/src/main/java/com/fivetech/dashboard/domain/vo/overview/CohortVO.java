@@ -23,11 +23,9 @@ public class CohortVO extends OverviewSectionVO
     private String asOfKind = "SNAPSHOT_T1";
 
     /** 留存率列头：D+1…D+30（9 列）；type=LTV 时为空 */
-    @JsonProperty("retention_columns")
     private List<String> retentionColumns = new ArrayList<>();
 
     /** LTV 列头：Pre D+0、D+1…D+30（10 列）；type=RETENTION 时为空 */
-    @JsonProperty("ltv_columns")
     private List<String> ltvColumns = new ArrayList<>();
 
     /** 留存率；type=LTV 时为 null */
