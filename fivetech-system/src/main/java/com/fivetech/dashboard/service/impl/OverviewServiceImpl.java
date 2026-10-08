@@ -139,7 +139,11 @@ public class OverviewServiceImpl implements IOverviewService
         }
 
         // ---------- 5. 取数 ----------
-        List<String> codes = dropSingleDayOnly(resolveMetricCodes(query), from, to, vo.getCompare(), notices);
+        // 跨天时「仅支持单日」的指标（活跃人数、ARPPU）不去查数，但卡片照常返回、数值为 null
+        List<String> allCodes = resolveMetricCodes(query);
+        List<String> codes = dropSingleDayOnly(allCodes, from, to, vo.getCompare(), notices);
+        Set<String> nullCodes = new LinkedHashSet<>(allCodes);
+        nullCodes.removeAll(codes);
         // 派生指标要展开成「分子 ÷ 分母」给前端看，所以取数时把操作数一并带上。
         // 它们不进 items，只是多取几列，成本远低于前端为了展开构成再打一次请求
         Fetched fetched = fetch(query, from, to, effective, withOperands(codes), vo, notices);
@@ -156,7 +160,7 @@ public class OverviewServiceImpl implements IOverviewService
             else
             {
                 vo.getBlocks().put(OverviewBlock.METRICS.name(),
-                    buildMetrics(query, slot, codes, fetched));
+                    buildMetrics(query, slot, allCodes, nullCodes, fetched));
             }
         }
         vo.setEmpty(fetched == null || fetched.isEmpty());
@@ -473,8 +477,11 @@ public class OverviewServiceImpl implements IOverviewService
         return result;
     }
 
+    /**
+     * @param nullCodes 本次不取数、数值一律返回 null 的指标（区间跨天时的「仅支持单日」指标）
+     */
     private MetricsBlockVO buildMetrics(OverviewQuery query, OverviewSlotVO slot,
-            List<String> codes, Fetched fetched)
+            List<String> codes, Set<String> nullCodes, Fetched fetched)
     {
         MetricsBlockVO block = new MetricsBlockVO();
         List<MetricCardVO> items = new ArrayList<>(codes.size());
@@ -510,8 +517,9 @@ public class OverviewServiceImpl implements IOverviewService
             card.setUdsMetric(udsMetricOf(code));
 
             // 换算量纲：UDS 的比率是 0~1、时长是秒，这里转成展示用的百分数与分钟
-            BigDecimal value = normalizer.normalize(code, fetched.totals.get(code));
-            BigDecimal prev = normalizer.normalize(code, fetched.prevTotals.get(code));
+            boolean noValue = nullCodes.contains(code);
+            BigDecimal value = noValue ? null : normalizer.normalize(code, fetched.totals.get(code));
+            BigDecimal prev = noValue ? null : normalizer.normalize(code, fetched.prevTotals.get(code));
             card.setValue(value);
             card.setPrevValue(prev);
             if (value != null && prev != null)
@@ -526,12 +534,14 @@ public class OverviewServiceImpl implements IOverviewService
             {
                 // series 长度必须恒等于 slot.points：前端按下标对齐 slot.labels，
                 // 短一截会让整条趋势线错位，而且不报错
-                card.setSeries(fitSeries(normalizer.normalizeSeries(code, fetched.series.get(code)),
+                // 不取数的指标：序列补满 null，长度仍等于 slot.points
+                card.setSeries(fitSeries(noValue ? null : normalizer.normalizeSeries(code, fetched.series.get(code)),
                     slot.getPoints()));
                 card.setPrevSeries(fitSeries(
-                    normalizer.normalizeSeries(code, fetched.prevSeries.get(code)), slot.getPoints()));
+                    noValue ? null : normalizer.normalizeSeries(code, fetched.prevSeries.get(code)), slot.getPoints()));
             }
-            card.setComposition(buildComposition(def, fetched));
+            // 不取数的派生指标不给构成：否则会出现「分子有值、分母缺失」的半截算式
+            card.setComposition(noValue ? null : buildComposition(def, fetched));
             items.add(card);
         }
         block.setGroups(buildGroups());
@@ -619,8 +629,8 @@ public class OverviewServiceImpl implements IOverviewService
         if (!hidden.isEmpty())
         {
             notices.add(OverviewNoticeVO.info("SINGLE_DAY_ONLY_HIDDEN",
-                String.join("、", hidden) + "僅支援單日查詢，已隱藏",
-                "所選區間跨越多個自然日，這些指標只有按日口徑的資料"));
+                String.join("、", hidden) + "僅支援單日查詢，跨天區間不提供數值",
+                "所選區間跨越多個自然日，這些指標只有按日口徑的資料，卡片照常顯示、數值為空"));
         }
         return kept;
     }
