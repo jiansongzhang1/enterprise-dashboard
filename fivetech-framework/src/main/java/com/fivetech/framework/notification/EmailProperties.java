@@ -70,6 +70,23 @@ public class EmailProperties
         /** 邮件中时间的显示时区（IANA 名称，如 Asia/Taipei）；留空使用服务器时区 */
         private String timeZone = "";
 
+        /**
+         * 新建账号是否走「邮件启用链接」流程（员工点链接自己设密码，需要配置 portalUrl）。
+         * 关闭时（默认）：新建账号不发启用邮件、不要求 portalUrl，由管理员在用户列表里「重置密码」设置初始密码。
+         * 其他账号通知邮件（密码变更、停用、重新启用）不受此开关影响，仍由 enabled 控制。
+         */
+        private boolean activationEnabled = false;
+
+        public boolean isActivationEnabled()
+        {
+            return activationEnabled;
+        }
+
+        public void setActivationEnabled(boolean activationEnabled)
+        {
+            this.activationEnabled = activationEnabled;
+        }
+
         public boolean isEnabled()
         {
             return enabled;

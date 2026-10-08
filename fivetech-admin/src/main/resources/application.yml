@@ -101,8 +101,11 @@ notification:
       enabled: ${MAIL_ACCOUNT_ENABLED:true}
       # 平台名称，用于邮件主题和正文
       platform-name: ${MAIL_PLATFORM_NAME:Yata}
+      # 新建账号是否发「启用链接」邮件让员工自己设密码。默认关闭：
+      # 关闭时新建账号不需要 portal-url，由管理员在用户列表「重置密码」设置初始密码
+      activation-enabled: ${MAIL_ACTIVATION_ENABLED:false}
       # 前台访问地址（含部署子路径，不带结尾斜杠），启用链接为 {portal-url}/activate?token=…
-      # 必填：留空时无法新建账号（收不到启用链接）
+      # activation-enabled=true 时必填
       portal-url: ${MAIL_PORTAL_URL:}
       # 启用链接有效小时数（24–168）
       link-expire-hours: ${MAIL_LINK_EXPIRE_HOURS:72}

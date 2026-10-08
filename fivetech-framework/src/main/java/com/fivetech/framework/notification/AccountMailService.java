@@ -74,6 +74,11 @@ public class AccountMailService
      * 能否发送启用邮件：邮件功能已开启、配置了前台地址。
      * 建号前调用，配置缺失时直接拒绝建号，避免建出一个永远收不到启用链接的账号。
      */
+    public boolean isActivationEnabled()
+    {
+        return properties.getAccount().isActivationEnabled();
+    }
+
     public boolean canSendActivation()
     {
         return properties.isEnabled() && properties.getAccount().isEnabled()

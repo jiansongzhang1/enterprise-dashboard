@@ -163,6 +163,26 @@ public class SysUserController extends BaseController
         {
             user.setUserType(UserTypeEnum.NORMAL.getCode());
         }
+        // 启用链接功能关闭：不发启用邮件、不要求前台地址。
+        // 提交了密码就用它作为初始密码；没提交则写入不可用的随机密码，由管理员「重置密码」后再告知员工
+        if (!accountMailService.isActivationEnabled())
+        {
+            boolean hasPassword = StringUtils.isNotEmpty(user.getPassword());
+            if (StringUtils.isNotEmpty(user.getEmail()))
+            {
+                user.setEmail(user.getEmail().trim());
+            }
+            user.setPassword(SecurityUtils.encryptPassword(hasPassword ? user.getPassword() : unusablePassword()));
+            user.setPwdUpdateDate(hasPassword ? new java.util.Date() : null);
+            // 不走启用流程的账号视为已启用（停用 / 重新启用时照常发通知）
+            user.setActivateTime(new java.util.Date());
+            int created = userService.insertUser(user);
+            if (created > 0 && !hasPassword)
+            {
+                return success("账号已创建，请在用户列表中通过「重置密码」为该用户设置初始密码");
+            }
+            return toAjax(created);
+        }
         // 员工通过邮件里的一次性链接自己设置密码，管理员不分配、不接触密码
         if (!AccountMailService.isDeliverable(user.getEmail()))
         {
@@ -284,6 +304,10 @@ public class SysUserController extends BaseController
         if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
         {
             return error("用户不存在");
+        }
+        if (!accountMailService.isActivationEnabled())
+        {
+            return error("启用邮件功能未开启（notification.email.account.activation-enabled），请通过「重置密码」设置初始密码");
         }
         if (user.getActivateTime() != null)
         {
