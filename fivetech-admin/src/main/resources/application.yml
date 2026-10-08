@@ -148,7 +148,8 @@ dashboard:
   deposit-drill-time-field: ${DASHBOARD_DEPOSIT_DRILL_TIME_FIELD:createTime}
   withdraw-drill-time-field: ${DASHBOARD_WITHDRAW_DRILL_TIME_FIELD:createTime}
   # 指标汇总支持下钻的指标编码（/summary 返回 columns[].drillable）。一期放配置，不进数据库
-  summary-drillable-metrics: ${DASHBOARD_SUMMARY_DRILLABLE_METRICS:reg,ftd,ftdA,dep,arppu,dOkR,dT,wd,wOkR,wT,active,bet}
+  # 只有 5 个：注册人数、首存人数、活跃人数、存款总额、提款总额；其余指标不支持下钻
+  summary-drillable-metrics: ${DASHBOARD_SUMMARY_DRILLABLE_METRICS:reg,ftd,active,dep,wd}
   # 单次查询最大数据点数，超过自动降级粒度
   max-points-per-granularity: ${DASHBOARD_MAX_POINTS:744}
   # 会员账号是否脱敏
@@ -240,8 +241,8 @@ dashboard:
             active: active_hour
             arppu: arppu_hour
             depU: dep_users_hour
-            # login：可查原始小时值，但「是否含登出事件」未核验、日登录缺源，正式页面先占位，确认后取消注释
-            # login: login
+            # 登录人数：小时去重登录会员数（只在小时行有效，不能跨小时相加）
+            login: login_player_cnt
         # 完整日行：只取只能按日去重的人数类，uds_dt 只写日期
         overview_day:
           name: dashboard_overview_day_v2
@@ -255,6 +256,8 @@ dashboard:
             depU: dep_users_day
             # active_day：日去重投注人数（2026-09-10 联调核对：14，落在小时人数 max 4 ~ 合计 19 之间）
             active: active_day
+            # 登录人数：日去重登录会员数
+            login: login_player_cnt
         # 金额 / 普通比率：日、周序列与区间总值（dimensions=[]）
         overview_amount:
           name: dashboard_overview_amount_v2
@@ -545,7 +548,7 @@ dashboard:
     # 1 万行约 10 次调用。明细查询页导出会先 explain / count 预估行数：
     # 不超过本值走同步 XLSX，超过则自动转异步导出（/v1/jobs），返回 jobId 供前端轮询。
     # 受 UDS offset ≤ 100000 限制，同步上限最多按 100000 生效
-    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:1000000}
+    max-rows: ${DASHBOARD_EXPORT_MAX_ROWS:100000}
     # 明细异步导出（UDS /v1/jobs）行数上限；文件由数据平台直接写对象存储，不经本服务内存。0 = 平台默认（5000 万）
     async-max-rows: ${DASHBOARD_EXPORT_ASYNC_MAX_ROWS:5000000}
     # 明细含个人信息，导出默认要求独立权限点
