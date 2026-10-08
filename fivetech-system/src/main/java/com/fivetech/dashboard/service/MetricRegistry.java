@@ -199,15 +199,16 @@ public class MetricRegistry
      * 未知编码直接丢弃而不是报错：前端版本可能比后端旧，少一列比整页 500 要好。
      * 隐藏原子量即使被显式请求也会被丢弃——它们不是「列」。
      *
-     * @param requested 请求的编码；为空时用该页面的默认列
+     * @param requested 请求的编码；为空时返回该页面的全部指标
      */
     public List<String> resolveColumns(DashboardPage page, List<String> requested)
     {
         List<String> ordered = snapshot.columnsOf(page);
-        List<String> defaults = snapshot.defaultsOf(page);
+        // 不传 metricCodes（或传的全不在白名单内）时返回该页全部指标（指标汇总 = 原型的 21 个），
+        // 不再只返回 is_default 的 8 个核心列——「默认勾选哪些列」由前端按 defaultsOf 处理
         if (requested == null || requested.isEmpty())
         {
-            return new ArrayList<>(defaults);
+            return new ArrayList<>(ordered);
         }
         List<String> result = new ArrayList<>();
         for (String code : ordered)
@@ -217,7 +218,7 @@ public class MetricRegistry
                 result.add(code);
             }
         }
-        return result.isEmpty() ? new ArrayList<>(defaults) : result;
+        return result.isEmpty() ? new ArrayList<>(ordered) : result;
     }
 
     /**

@@ -261,10 +261,22 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
                 continue;
             }
             columns.add(ColumnMetaVO.of(code, com.fivetech.dashboard.service.OverviewMetricText.label(code, definition.getLabel()), definition.getFormat())
-                .group(definition.getGroup()).sortable(true).core(core.contains(code))
+                .group(definition.getGroup(), groupLabel(definition.getGroup())).sortable(true).core(core.contains(code))
                 .drillable(drillable.contains(code)));
         }
         return columns;
+    }
+
+    /** 分组名：与运营总览一致，读 dashboard_metric_group 并转繁体（如 獲客與轉化）；字典里没有时退回编码 */
+    private String groupLabel(String group)
+    {
+        if (group == null)
+        {
+            return null;
+        }
+        com.fivetech.dashboard.domain.MetricGroupConfig config = metricRegistry.groupOf(group);
+        String name = config == null || StringUtils.isEmpty(config.getGroupName()) ? group : config.getGroupName();
+        return com.fivetech.dashboard.service.OverviewMetricText.group(name);
     }
 
     /** 预留：供导出复用同一套时间片定义 */
