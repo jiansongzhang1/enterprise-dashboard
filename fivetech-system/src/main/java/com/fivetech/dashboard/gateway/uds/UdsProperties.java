@@ -659,6 +659,22 @@ public class UdsProperties
         private Map<String, Map<String, String>> valueMaps = new LinkedHashMap<>();
 
         /**
+         * 数值型筛选列（列编码）：没有配 valueMaps 时，整数取值按数字下推。
+         * UDS 对 BIGINT 字段不做字符串转换，发 "1" 会 4001「字面量与字段类型不符」
+         */
+        private java.util.List<String> numericFilters = new java.util.ArrayList<>();
+
+        public java.util.List<String> getNumericFilters()
+        {
+            return numericFilters;
+        }
+
+        public void setNumericFilters(java.util.List<String> numericFilters)
+        {
+            this.numericFilters = numericFilters == null ? new java.util.ArrayList<>() : numericFilters;
+        }
+
+        /**
          * 兜底取值：列编码 → 本系统取值。返回行里 valueMaps 反查不到的 UDS 取值一律翻译成它；
          * 按它筛选时下推为「不等于 valueMaps 里的其他取值」。例：status: fail（存款非 30 一律视为失败）
          */

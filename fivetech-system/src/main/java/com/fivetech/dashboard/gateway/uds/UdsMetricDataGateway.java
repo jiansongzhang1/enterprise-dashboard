@@ -1228,9 +1228,15 @@ public class UdsMetricDataGateway implements MetricDataGateway
     private static Object encode(UdsProperties.DetailDataset d, String code, Object value)
     {
         Map<String, String> map = d.getValueMaps().get(code);
-        if (map == null || value == null)
+        if (value == null)
         {
-            return value;
+            return null;
+        }
+        if (map == null)
+        {
+            // 数值型筛选列：整数取值按数字下推
+            String s = String.valueOf(value).trim();
+            return d.getNumericFilters().contains(code) && s.matches("-?\\d+") ? (Object) Long.valueOf(s) : value;
         }
         String mapped = map.get(String.valueOf(value));
         if (mapped == null)

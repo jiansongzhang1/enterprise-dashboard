@@ -341,6 +341,13 @@ dashboard:
           search-fields:
             # 关键字：玩家 ID 精确，账号 LIKE 包含（% 和 _ 会被去掉）
             keyword: [player_id, "login_search~"]
+          # account_status / player_level 在 UDS 是 BIGINT：筛选值必须按数字发，发 "1" 会 4001「字面量与字段类型不符」。
+          # 配成同值映射后 encode 会把整数取值转成数字下推，也顺带校验取值范围
+          # utype 为数值字段，枚举待数据团队确认；先按数字下推，确认后改成 value-maps 并在 MemberDict.USER_TYPE 补中文名
+          numeric-filters: [userType]
+          value-maps:
+            status: { "0": "0", "1": "1" }
+            level: { "0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" }
         deposit:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
           dataset: dashboard_deposit_snapshot_v3
@@ -427,6 +434,8 @@ dashboard:
             keyword: [player_id, bill_no, "login_search~"]
             game: [game_id, "game_name~"]
           value-maps:
+            # game_catalog 为数值字段：同值映射让筛选值按数字下推（1 真人 / 2 电游 / 3 体育 / 4 捕鱼 / 5 彩票 / 6 棋牌 / 7 电竞）
+            gameType: { "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6", "7": "7" }
             # 投注结算状态（数据团队确认）：0 未结算 / 1 已结算 / -9 已取消
             settleStatus:
               open: "0"

@@ -52,8 +52,8 @@ public class MemberRecordQuery extends BaseRecordQuery
     @Pattern(regexp = "^[01]?$", message = "status 取值应为 1（启用）/ 0（禁用）")
     private String status;
 
-    /** 用户类型：real 正式用户 / trial 试玩用户 / test 测试账号 / agent 代理账号 */
-    @Pattern(regexp = "^(real|trial|test|agent)?$", message = "userType 取值应为 real/trial/test/agent")
+    /** 用户类型：UDS utype 的数值编码（枚举待数据团队确认），按数字下推 */
+    @Pattern(regexp = "^(\\d{1,4})?$", message = "userType 取值应为数字编码")
     private String userType;
 
     /** 用户等级：0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2 */
