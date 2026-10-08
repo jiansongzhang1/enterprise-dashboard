@@ -395,7 +395,7 @@ dashboard:
             payTime: payment_approve_date_india
             bankName: bank_name
             bankCode: bank_code
-            bankCountry: country
+            ifsc: ifsc_code
             createTime: created_date_india
             finishTime: payment_approve_date_india
             costMinutes: duration_min

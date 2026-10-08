@@ -29,8 +29,12 @@ public class BetRecordQuery extends BaseRecordQuery
     @Size(max = 64)
     private String game;
 
-    /** 结算状态：done 已结算 / open 未结算 */
-    @Pattern(regexp = "^(done|open|cancel)?$", message = "settleStatus 取值应为 done/open/cancel")
+    /**
+     * 结算状态：done 已结算 / open 未结算 / cancel 已取消。
+     * <p>兼容前端直接传 UDS 原始状态码：1 → done，0 → open，-9 → cancel（见 {@link #setSettleStatus}）。</p>
+     */
+    @Pattern(regexp = "^(done|open|cancel)?$",
+        message = "settleStatus 取值应为 done/open/cancel（或 UDS 状态码 1 已结算 / 0 未结算 / -9 已取消）")
     private String settleStatus;
 
     /** 投注金额下限（含） */
@@ -78,7 +82,27 @@ public class BetRecordQuery extends BaseRecordQuery
 
     public void setSettleStatus(String settleStatus)
     {
-        this.settleStatus = settleStatus;
+        this.settleStatus = normalizeSettleStatus(settleStatus);
+    }
+
+    /** UDS 原始结算状态码转成本系统取值；未知数字原样保留，由校验报错 */
+    static String normalizeSettleStatus(String v)
+    {
+        if (v == null)
+        {
+            return null;
+        }
+        switch (v.trim())
+        {
+            case "1":
+                return "done";
+            case "0":
+                return "open";
+            case "-9":
+                return "cancel";
+            default:
+                return v.trim();
+        }
     }
 
     public BigDecimal getBetAmountMin()

@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 /**
  * 提款明细行。一行一笔提款订单。
  * <p>
- * USDT 走链上，没有银行信息，bankName / bankCode / bankCountry 为 null；
+ * USDT 走链上，没有银行信息，bankName / bankCode / ifsc 为 null；
  * payer / payTime 只有进入资金环节（成功、失败、出款中）才有值。
  *
  * @author fivetech
@@ -51,11 +51,8 @@ public class WithdrawRecordVO implements Serializable
     /** 银行代码（SWIFT） */
     private String bankCode;
 
-    /** 银行所在国家代码 */
-    private String bankCountry;
-
-    /** 银行所在国家名称 */
-    private String bankCountryLabel;
+    /** 收款银行 IFSC 编码（印度银行分行代码）；USDT 等无银行信息时为 null */
+    private String ifsc;
 
     /** 创建时间 */
     private String createTime;
@@ -189,24 +186,14 @@ public class WithdrawRecordVO implements Serializable
         this.bankCode = bankCode;
     }
 
-    public String getBankCountry()
+    public String getIfsc()
     {
-        return bankCountry;
+        return ifsc;
     }
 
-    public void setBankCountry(String bankCountry)
+    public void setIfsc(String ifsc)
     {
-        this.bankCountry = bankCountry;
-    }
-
-    public String getBankCountryLabel()
-    {
-        return bankCountryLabel;
-    }
-
-    public void setBankCountryLabel(String bankCountryLabel)
-    {
-        this.bankCountryLabel = bankCountryLabel;
+        this.ifsc = ifsc;
     }
 
     public String getCreateTime()

@@ -360,8 +360,8 @@ public class DashboardXlsxExporter
             WithdrawRecordVO::getBankName));
         WITHDRAW.add(f("bankCode", Col.text("銀行代碼", 12), "收款銀行代碼。為空的條件同銀行名稱。", U_TEXT,
             WithdrawRecordVO::getBankCode));
-        WITHDRAW.add(f("bankCountry", Col.text("銀行所在國家", 12), "收款銀行所在國家。為空的條件同銀行名稱。", U_ENUM,
-            r -> label(r.getBankCountryLabel(), r.getBankCountry())));
+        WITHDRAW.add(f("ifsc", Col.text("IFSC", 14), "收款銀行的 IFSC 編碼（印度銀行分行代碼）。為空的條件同銀行名稱。", U_TEXT,
+            WithdrawRecordVO::getIfsc));
         WITHDRAW.add(f("createTime", Col.dateTime("創建時間"), "下單時刻。", U_TIME, WithdrawRecordVO::getCreateTime));
         WITHDRAW.add(f("finishTime", Col.dateTime("完成時間"), "進入終態的時刻。未完成的單據為空。", U_TIME,
             WithdrawRecordVO::getFinishTime));

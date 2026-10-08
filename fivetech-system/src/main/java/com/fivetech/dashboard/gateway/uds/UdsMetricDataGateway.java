@@ -1030,9 +1030,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setPayTime(str(row, d, "payTime"));
             vo.setBankName(str(row, d, "bankName"));
             vo.setBankCode(str(row, d, "bankCode"));
-            vo.setBankCountry(str(row, d, "bankCountry"));
-            vo.setBankCountryLabel(com.fivetech.dashboard.service.MemberDict.label(
-                com.fivetech.dashboard.service.MemberDict.COUNTRY, vo.getBankCountry()));
+            vo.setIfsc(str(row, d, "ifsc"));
             vo.setCreateTime(str(row, d, "createTime"));
             vo.setFinishTime(str(row, d, "finishTime"));
             BigDecimal cost = num(row, d, "costMinutes");
