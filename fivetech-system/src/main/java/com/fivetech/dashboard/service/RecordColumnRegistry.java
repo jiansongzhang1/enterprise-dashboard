@@ -95,13 +95,12 @@ public class RecordColumnRegistry
         order(withdrawColumns, "amount", "提款金額", "MONEY_CUR");
         order(withdrawColumns, "currency", "幣種", "TEXT");
         order(withdrawColumns, "status", "狀態", "TAG").filterable(true);
-        order(withdrawColumns, "auditStatus", "審核", "TAG").filterable(true);
         order(withdrawColumns, "auditor", "審核人", "TEXT");
         order(withdrawColumns, "payer", "資金審批人", "TEXT");
         order(withdrawColumns, "payTime", "資金操作時間", "TIME").sortable(true);
         order(withdrawColumns, "bankName", "銀行名稱", "TEXT");
         order(withdrawColumns, "bankCode", "銀行代碼", "TEXT");
-        order(withdrawColumns, "bankCountry", "銀行所在國家", "TAG");
+        order(withdrawColumns, "bankCountry", "銀行所在國家", "TEXT");
         order(withdrawColumns, "createTime", "創建時間", "TIME").sortable(true).filterable(true);
         order(withdrawColumns, "finishTime", "完成時間", "TIME").sortable(true);
         order(withdrawColumns, "costMinutes", "耗時", "MIN").sortable(true);

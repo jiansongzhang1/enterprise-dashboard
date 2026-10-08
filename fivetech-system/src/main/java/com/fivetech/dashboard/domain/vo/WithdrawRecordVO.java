@@ -36,12 +36,6 @@ public class WithdrawRecordVO implements Serializable
     /** 状态名称 */
     private String statusLabel;
 
-    /** 风控审核编码 pass / pending / reject */
-    private String auditStatus;
-
-    /** 审核状态名称 */
-    private String auditStatusLabel;
-
     /** 风控审核人；待审为 null */
     private String auditor;
 
@@ -143,26 +137,6 @@ public class WithdrawRecordVO implements Serializable
     public void setStatusLabel(String statusLabel)
     {
         this.statusLabel = statusLabel;
-    }
-
-    public String getAuditStatus()
-    {
-        return auditStatus;
-    }
-
-    public void setAuditStatus(String auditStatus)
-    {
-        this.auditStatus = auditStatus;
-    }
-
-    public String getAuditStatusLabel()
-    {
-        return auditStatusLabel;
-    }
-
-    public void setAuditStatusLabel(String auditStatusLabel)
-    {
-        this.auditStatusLabel = auditStatusLabel;
     }
 
     public String getAuditor()

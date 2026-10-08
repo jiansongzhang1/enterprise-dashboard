@@ -390,7 +390,6 @@ dashboard:
             amount: amount                # 原币
             currency: currency
             status: status                # 支付状态
-            auditStatus: detail_status    # TODO：确认 detail_status 是否就是审核状态
             auditor: audit_approve_by
             payer: payment_approve_by
             payTime: payment_approve_date_india
@@ -411,7 +410,6 @@ dashboard:
               succ: "30"
           value-defaults:
             status: fail                  # 非 30 → fail；按 fail 筛选下推为 status < 30 OR status >= 31
-          # TODO：审核状态（detail_status）枚举待数据团队提供后配置 value-maps
         bet:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 bet_time_india 筛选上
           dataset: dashboard_bet_snapshot_v3

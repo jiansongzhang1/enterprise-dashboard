@@ -1025,8 +1025,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setCurrency(str(row, d, "currency"));
             vo.setStatus(decoded(row, d, "status"));
             vo.setStatusLabel(OrderDict.label(OrderDict.WITHDRAW_STATUS, vo.getStatus()));
-            vo.setAuditStatus(decoded(row, d, "auditStatus"));
-            vo.setAuditStatusLabel(OrderDict.label(OrderDict.AUDIT_STATUS, vo.getAuditStatus()));
             vo.setAuditor(str(row, d, "auditor"));
             vo.setPayer(str(row, d, "payer"));
             vo.setPayTime(str(row, d, "payTime"));

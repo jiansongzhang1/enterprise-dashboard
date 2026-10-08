@@ -19,9 +19,6 @@ public final class OrderDict
     /** 提款订单状态 */
     public static final Map<String, String> WITHDRAW_STATUS = new LinkedHashMap<>();
 
-    /** 提款风控审核状态 */
-    public static final Map<String, String> AUDIT_STATUS = new LinkedHashMap<>();
-
     /** 游戏类型 */
     public static final Map<String, String> GAME_TYPE = new LinkedHashMap<>();
 
@@ -39,9 +36,6 @@ public final class OrderDict
         WITHDRAW_STATUS.put("succ", "成功");
         WITHDRAW_STATUS.put("fail", "失敗");
 
-        AUDIT_STATUS.put("pass", "已通過");
-        AUDIT_STATUS.put("pending", "待審");
-        AUDIT_STATUS.put("reject", "駁回");
 
         GAME_TYPE.put("slots", "老虎機");
         GAME_TYPE.put("live", "真人");

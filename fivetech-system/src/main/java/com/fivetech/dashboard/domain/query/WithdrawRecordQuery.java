@@ -21,10 +21,6 @@ public class WithdrawRecordQuery extends BaseRecordQuery
     @Pattern(regexp = "^(succ|fail)?$", message = "status 取值应为 succ/fail（或 UDS 状态码，30 = 成功）")
     private String status;
 
-    /** 风控审核状态：pass 已通过 / pending 待审 / reject 驳回 */
-    @Pattern(regexp = "^(pass|pending|reject)?$", message = "auditStatus 取值应为 pass/pending/reject")
-    private String auditStatus;
-
     public String getStatus()
     {
         return status;
@@ -33,15 +29,5 @@ public class WithdrawRecordQuery extends BaseRecordQuery
     public void setStatus(String status)
     {
         this.status = DepositRecordQuery.normalizeStatus(status);
-    }
-
-    public String getAuditStatus()
-    {
-        return auditStatus;
-    }
-
-    public void setAuditStatus(String auditStatus)
-    {
-        this.auditStatus = auditStatus;
     }
 }

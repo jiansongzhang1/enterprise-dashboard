@@ -350,9 +350,7 @@ public class DashboardXlsxExporter
         WITHDRAW.add(f("currency", Col.text("幣種", 8), "INR / USD / USDT。訂單的原始交易幣種，不折算。", U_ENUM,
             WithdrawRecordVO::getCurrency));
         WITHDRAW.add(f("status", Col.text("狀態", 8), "支付狀態。", U_ENUM, r -> label(r.getStatusLabel(), r.getStatus())));
-        WITHDRAW.add(f("auditStatus", Col.text("審核", 8), "風控審核結果。", U_ENUM,
-            r -> label(r.getAuditStatusLabel(), r.getAuditStatus())));
-        WITHDRAW.add(f("auditor", Col.text("審核人", 12), "風控審核人帳號。審核為「待審核」的單據為空。", U_TEXT,
+        WITHDRAW.add(f("auditor", Col.text("審核人", 12), "風控審核人帳號。未審核的單據為空。", U_TEXT,
             WithdrawRecordVO::getAuditor));
         WITHDRAW.add(f("payer", Col.text("資金審批人", 12), "資金環節的操作人帳號。未進入資金環節的單據為空。", U_TEXT,
             WithdrawRecordVO::getPayer));
@@ -365,9 +363,9 @@ public class DashboardXlsxExporter
         WITHDRAW.add(f("bankCountry", Col.text("銀行所在國家", 12), "收款銀行所在國家。為空的條件同銀行名稱。", U_ENUM,
             r -> label(r.getBankCountryLabel(), r.getBankCountry())));
         WITHDRAW.add(f("createTime", Col.dateTime("創建時間"), "下單時刻。", U_TIME, WithdrawRecordVO::getCreateTime));
-        WITHDRAW.add(f("finishTime", Col.dateTime("完成時間"), "進入終態的時刻。待審核、出款中的單據為空。", U_TIME,
+        WITHDRAW.add(f("finishTime", Col.dateTime("完成時間"), "進入終態的時刻。未完成的單據為空。", U_TIME,
             WithdrawRecordVO::getFinishTime));
-        WITHDRAW.add(f("costMinutes", Col.num("耗時(分鐘)", "0.0"), "完成時間 − 創建時間。待審核、出款中的單據為空。", U_MIN,
+        WITHDRAW.add(f("costMinutes", Col.num("耗時(分鐘)", "0.0"), "完成時間 − 創建時間。未完成的單據為空。", U_MIN,
             WithdrawRecordVO::getCostMinutes));
         WITHDRAW.add(f("auditNote", Col.text("審核備註", 60), "風控或系統寫入的審核說明，不是每單都有。導出全文。", "文字（全文）",
             WithdrawRecordVO::getAuditNote));
@@ -557,10 +555,6 @@ public class DashboardXlsxExporter
         if (StringUtils.isNotEmpty(q.getStatus()))
         {
             l.add("狀態 " + q.getStatus());
-        }
-        if (StringUtils.isNotEmpty(q.getAuditStatus()))
-        {
-            l.add("審核 " + q.getAuditStatus());
         }
         return l;
     }

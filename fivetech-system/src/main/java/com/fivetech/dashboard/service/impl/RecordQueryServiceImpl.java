@@ -197,7 +197,6 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         ctx.request.setTimeField("CREATE_TIME");
         applyDrillTimeField(ctx, query, properties.getWithdrawDrillTimeField());
         putIfPresent(ctx.request, "status", query.getStatus());
-        putIfPresent(ctx.request, "auditStatus", query.getAuditStatus());
         return ctx;
     }
 
