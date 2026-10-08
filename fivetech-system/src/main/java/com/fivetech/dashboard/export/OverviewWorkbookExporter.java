@@ -154,10 +154,10 @@ public class OverviewWorkbookExporter
             writeReg(book, query, reg);
             writeBonus(book, query, ranking);
             writeGames(book, query, ranking);
-            writeCohort(book, S_RETENTION, "投注日", "投注人數", "(%)", "0.0", cohort,
+            writeCohort(book, S_RETENTION, "投注日", "投注人數", "(%)", "0.00", cohort,
                 cohort.data == null ? null : cohort.data.getRetention(),
                 cohort.data == null ? null : cohort.data.getRetentionColumns());
-            writeCohort(book, S_LTV, "首存日", "首存人數", "(INR)", "0", cohort,
+            writeCohort(book, S_LTV, "首存日", "首存人數", "(INR)", "0.00", cohort,
                 cohort.data == null ? null : cohort.data.getLtv(),
                 cohort.data == null ? null : cohort.data.getLtvColumns());
             book.notes(S_NOTES, notes(cohort.data));
@@ -513,7 +513,7 @@ public class OverviewWorkbookExporter
     {
         Sheet sheet = book.sheet(S_REG);
         List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.text("渠道分組", 12),
-            Col.text("渠道", 22), Col.num("註冊人數", null), Col.num("佔總註冊(%)", "0.0"), Col.num("佔分組(%)", "0.0"));
+            Col.text("渠道", 22), Col.num("註冊人數", null), Col.num("佔總註冊(%)", "0.00"), Col.num("佔分組(%)", "0.00"));
         int r = book.header(sheet, cols);
         RegChannelVO vo = part.data;
         if (vo == null)
@@ -551,7 +551,7 @@ public class OverviewWorkbookExporter
     {
         Sheet sheet = book.sheet(S_BONUS);
         List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.text("贈金項目", 40),
-            Col.num("金額(INR)", "0.00"), Col.num("佔比(%)", "0.0"));
+            Col.num("金額(INR)", "0.00"), Col.num("佔比(%)", "0.00"));
         int r = book.header(sheet, cols);
         RankingBoardVO vo = part.data;
         if (vo == null || vo.getBonus() == null)
@@ -599,7 +599,7 @@ public class OverviewWorkbookExporter
         Sheet sheet = book.sheet(S_GAMES);
         List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.num("序", null), Col.text("遊戲名稱", 24),
             Col.text("平台廠商名", 16), Col.text("遊戲平台Code", 14), Col.text("遊戲類型", 10), Col.text("遊戲ID", 18),
-            Col.num("投注額(INR)", "0.00"), Col.num("盈利率(%)", "0.0"), Col.num("投注額佔比(%)", "0.0"));
+            Col.num("投注額(INR)", "0.00"), Col.num("盈利率(%)", "0.00"), Col.num("投注額佔比(%)", "0.00"));
         int r = book.header(sheet, cols);
         RankingBoardVO vo = part.data;
         if (vo == null || vo.getGames() == null)

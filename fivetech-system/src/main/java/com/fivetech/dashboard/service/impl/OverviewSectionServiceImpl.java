@@ -208,7 +208,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         for (int i = 0; i < items.size(); i++)
         {
             items.get(i).setRank(i + 1);
-            items.get(i).setShare(pct(items.get(i).getAmount(), denominator, 1));
+            items.get(i).setShare(pct(items.get(i).getAmount(), denominator, 2));
         }
         board.setItems(items);
         return board;
@@ -306,8 +306,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             g.setGameType(OrderDict.label(OrderDict.GAME_TYPE, r.dim("gameType")));
             g.setBetAmount(r.num("betAmount"));
             // 盈利率 = GGR ÷ 投注额（平台视角）
-            g.setProfitRate(pctText(pct(r.num("ggr"), r.num("betAmount"), 1)));
-            g.setRateForBetAmount(pctText(pct(r.num("betAmount"), totalBet, 1)));
+            g.setProfitRate(pctText(pct(r.num("ggr"), r.num("betAmount"), 2)));
+            g.setRateForBetAmount(pctText(pct(r.num("betAmount"), totalBet, 2)));
             // bet_player_visits 是小时人数累加的「人次」，不是区间独立人数
             g.setBetUsers(toLong(r.num("betUsers")));
             g.setBetCount(toLong(r.num("betCount")));
@@ -316,7 +316,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         }
         board.setItems(items);
         // Top N 覆盖率 = Top N 投注额之和 ÷ 全量投注额
-        board.setTotalBetAmountPct(items.isEmpty() ? null : pctText(pct(topSum, totalBet, 1)));
+        board.setTotalBetAmountPct(items.isEmpty() ? null : pctText(pct(topSum, totalBet, 2)));
         return board;
     }
 
@@ -424,10 +424,9 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
                 int days = OverviewBreakdowns.COHORT_DAYS.get(col.getKey());
                 // 未到观察期一律 null：上游即使给了 0 也不采纳，0 会让留存曲线多出一段贴地的尾巴
                 BigDecimal v = (r == null || d.plusDays(days).isAfter(lastDay)) ? null : r.num(col.getValue());
-                if ("MONEY".equals(format))
-                {
-                    v = com.fivetech.dashboard.format.MoneyScale.integer(v);   // LTV 金额取整，不带小数
-                }
+                // 服务层保留两位（导出用），页面接口在 Controller 里再按展示精度取整 / 1 位小数
+                v = "MONEY".equals(format) ? com.fivetech.dashboard.format.MoneyScale.of(v)
+                    : com.fivetech.dashboard.format.MoneyScale.pct2(v);
                 if (checkMonotonic && v != null && prev != null && v.compareTo(prev) < 0)
                 {
                     monotonicBroken = true;
@@ -800,8 +799,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
     /** 注册渠道的占比：分母为 0 时返回 0.0（区间内确实没人注册） */
     private static BigDecimal pctOrZero(Long a, Long b)
     {
-        BigDecimal v = pct(a, b, 1);
-        return v == null ? BigDecimal.ZERO.setScale(1) : v;
+        BigDecimal v = pct(a, b, 2);
+        return v == null ? BigDecimal.ZERO.setScale(2) : v;
     }
 
     private static String pctText(BigDecimal v)

@@ -64,7 +64,7 @@ public class BonusItemVO implements Serializable
 
     public void setAmount(BigDecimal amount)
     {
-        this.amount = com.fivetech.dashboard.format.MoneyScale.integer(amount);
+        this.amount = com.fivetech.dashboard.format.MoneyScale.of(amount);
     }
 
     public BigDecimal getShare()
@@ -75,5 +75,12 @@ public class BonusItemVO implements Serializable
     public void setShare(BigDecimal share)
     {
         this.share = share;
+    }
+
+    /** 页面展示精度（导出不调用）：金额取整，占比 1 位小数 */
+    public void applyViewScale()
+    {
+        this.amount = com.fivetech.dashboard.format.MoneyScale.integer(amount);
+        this.share = com.fivetech.dashboard.format.MoneyScale.pct1(share);
     }
 }

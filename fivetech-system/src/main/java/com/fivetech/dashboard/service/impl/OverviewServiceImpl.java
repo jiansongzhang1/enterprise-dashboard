@@ -685,11 +685,13 @@ public class OverviewServiceImpl implements IOverviewService
         return result;
     }
 
-    /** 金额统一两位小数，与返回值的小数位一致；其他格式沿用指标配置 */
+    /**
+     * 指标卡展示小数位（卡片数值头用）：按指标配置，金额 0 位（前端 M 表达）、ARPPU 类 1 位。
+     * 返回的数值本身保留两位，供抽屉逐时段明细按两位显示
+     */
     private static Integer decimalsOf(MetricDefinition def)
     {
-        return "MONEY".equalsIgnoreCase(def.getFormat()) ? Integer.valueOf(com.fivetech.dashboard.format.MoneyScale.SCALE)
-            : def.getDecimals();
+        return def.getDecimals();
     }
 
     private String groupLabel(String group)

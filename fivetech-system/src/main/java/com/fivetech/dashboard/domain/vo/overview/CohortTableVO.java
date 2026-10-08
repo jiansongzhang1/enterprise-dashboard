@@ -90,4 +90,19 @@ public class CohortTableVO implements Serializable
     {
         this.rows = rows;
     }
+
+    /** 页面展示精度（导出不调用）：LTV 金额取整，留存率 1 位小数 */
+    public void applyViewScale()
+    {
+        boolean money = "MONEY".equals(valueFormat);
+        for (CohortRowVO row : rows)
+        {
+            java.util.List<java.math.BigDecimal> scaled = new java.util.ArrayList<>(row.getValues().size());
+            for (java.math.BigDecimal v : row.getValues())
+            {
+                scaled.add(money ? com.fivetech.dashboard.format.MoneyScale.integer(v) : com.fivetech.dashboard.format.MoneyScale.pct1(v));
+            }
+            row.setValues(scaled);
+        }
+    }
 }

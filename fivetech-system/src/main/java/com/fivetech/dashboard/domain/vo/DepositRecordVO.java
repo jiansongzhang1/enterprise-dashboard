@@ -142,6 +142,6 @@ public class DepositRecordVO implements Serializable
 
     public void setCostMinutes(BigDecimal costMinutes)
     {
-        this.costMinutes = costMinutes;
+        this.costMinutes = costMinutes == null ? null : costMinutes.setScale(1, java.math.RoundingMode.HALF_UP);
     }
 }

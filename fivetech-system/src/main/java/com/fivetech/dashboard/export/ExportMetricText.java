@@ -66,7 +66,7 @@ public final class ExportMetricText
 
     private static final String U_PCT = "百分數值，2 位小數（16.67 表示 16.67%）";
 
-    private static final String U_INR = "INR，純數值";
+    private static final String U_INR = "INR，純數值，2 位小數";
 
     private static final String U_MIN = "分鐘，1 位小數";
 
@@ -77,24 +77,24 @@ public final class ExportMetricText
         put("reg", "註冊人數", G_ACQ, "人數", "完成會員註冊的人數", U_INT, null);
         put("ftd", "首存人數", G_ACQ, "人數", "完成生涯首筆存款的人數", U_INT, null);
         put("ftdr", "首存轉化率", G_ACQ, "%", "首存人數 ÷ 註冊人數 × 100%", U_PCT, "0.00");
-        put("dep", "存款總額", G_FUND, "INR", "所有會員成功存款金額加總", U_INR, null);
-        put("wd", "提款總額", G_FUND, "INR", "所有會員成功提款金額加總", U_INR, null);
-        put("net", "存提差", G_FUND, "INR", "存款總額 − 提款總額", U_INR, null);
+        put("dep", "存款總額", G_FUND, "INR", "所有會員成功存款金額加總", U_INR, "0.00");
+        put("wd", "提款總額", G_FUND, "INR", "所有會員成功提款金額加總", U_INR, "0.00");
+        put("net", "存提差", G_FUND, "INR", "存款總額 − 提款總額", U_INR, "0.00");
         put("arppu", "ARPPU", G_FUND, "INR", "存款總額 ÷ 去重存款人數。同一人在區間內只計一次，因此區間值不等於各行的平均", U_INR, "0.00");
         put("ftdA", "首存ARPPU", G_ACQ, "INR", "首存總額 ÷ 首存人數", U_INR, "0.00");
         put("dOkR", "存款成功率", G_PAY, "%", "存款成功筆數 ÷ 存款總嘗試筆數 × 100%", U_PCT, "0.00");
         put("dT", "平均到帳時間", G_PAY, "min", "存款自送出到入帳的平均耗時（UPI / 銀行卡 / USDT 合併計算）", U_MIN, "0.0");
         put("wOkR", "出款成功率", G_PAY, "%", "出款成功筆數 ÷ 出款總嘗試筆數 × 100%", U_PCT, "0.00");
         put("wT", "平均出款時間", G_PAY, "min", "提款自申請到撥款完成的平均耗時", U_MIN, "0.0");
-        put("bonus", "發放贈金總額", G_BET, "INR", "各贈金項目實際發放金額加總", U_INR, null);
+        put("bonus", "發放贈金總額", G_BET, "INR", "各贈金項目實際發放金額加總", U_INR, "0.00");
         put("bonusR", "贈金比", G_BET, "%", "發放贈金總額 ÷ 總流水 × 100%", U_PCT, "0.00");
-        put("bet", "投注總額", G_BET, "INR", "所有投注金額加總（＝總流水）", U_INR, null);
-        put("ggr", "GGR", G_BET, "INR", "總流水 − 總派彩金額", U_INR, null);
+        put("bet", "投注總額", G_BET, "INR", "所有投注金額加總（＝總流水）", U_INR, "0.00");
+        put("ggr", "GGR", G_BET, "INR", "總流水 − 總派彩金額", U_INR, "0.00");
         put("killR", "平均殺率", G_BET, "%", "GGR ÷ 投注總額", U_PCT, "0.00");
         put("active", "活躍人數", G_BET, "人數", "有投注行為的去重會員數。去重規則同登錄人數", U_INT, null);
         put("login", "登錄人數", G_ACQ, "人數",
             "完成登錄的去重會員數。去重人數：各時間片各自去重，區間值按整個區間去重，因此各行相加大於區間值", U_INT, null);
-        put("ngr", "NGR", G_BET, "INR", "GGR − 發放贈金總額", U_INR, null);
+        put("ngr", "NGR", G_BET, "INR", "GGR − 發放贈金總額", U_INR, "0.00");
         put("turnX", "流水倍數", G_FUND, "倍", "投注總額 ÷ 存款總額", "倍，2 位小數", "0.00");
     }
 
@@ -129,7 +129,7 @@ public final class ExportMetricText
         {
             case "INR":
                 unitNote = U_INR;
-                format = null;
+                format = "0.00";
                 break;
             case "%":
                 unitNote = U_PCT;

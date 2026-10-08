@@ -56,7 +56,7 @@ public class GameBoardVO implements Serializable
 
     public void setTotalBetAmount(BigDecimal totalBetAmount)
     {
-        this.totalBetAmount = com.fivetech.dashboard.format.MoneyScale.integer(totalBetAmount);
+        this.totalBetAmount = com.fivetech.dashboard.format.MoneyScale.of(totalBetAmount);
     }
 
     public String getTotalBetAmountPct()
@@ -77,5 +77,13 @@ public class GameBoardVO implements Serializable
     public void setItems(List<GameItemVO> items)
     {
         this.items = items;
+    }
+
+    /** 页面展示精度（导出不调用）：金额取整 */
+    public void applyViewScale()
+    {
+        this.totalBetAmount = com.fivetech.dashboard.format.MoneyScale.integer(totalBetAmount);
+        this.totalBetAmountPct = com.fivetech.dashboard.format.MoneyScale.pct1Text(totalBetAmountPct);
+        items.forEach(GameItemVO::applyViewScale);
     }
 }

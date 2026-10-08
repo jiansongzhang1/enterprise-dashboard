@@ -342,7 +342,7 @@ public class MemberRecordVO implements Serializable
 
     public void setTurnoverMultiple(BigDecimal turnoverMultiple)
     {
-        this.turnoverMultiple = turnoverMultiple;
+        this.turnoverMultiple = turnoverMultiple == null ? null : turnoverMultiple.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     public String getLastWithdrawTime()

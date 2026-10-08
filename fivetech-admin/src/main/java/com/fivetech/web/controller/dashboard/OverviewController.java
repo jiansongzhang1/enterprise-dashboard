@@ -114,7 +114,17 @@ public class OverviewController extends BaseController
     @PostMapping({"/rankingboard"})
     public AjaxResult rankingBoard(@Validated @RequestBody RankingBoardQuery query)
     {
-        return AjaxResult.success(sectionService.rankingBoard(query));
+        com.fivetech.dashboard.domain.vo.overview.RankingBoardVO vo = sectionService.rankingBoard(query);
+        // 分析区展示精度：金额取整、百分数 1 位小数（导出直接调 service，保留两位）
+        if (vo.getBonus() != null)
+        {
+            vo.getBonus().applyViewScale();
+        }
+        if (vo.getGames() != null)
+        {
+            vo.getGames().applyViewScale();
+        }
+        return AjaxResult.success(vo);
     }
 
     /**
@@ -124,7 +134,17 @@ public class OverviewController extends BaseController
     @PostMapping("/cohort")
     public AjaxResult cohort(@Validated @RequestBody CohortQuery query)
     {
-        return AjaxResult.success(sectionService.cohort(query));
+        com.fivetech.dashboard.domain.vo.overview.CohortVO vo = sectionService.cohort(query);
+        // 分析区展示精度：LTV 取整、留存率 1 位小数（导出直接调 service，保留两位）
+        if (vo.getRetention() != null)
+        {
+            vo.getRetention().applyViewScale();
+        }
+        if (vo.getLtv() != null)
+        {
+            vo.getLtv().applyViewScale();
+        }
+        return AjaxResult.success(vo);
     }
 
     /**
@@ -134,7 +154,11 @@ public class OverviewController extends BaseController
     @PostMapping("/reg-channels")
     public AjaxResult regChannels(@Validated @RequestBody RegChannelQuery query)
     {
-        return AjaxResult.success(sectionService.regChannels(query));
+        com.fivetech.dashboard.domain.vo.overview.RegChannelVO vo = sectionService.regChannels(query);
+        // 分析区展示精度：占比 1 位小数（导出直接调 service，保留两位）
+        vo.getGroups().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelGroupVO::applyViewScale);
+        vo.getChannels().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelItemVO::applyViewScale);
+        return AjaxResult.success(vo);
     }
 
     /**

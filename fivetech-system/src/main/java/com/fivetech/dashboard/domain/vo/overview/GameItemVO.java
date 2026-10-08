@@ -125,7 +125,7 @@ public class GameItemVO implements Serializable
 
     public void setBetAmount(BigDecimal betAmount)
     {
-        this.betAmount = com.fivetech.dashboard.format.MoneyScale.integer(betAmount);
+        this.betAmount = com.fivetech.dashboard.format.MoneyScale.of(betAmount);
     }
 
     public String getProfitRate()
@@ -166,5 +166,13 @@ public class GameItemVO implements Serializable
     public void setBetCount(Long betCount)
     {
         this.betCount = betCount;
+    }
+
+    /** 页面展示精度（导出不调用）：金额取整，盈利率、占比 1 位小数 */
+    public void applyViewScale()
+    {
+        this.betAmount = com.fivetech.dashboard.format.MoneyScale.integer(betAmount);
+        this.profitRate = com.fivetech.dashboard.format.MoneyScale.pct1Text(profitRate);
+        this.rateForBetAmount = com.fivetech.dashboard.format.MoneyScale.pct1Text(rateForBetAmount);
     }
 }

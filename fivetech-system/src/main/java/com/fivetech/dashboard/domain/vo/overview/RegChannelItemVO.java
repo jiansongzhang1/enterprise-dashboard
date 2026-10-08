@@ -102,4 +102,11 @@ public class RegChannelItemVO implements Serializable
     {
         this.shareOfGroup = shareOfGroup;
     }
+
+    /** 页面展示精度（导出不调用）：占比 1 位小数 */
+    public void applyViewScale()
+    {
+        this.shareOfTotal = com.fivetech.dashboard.format.MoneyScale.pct1(shareOfTotal);
+        this.shareOfGroup = com.fivetech.dashboard.format.MoneyScale.pct1(shareOfGroup);
+    }
 }

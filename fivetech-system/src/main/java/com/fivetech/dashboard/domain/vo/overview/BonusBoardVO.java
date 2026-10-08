@@ -40,7 +40,7 @@ public class BonusBoardVO implements Serializable
 
     public void setTotal(BigDecimal total)
     {
-        this.total = com.fivetech.dashboard.format.MoneyScale.integer(total);
+        this.total = com.fivetech.dashboard.format.MoneyScale.of(total);
     }
 
     public List<BonusItemVO> getItems()
@@ -51,5 +51,12 @@ public class BonusBoardVO implements Serializable
     public void setItems(List<BonusItemVO> items)
     {
         this.items = items;
+    }
+
+    /** 页面展示精度（导出不调用）：金额取整，占比 1 位小数 */
+    public void applyViewScale()
+    {
+        this.total = com.fivetech.dashboard.format.MoneyScale.integer(total);
+        items.forEach(BonusItemVO::applyViewScale);
     }
 }
