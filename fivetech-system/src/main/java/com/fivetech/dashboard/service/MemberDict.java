@@ -39,10 +39,10 @@ public final class MemberDict
         LEVEL.put("5", "鉑金2");
 
 
-        USER_TYPE.put("real", "正式用戶");
-        USER_TYPE.put("trial", "試玩用戶");
-        USER_TYPE.put("test", "測試帳號");
-        USER_TYPE.put("agent", "代理帳號");
+        // account_type：0 用户 / 1 测试 / 2 币商
+        USER_TYPE.put("0", "用戶");
+        USER_TYPE.put("1", "測試");
+        USER_TYPE.put("2", "幣商");
 
         COUNTRY.put("IN", "印度");
         COUNTRY.put("NP", "尼泊爾");

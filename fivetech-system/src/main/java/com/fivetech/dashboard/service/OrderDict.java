@@ -38,9 +38,6 @@ public final class OrderDict
 
         WITHDRAW_STATUS.put("succ", "成功");
         WITHDRAW_STATUS.put("fail", "失敗");
-        WITHDRAW_STATUS.put("auditing", "待審核");
-        WITHDRAW_STATUS.put("paying", "出款中");
-        WITHDRAW_STATUS.put("rejected", "已駁回");
 
         AUDIT_STATUS.put("pass", "已通過");
         AUDIT_STATUS.put("pending", "待審");

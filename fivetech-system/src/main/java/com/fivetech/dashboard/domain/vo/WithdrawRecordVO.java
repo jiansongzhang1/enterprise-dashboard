@@ -30,7 +30,7 @@ public class WithdrawRecordVO implements Serializable
     /** 币种 INR / USD / USDT */
     private String currency;
 
-    /** 状态编码 succ / fail / auditing / paying / rejected */
+    /** 状态编码 succ 成功（UDS status = 30）/ fail 失败（其余状态） */
     private String status;
 
     /** 状态名称 */

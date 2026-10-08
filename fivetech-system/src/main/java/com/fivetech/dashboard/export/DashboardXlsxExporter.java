@@ -283,7 +283,7 @@ public class DashboardXlsxExporter
         member(f("username", Col.text("帳號名稱", 16), "用戶登錄名。", U_TEXT, MemberRecordVO::getUsername));
         member(f("status", Col.text("用戶狀態"), "帳號狀態：啟用 / 禁用。由人工或風控設定，與行為判定無關。", U_ENUM,
             r -> label(r.getStatusLabel(), r.getStatus())));
-        member(f("userType", Col.text("用戶類型"), "正式用戶 / 試玩用戶 / 測試帳號 / 代理帳號。", U_ENUM,
+        member(f("userType", Col.text("用戶類型"), "用戶 / 測試 / 幣商（account_type：0 / 1 / 2）。", U_ENUM,
             r -> label(r.getUserTypeLabel(), r.getUserType())));
         member(f("level", Col.text("用戶等級"), "老鐵 / 青銅 / 白銀 / 黃金 / 鉑金1 / 鉑金2。", U_ENUM,
             r -> label(r.getLevelLabel(), r.getLevel())));

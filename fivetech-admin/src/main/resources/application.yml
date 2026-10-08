@@ -315,7 +315,7 @@ dashboard:
             userId: player_id
             username: login_name          # 已脱敏；login_search 只能筛选，不能放 dimensions 返回
             status: account_status        # 0 禁用 / 1 启用
-            userType: utype
+            userType: account_type        # 0 用户 / 1 测试 / 2 币商
             level: player_level           # 0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2
             country: country_code
             registerTime: register_date_india
@@ -341,12 +341,11 @@ dashboard:
           search-fields:
             # 关键字：玩家 ID 精确，账号 LIKE 包含（% 和 _ 会被去掉）
             keyword: [player_id, "login_search~"]
-          # account_status / player_level 在 UDS 是 BIGINT：筛选值必须按数字发，发 "1" 会 4001「字面量与字段类型不符」。
+          # account_status / account_type / player_level 在 UDS 是数值：筛选值必须按数字发，发 "1" 会 4001「字面量与字段类型不符」。
           # 配成同值映射后 encode 会把整数取值转成数字下推，也顺带校验取值范围
-          # utype 为数值字段，枚举待数据团队确认；先按数字下推，确认后改成 value-maps 并在 MemberDict.USER_TYPE 补中文名
-          numeric-filters: [userType]
           value-maps:
             status: { "0": "0", "1": "1" }
+            userType: { "0": "0", "1": "1", "2": "2" }
             level: { "0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" }
         deposit:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
@@ -406,7 +405,13 @@ dashboard:
             amount: default_amount
           search-fields:
             keyword: [player_id, billno, "login_search~"]
-          # TODO：提款状态 / 审核状态枚举待数据团队提供后配置 value-maps（未配置时筛选值原样下推）
+          value-maps:
+            # 提款状态（产品确认）：与存款相同，成功 = 30，其他一律视为失败
+            status:
+              succ: "30"
+          value-defaults:
+            status: fail                  # 非 30 → fail；按 fail 筛选下推为 status < 30 OR status >= 31
+          # TODO：审核状态（detail_status）枚举待数据团队提供后配置 value-maps
         bet:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 bet_time_india 筛选上
           dataset: dashboard_bet_snapshot_v3

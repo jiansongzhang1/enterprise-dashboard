@@ -14,9 +14,11 @@ public class WithdrawRecordQuery extends BaseRecordQuery
 {
     private static final long serialVersionUID = 1L;
 
-    /** 订单状态：succ 成功 / fail 失败 / auditing 待审核 / paying 出款中 / rejected 已驳回 */
-    @Pattern(regexp = "^(succ|fail|auditing|paying|rejected)?$",
-        message = "status 取值应为 succ/fail/auditing/paying/rejected")
+    /**
+     * 订单状态：succ 成功（UDS status = 30）/ fail 失败（其余状态一律视为失败）。
+     * <p>兼容前端直接传 UDS 原始状态码：30 → succ，其他数字 → fail（规则与存款相同）。</p>
+     */
+    @Pattern(regexp = "^(succ|fail)?$", message = "status 取值应为 succ/fail（或 UDS 状态码，30 = 成功）")
     private String status;
 
     /** 风控审核状态：pass 已通过 / pending 待审 / reject 驳回 */
@@ -30,7 +32,7 @@ public class WithdrawRecordQuery extends BaseRecordQuery
 
     public void setStatus(String status)
     {
-        this.status = status;
+        this.status = DepositRecordQuery.normalizeStatus(status);
     }
 
     public String getAuditStatus()

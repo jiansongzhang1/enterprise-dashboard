@@ -17,8 +17,11 @@ public class DepositRecordQuery extends BaseRecordQuery
 {
     private static final long serialVersionUID = 1L;
 
-    /** 订单状态：succ 成功（UDS status = 30）/ fail 失败（其余状态一律视为失败） */
-    @Pattern(regexp = "^(succ|fail)?$", message = "status 取值应为 succ/fail")
+    /**
+     * 订单状态：succ 成功（UDS status = 30）/ fail 失败（其余状态一律视为失败）。
+     * <p>兼容前端直接传 UDS 原始状态码：30 → succ，其他数字 → fail（见 {@link #setStatus}）。</p>
+     */
+    @Pattern(regexp = "^(succ|fail)?$", message = "status 取值应为 succ/fail（或 UDS 状态码，30 = 成功）")
     private String status;
 
     public String getStatus()
@@ -28,6 +31,21 @@ public class DepositRecordQuery extends BaseRecordQuery
 
     public void setStatus(String status)
     {
-        this.status = status;
+        this.status = normalizeStatus(status);
+    }
+
+    /** 原始状态码转成本系统取值：30 → succ，其他整数 → fail；succ/fail 与空值原样返回 */
+    static String normalizeStatus(String status)
+    {
+        if (status == null)
+        {
+            return null;
+        }
+        String s = status.trim();
+        if (s.matches("-?\\d+"))
+        {
+            return "30".equals(s) ? "succ" : "fail";
+        }
+        return s;
     }
 }
