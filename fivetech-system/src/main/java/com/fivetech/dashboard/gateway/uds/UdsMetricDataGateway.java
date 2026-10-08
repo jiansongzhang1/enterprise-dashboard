@@ -1122,10 +1122,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
         }
         int pageSize = Math.max(1, request.getPageSize());
         long offset = (long) (Math.max(1, request.getPageNum()) - 1) * pageSize;
-        if (offset > MAX_OFFSET)
-        {
-            throw new ServiceException("最多只能翻到第 " + MAX_OFFSET + " 条，请缩小时间范围或增加筛选条件");
-        }
+        // 页面分页不再在本地拦截 offset 上限：UDS 服务端已支持深分页（两阶段分页），按前端页码原样下推。
+        // MAX_OFFSET 只用于下面同步导出的分段续读，避免一次导出无限翻页
         // 页面分页 ≤ 1000 一次取完；同步导出一页要很多行时，按 1000 行一段往后翻（UDS 单次上限 1000）
         int firstLimit = Math.min(pageSize, MAX_LIMIT);
         List<Map<String, Object>> pair = new ArrayList<>();
@@ -1180,8 +1178,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
         BigDecimal total = count == null ? null : count.num(detail.getCountMetric());
         page.setTotal(total == null ? list.size() + offset : total.longValue());
         // 没取全（超过 offset 上限、或导出行数上限小于总数）时标记截断，让前端 / 导出提示
+        // 只有同步导出的分段续读（pageSize > 1000）才可能取不全；页面分页一次取完，不标截断
         if (page.getTotal() > offset + list.size()
-            && ((pageSize > MAX_LIMIT && list.size() >= pageSize) || next > MAX_OFFSET))
+            && pageSize > MAX_LIMIT && (list.size() >= pageSize || next > MAX_OFFSET))
         {
             page.setTruncated(true);
         }
