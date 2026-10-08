@@ -71,9 +71,8 @@ public class MetricValueNormalizer
             case "MULTIPLE":
                 return raw.setScale(2, RoundingMode.HALF_UP);
             case "MONEY":
-                // 小数位由指标配置决定：ARPPU 类 1 位，其余 0 位
-                Integer decimals = definition.getDecimals();
-                return raw.setScale(decimals == null ? 0 : decimals, RoundingMode.HALF_UP);
+                // 金额统一保留两位小数返回前端（不再按指标配置的 value_decimals 取 0 / 1 位）
+                return com.fivetech.dashboard.format.MoneyScale.of(raw);
             case "INT":
                 return raw.setScale(0, RoundingMode.HALF_UP);
             default:

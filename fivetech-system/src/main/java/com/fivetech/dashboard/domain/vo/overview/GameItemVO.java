@@ -125,7 +125,7 @@ public class GameItemVO implements Serializable
 
     public void setBetAmount(BigDecimal betAmount)
     {
-        this.betAmount = betAmount;
+        this.betAmount = com.fivetech.dashboard.format.MoneyScale.integer(betAmount);
     }
 
     public String getProfitRate()

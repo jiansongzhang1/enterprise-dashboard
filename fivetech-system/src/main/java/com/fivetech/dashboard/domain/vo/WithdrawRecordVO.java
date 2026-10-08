@@ -112,7 +112,7 @@ public class WithdrawRecordVO implements Serializable
 
     public void setAmount(BigDecimal amount)
     {
-        this.amount = amount;
+        this.amount = com.fivetech.dashboard.format.MoneyScale.of(amount);
     }
 
     public String getCurrency()

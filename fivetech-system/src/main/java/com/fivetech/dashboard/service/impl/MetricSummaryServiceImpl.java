@@ -247,7 +247,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     private List<ColumnMetaVO> buildColumns(List<String> codes)
     {
         List<ColumnMetaVO> columns = new ArrayList<>();
-        columns.add(ColumnMetaVO.of("time", "时间", "TEXT").sortable(true));
+        columns.add(ColumnMetaVO.of("time", "時間", "TEXT").sortable(true));
         // 核心指标标记：前端据此给核心指标列做强调
         java.util.Set<String> core = metricRegistry.coreMetricCodes();
         // 下钻标记：前端据此决定单元格是否可点
@@ -260,7 +260,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
             {
                 continue;
             }
-            columns.add(ColumnMetaVO.of(code, definition.getLabel(), definition.getFormat())
+            columns.add(ColumnMetaVO.of(code, com.fivetech.dashboard.service.OverviewMetricText.label(code, definition.getLabel()), definition.getFormat())
                 .group(definition.getGroup()).sortable(true).core(core.contains(code))
                 .drillable(drillable.contains(code)));
         }

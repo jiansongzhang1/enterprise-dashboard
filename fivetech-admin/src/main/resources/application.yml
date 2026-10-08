@@ -514,6 +514,15 @@ dashboard:
             - { field: India_FD_dt, dir: ASC }
           options: { channel: ONLINE }
   # 同步导出（请求体传 export_csv=true 或 export=true 触发），文件格式统一为 XLSX：「数据」+「口径说明」两张 sheet
+  # /dashboard/** 接口 IP 白名单。拦截器注册在 ResourcesConfig#addInterceptors，目前注释未启用
+  ip-whitelist:
+    enabled: ${DASHBOARD_IP_WHITELIST_ENABLED:false}
+    # 逗号分隔，支持单个 IP 与 CIDR，如 1.2.3.4,203.0.113.0/24
+    allowed: ${DASHBOARD_IP_WHITELIST:}
+    # 取客户端 IP 的请求头；CloudFront 配了 CloudFront-Viewer-Address 时填它，否则留空用 X-Forwarded-For
+    client-ip-header: ${DASHBOARD_IP_HEADER:}
+    # 会追加 X-Forwarded-For 的可信代理层数：只有 CloudFront = 1；CloudFront + Nginx = 2
+    trusted-proxy-hops: ${DASHBOARD_IP_TRUSTED_HOPS:1}
   export:
     enabled: ${DASHBOARD_EXPORT_ENABLED:true}
     # ALL_FILTERED = 当前筛选条件下的全部数据（忽略分页）；CURRENT_PAGE = 只导当前页

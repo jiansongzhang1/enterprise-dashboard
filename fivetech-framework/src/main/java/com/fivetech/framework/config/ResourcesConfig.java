@@ -14,6 +14,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.config.FiveTechConfig;
 import com.fivetech.common.constant.Constants;
+import com.fivetech.framework.interceptor.DashboardIpWhitelistInterceptor;
 import com.fivetech.framework.interceptor.RepeatSubmitInterceptor;
 
 /**
@@ -26,6 +27,9 @@ public class ResourcesConfig implements WebMvcConfigurer
 {
     @Autowired
     private RepeatSubmitInterceptor repeatSubmitInterceptor;
+
+    @Autowired
+    private DashboardIpWhitelistInterceptor dashboardIpWhitelistInterceptor;
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry)
@@ -47,6 +51,8 @@ public class ResourcesConfig implements WebMvcConfigurer
     public void addInterceptors(InterceptorRegistry registry)
     {
         registry.addInterceptor(repeatSubmitInterceptor).addPathPatterns("/**");
+        // 仪表板接口 IP 白名单（dashboard.ip-whitelist.*），暂不启用：取消注释并配置 enabled=true 与 allowed 后生效
+        // registry.addInterceptor(dashboardIpWhitelistInterceptor).addPathPatterns("/dashboard/**");
     }
 
     /**

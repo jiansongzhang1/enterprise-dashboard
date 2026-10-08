@@ -34,32 +34,32 @@ public final class OrderDict
     static
     {
         DEPOSIT_STATUS.put("succ", "成功");
-        DEPOSIT_STATUS.put("fail", "失败");
+        DEPOSIT_STATUS.put("fail", "失敗");
 
         WITHDRAW_STATUS.put("succ", "成功");
-        WITHDRAW_STATUS.put("fail", "失败");
-        WITHDRAW_STATUS.put("auditing", "待审核");
+        WITHDRAW_STATUS.put("fail", "失敗");
+        WITHDRAW_STATUS.put("auditing", "待審核");
         WITHDRAW_STATUS.put("paying", "出款中");
-        WITHDRAW_STATUS.put("rejected", "已驳回");
+        WITHDRAW_STATUS.put("rejected", "已駁回");
 
-        AUDIT_STATUS.put("pass", "已通过");
-        AUDIT_STATUS.put("pending", "待审");
-        AUDIT_STATUS.put("reject", "驳回");
+        AUDIT_STATUS.put("pass", "已通過");
+        AUDIT_STATUS.put("pending", "待審");
+        AUDIT_STATUS.put("reject", "駁回");
 
-        GAME_TYPE.put("slots", "老虎机");
+        GAME_TYPE.put("slots", "老虎機");
         GAME_TYPE.put("live", "真人");
-        GAME_TYPE.put("mini", "小游戏");
+        GAME_TYPE.put("mini", "小遊戲");
 
         GAME_CATALOG.put("1", "真人");
-        GAME_CATALOG.put("2", "电游");
-        GAME_CATALOG.put("3", "体育");
-        GAME_CATALOG.put("4", "捕鱼");
+        GAME_CATALOG.put("2", "電遊");
+        GAME_CATALOG.put("3", "體育");
+        GAME_CATALOG.put("4", "捕魚");
         GAME_CATALOG.put("5", "彩票");
         GAME_CATALOG.put("6", "棋牌");
-        GAME_CATALOG.put("7", "电竞");
+        GAME_CATALOG.put("7", "電競");
 
-        SETTLE_STATUS.put("done", "已结算");
-        SETTLE_STATUS.put("open", "未结算");
+        SETTLE_STATUS.put("done", "已結算");
+        SETTLE_STATUS.put("open", "未結算");
         SETTLE_STATUS.put("cancel", "已取消");
     }
 

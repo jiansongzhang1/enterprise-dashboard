@@ -64,7 +64,7 @@ public class BonusItemVO implements Serializable
 
     public void setAmount(BigDecimal amount)
     {
-        this.amount = amount;
+        this.amount = com.fivetech.dashboard.format.MoneyScale.integer(amount);
     }
 
     public BigDecimal getShare()

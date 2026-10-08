@@ -28,26 +28,26 @@ public final class MemberDict
     static
     {
         // 账号状态（account_status），数据团队口径
-        STATUS.put("1", "启用");
+        STATUS.put("1", "啟用");
         STATUS.put("0", "禁用");
 
-        LEVEL.put("0", "老铁");
-        LEVEL.put("1", "青铜");
-        LEVEL.put("2", "白银");
-        LEVEL.put("3", "黄金");
-        LEVEL.put("4", "铂金1");
-        LEVEL.put("5", "铂金2");
+        LEVEL.put("0", "老鐵");
+        LEVEL.put("1", "青銅");
+        LEVEL.put("2", "白銀");
+        LEVEL.put("3", "黃金");
+        LEVEL.put("4", "鉑金1");
+        LEVEL.put("5", "鉑金2");
 
 
-        USER_TYPE.put("real", "正式用户");
-        USER_TYPE.put("trial", "试玩用户");
-        USER_TYPE.put("test", "测试账号");
-        USER_TYPE.put("agent", "代理账号");
+        USER_TYPE.put("real", "正式用戶");
+        USER_TYPE.put("trial", "試玩用戶");
+        USER_TYPE.put("test", "測試帳號");
+        USER_TYPE.put("agent", "代理帳號");
 
         COUNTRY.put("IN", "印度");
-        COUNTRY.put("NP", "尼泊尔");
+        COUNTRY.put("NP", "尼泊爾");
         COUNTRY.put("BD", "孟加拉");
-        COUNTRY.put("LK", "斯里兰卡");
+        COUNTRY.put("LK", "斯里蘭卡");
         COUNTRY.put("PK", "巴基斯坦");
     }
 

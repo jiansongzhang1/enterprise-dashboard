@@ -151,7 +151,7 @@ public class OverviewServiceImpl implements IOverviewService
             if (fetched == null)
             {
                 vo.getBlockErrors().put(OverviewBlock.METRICS.name(),
-                    com.fivetech.dashboard.domain.vo.OverviewBlockErrorVO.of(5001, "数据平台取数失败"));
+                    com.fivetech.dashboard.domain.vo.OverviewBlockErrorVO.of(5001, "資料平台取數失敗"));
             }
             else
             {
@@ -229,8 +229,8 @@ public class OverviewServiceImpl implements IOverviewService
             }
             if (vo.getAsOf() == null)
             {
-                notices.add(OverviewNoticeVO.warn("NO_COMPLETE_SLOT_YET", "暂无完整时间片",
-                    "上游尚未返回水位线，顶栏时间以「—」显示"));
+                notices.add(OverviewNoticeVO.warn("NO_COMPLETE_SLOT_YET", "暫無完整時間片",
+                    "上游尚未返回水位線，頂欄時間以「—」顯示"));
             }
             return result;
         }
@@ -239,7 +239,7 @@ public class OverviewServiceImpl implements IOverviewService
             // 退避之后仍然拿不到，多半是上游滞后太多或绑定不可用。
             // 记 error 并降级，不要把异常抛到前端——整页 500 比少一块糟糕得多
             log.error("[overview] 取数失败 区间={}~{} 粒度={} : {}", from, to, granularity, e.getMessage(), e);
-            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", "数据平台暂时不可用", e.getMessage()));
+            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", "資料平台暫時無法使用", e.getMessage()));
             return null;
         }
     }
@@ -297,9 +297,9 @@ public class OverviewServiceImpl implements IOverviewService
         {
             Granularity next = current == Granularity.HOUR ? Granularity.DAY : Granularity.WEEK;
             notices.add(OverviewNoticeVO.info("GRANULARITY_DOWNGRADED",
-                "粒度已改为「" + label(next) + "」",
-                "所选区间按「" + label(current) + "」有 " + countPoints(from, to, current)
-                    + " 个时间片，超过单次返回上限 " + max));
+                "粒度已改為「" + label(next) + "」",
+                "所選區間按「" + label(current) + "」有 " + countPoints(from, to, current)
+                    + " 個時間片，超過單次返回上限 " + max));
             current = next;
         }
         return current;
@@ -310,9 +310,9 @@ public class OverviewServiceImpl implements IOverviewService
         switch (g)
         {
             case HOUR:
-                return "小时";
+                return "小時";
             case WEEK:
-                return "周";
+                return "週";
             case DAY:
             default:
                 return "日";
@@ -413,8 +413,8 @@ public class OverviewServiceImpl implements IOverviewService
                 {
                     throw new ServiceException("对比期长度需与主区间一致（cmpLock=true）", 4002);
                 }
-                notices.add(OverviewNoticeVO.warn("CMP_LENGTH_WARN", "对比期与主区间长度不同",
-                    "主区间 " + mainDays + " 天，对比期 " + cmpDays + " 天，环比数值不可直接解读"));
+                notices.add(OverviewNoticeVO.warn("CMP_LENGTH_WARN", "對比期與主區間長度不同",
+                    "主區間 " + mainDays + " 天，對比期 " + cmpDays + " 天，環比數值不可直接解讀"));
             }
         }
         else if (type == CompareType.LAST_YEAR)
@@ -433,7 +433,7 @@ public class OverviewServiceImpl implements IOverviewService
         if (StringUtils.isNotEmpty(query.getCompareFrom()) && type != CompareType.CUSTOM)
         {
             notices.add(OverviewNoticeVO.info("PARAM_IGNORED",
-                "compareFrom / compareTo 已忽略", "仅 compareType=CUSTOM 时生效"));
+                "compareFrom / compareTo 已忽略", "僅 compareType=CUSTOM 時生效"));
         }
 
         OverviewCompareVO compare = new OverviewCompareVO();
@@ -460,7 +460,7 @@ public class OverviewServiceImpl implements IOverviewService
             if (block == null)
             {
                 notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "未知的 blocks 取值：" + raw,
-                    "可选值为 METRICS"));
+                    "可選值為 METRICS"));
                 continue;
             }
             result.add(block);
@@ -489,14 +489,15 @@ public class OverviewServiceImpl implements IOverviewService
             }
             MetricCardVO card = new MetricCardVO();
             card.setCode(code);
-            card.setLabel(def.getLabel());
+            // 名称、分组、口径按原型返回繁体（库里是简体，供其他页面共用）
+            card.setLabel(com.fivetech.dashboard.service.OverviewMetricText.label(code, def.getLabel()));
             card.setGroup(def.getGroup());
-            card.setGroupLabel(groupLabel(def.getGroup()));
+            card.setGroupLabel(com.fivetech.dashboard.service.OverviewMetricText.group(groupLabel(def.getGroup())));
             card.setEmphasis(core.contains(code) ? "CORE" : "NORMAL");
             card.setKind(def.getKind());
-            card.setExpression(def.getExpression());
+            card.setExpression(com.fivetech.dashboard.service.OverviewMetricText.caliber(code, def, metricRegistry));
             card.setValueFormat(def.getFormat());
-            card.setDecimals(def.getDecimals());
+            card.setDecimals(decimalsOf(def));
             // 序号取页面关系 dashboard_page_metric.sort_no，与列表顺序同源；
             // 不是返回列表里的位次——前端自己重排过，靠这个还原成页面约定的次序。
             // 不能用 def.getSortNo()：那是 dashboard_metric_card 的全局顺序，两列配得不一样时会和列表顺序打架
@@ -608,7 +609,7 @@ public class OverviewServiceImpl implements IOverviewService
             MetricDefinition def = metricRegistry.get(code);
             if (def != null && def.isSingleDayOnly())
             {
-                hidden.add(def.getLabel());
+                hidden.add(com.fivetech.dashboard.service.OverviewMetricText.label(def.getCode(), def.getLabel()));
             }
             else
             {
@@ -618,8 +619,8 @@ public class OverviewServiceImpl implements IOverviewService
         if (!hidden.isEmpty())
         {
             notices.add(OverviewNoticeVO.info("SINGLE_DAY_ONLY_HIDDEN",
-                String.join("、", hidden) + "仅支持单日查询，已隐藏",
-                "所选区间跨越多个自然日，这些指标只有按日口径的数据"));
+                String.join("、", hidden) + "僅支援單日查詢，已隱藏",
+                "所選區間跨越多個自然日，這些指標只有按日口徑的資料"));
         }
         return kept;
     }
@@ -684,6 +685,13 @@ public class OverviewServiceImpl implements IOverviewService
         return result;
     }
 
+    /** 金额统一两位小数，与返回值的小数位一致；其他格式沿用指标配置 */
+    private static Integer decimalsOf(MetricDefinition def)
+    {
+        return "MONEY".equalsIgnoreCase(def.getFormat()) ? Integer.valueOf(com.fivetech.dashboard.format.MoneyScale.SCALE)
+            : def.getDecimals();
+    }
+
     private String groupLabel(String group)
     {
         if (group == null)
@@ -720,7 +728,8 @@ public class OverviewServiceImpl implements IOverviewService
             if (count != null && count > 0)
             {
                 result.add(new MetricGroupVO(g.getGroupCode(),
-                    StringUtils.isEmpty(g.getGroupName()) ? g.getGroupCode() : g.getGroupName(),
+                    com.fivetech.dashboard.service.OverviewMetricText.group(
+                        StringUtils.isEmpty(g.getGroupName()) ? g.getGroupCode() : g.getGroupName()),
                     g.getGroupNameEn(), count));
             }
         }
@@ -790,7 +799,7 @@ public class OverviewServiceImpl implements IOverviewService
             new com.fivetech.dashboard.domain.vo.MetricCompositionVO();
         vo.setOperator(calcType.toUpperCase());
         vo.setOperatorLabel("DIVIDE".equalsIgnoreCase(calcType) ? "÷" : "−");
-        vo.setExpression(def.getExpression());
+        vo.setExpression(com.fivetech.dashboard.service.OverviewMetricText.caliber(def.getCode(), def, metricRegistry));
 
         com.fivetech.dashboard.domain.vo.MetricOperandVO left = operand(def.getLeftCode(), fetched);
         com.fivetech.dashboard.domain.vo.MetricOperandVO right = operand(def.getRightCode(), fetched);
@@ -817,9 +826,9 @@ public class OverviewServiceImpl implements IOverviewService
 
         MetricDefinition def = metricRegistry.get(code);
         // 注册表里没有这个操作数时，label 退化成编码本身，总比显示空白强
-        vo.setLabel(def == null ? code : def.getLabel());
+        vo.setLabel(com.fivetech.dashboard.service.OverviewMetricText.label(code, def == null ? code : def.getLabel()));
         vo.setValueFormat(def == null ? null : def.getFormat());
-        vo.setDecimals(def == null ? null : def.getDecimals());
+        vo.setDecimals(def == null ? null : decimalsOf(def));
 
         // 上游没注册成可查指标（例如「首存金额」只在配置里作为分子存在）：
         // 名称照给，值留 null 并标明不可得，让缺口摆在明面上

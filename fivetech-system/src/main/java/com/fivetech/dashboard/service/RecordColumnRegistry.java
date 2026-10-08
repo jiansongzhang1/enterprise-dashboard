@@ -21,17 +21,17 @@ import com.fivetech.dashboard.domain.vo.ColumnMetaVO;
 @Component
 public class RecordColumnRegistry
 {
-    private static final String[] G_BASE = {"base", "基本信息"};
+    private static final String[] G_BASE = {"base", "基本資訊"};
 
-    private static final String[] G_REG = {"reg", "注册与来源"};
+    private static final String[] G_REG = {"reg", "註冊與來源"};
 
-    private static final String[] G_DEP = {"dep", "存款指标"};
+    private static final String[] G_DEP = {"dep", "存款指標"};
 
-    private static final String[] G_BET = {"bet", "投注指标"};
+    private static final String[] G_BET = {"bet", "投注指標"};
 
-    private static final String[] G_WD = {"wd", "提款指标"};
+    private static final String[] G_WD = {"wd", "提款指標"};
 
-    private static final String[] G_REV = {"rev", "收益与资产"};
+    private static final String[] G_REV = {"rev", "收益與資產"};
 
     private final List<ColumnMetaVO> memberColumns = new ArrayList<>();
 
@@ -44,84 +44,84 @@ public class RecordColumnRegistry
     public RecordColumnRegistry()
     {
         // ---- 会员表：27 列，对齐原型 MVP-V1.0。列显示由用户自选，这里只定义全集 ----
-        // 基本信息：用户ID 与账号名称必选（locked），默认显示的 13 列标 defaultVisible
-        member("userId", "用户ID", "TEXT", G_BASE).locked(true).defaultVisible(true).sortable(true);
-        member("username", "账号名称", "TEXT", G_BASE).locked(true).defaultVisible(true);
-        member("status", "用户状态", "TAG", G_BASE).defaultVisible(true).filterable(true);
-        member("userType", "用户类型", "TAG", G_BASE).defaultVisible(true).filterable(true);
-        member("level", "用户等级", "TAG", G_BASE).defaultVisible(true).filterable(true);
-        member("country", "国家", "TAG", G_BASE).defaultVisible(true).filterable(true);
-        // 注册与来源
-        member("registerTime", "注册时间", "TIME", G_REG).defaultVisible(true).sortable(true).filterable(true);
-        // 存款指标
-        member("firstDepositTime", "首存时间", "TIME", G_DEP).sortable(true).filterable(true);
-        member("firstDepositAmount", "首存金额", "MONEY", G_DEP).defaultVisible(true).sortable(true);
+        // 基本資訊：用戶ID 与帳號名稱必选（locked），默认显示的 13 列标 defaultVisible
+        member("userId", "用戶ID", "TEXT", G_BASE).locked(true).defaultVisible(true).sortable(true);
+        member("username", "帳號名稱", "TEXT", G_BASE).locked(true).defaultVisible(true);
+        member("status", "用戶狀態", "TAG", G_BASE).defaultVisible(true).filterable(true);
+        member("userType", "用戶類型", "TAG", G_BASE).defaultVisible(true).filterable(true);
+        member("level", "用戶等級", "TAG", G_BASE).defaultVisible(true).filterable(true);
+        member("country", "國家", "TAG", G_BASE).defaultVisible(true).filterable(true);
+        // 註冊與來源
+        member("registerTime", "註冊時間", "TIME", G_REG).defaultVisible(true).sortable(true).filterable(true);
+        // 存款指標
+        member("firstDepositTime", "首存時間", "TIME", G_DEP).sortable(true).filterable(true);
+        member("firstDepositAmount", "首存金額", "MONEY", G_DEP).defaultVisible(true).sortable(true);
         member("firstDepositChannel", "首存通道", "TEXT", G_DEP);
-        member("regToFtdHours", "注册→首存时长", "HOUR", G_DEP).sortable(true);
-        member("lastDepositTime", "最近存款时间", "TIME", G_DEP).sortable(true);
-        member("lastDepositAmount", "最近存款金额", "MONEY", G_DEP).sortable(true);
-        member("cumulativeDepositAmount", "历史累计存款金额", "MONEY", G_DEP).defaultVisible(true).sortable(true).filterable(true);
-        member("cumulativeDepositCount", "历史累计存款笔数", "INT", G_DEP).sortable(true);
-        // 投注指标
-        member("lastBetTime", "最近投注时间", "TIME", G_BET).sortable(true).filterable(true);
-        member("lastBetAmount", "最近投注金额", "MONEY", G_BET).sortable(true);
-        member("cumulativeBetAmount", "历史累计投注金额", "MONEY", G_BET).defaultVisible(true).sortable(true);
-        member("cumulativeBetCount", "历史累计投注笔数", "INT", G_BET).sortable(true);
-        member("turnoverMultiple", "流水倍数", "X", G_BET).sortable(true);
-        // 提款指标
-        member("lastWithdrawTime", "最近提款时间", "TIME", G_WD).sortable(true);
-        member("lastWithdrawAmount", "最近提款金额", "MONEY", G_WD).sortable(true);
-        member("cumulativeWithdrawAmount", "历史累计提款金额", "MONEY", G_WD).defaultVisible(true).sortable(true);
-        member("cumulativeWithdrawCount", "历史累计提款笔数", "INT", G_WD).sortable(true);
-        // 收益与资产
-        member("cumulativeGgr", "历史累计GGR", "MONEY", G_REV).defaultVisible(true).sortable(true);
-        member("cumulativeNgr", "历史累计NGR", "MONEY", G_REV).defaultVisible(true).sortable(true);
+        member("regToFtdHours", "註冊→首存時長", "HOUR", G_DEP).sortable(true);
+        member("lastDepositTime", "最近存款時間", "TIME", G_DEP).sortable(true);
+        member("lastDepositAmount", "最近存款金額", "MONEY", G_DEP).sortable(true);
+        member("cumulativeDepositAmount", "歷史累計存款金額", "MONEY", G_DEP).defaultVisible(true).sortable(true).filterable(true);
+        member("cumulativeDepositCount", "歷史累計存款筆數", "INT", G_DEP).sortable(true);
+        // 投注指標
+        member("lastBetTime", "最近投注時間", "TIME", G_BET).sortable(true).filterable(true);
+        member("lastBetAmount", "最近投注金額", "MONEY", G_BET).sortable(true);
+        member("cumulativeBetAmount", "歷史累計投注金額", "MONEY", G_BET).defaultVisible(true).sortable(true);
+        member("cumulativeBetCount", "歷史累計投注筆數", "INT", G_BET).sortable(true);
+        member("turnoverMultiple", "流水倍數", "X", G_BET).sortable(true);
+        // 提款指標
+        member("lastWithdrawTime", "最近提款時間", "TIME", G_WD).sortable(true);
+        member("lastWithdrawAmount", "最近提款金額", "MONEY", G_WD).sortable(true);
+        member("cumulativeWithdrawAmount", "歷史累計提款金額", "MONEY", G_WD).defaultVisible(true).sortable(true);
+        member("cumulativeWithdrawCount", "歷史累計提款筆數", "INT", G_WD).sortable(true);
+        // 收益與資產
+        member("cumulativeGgr", "歷史累計GGR", "MONEY", G_REV).defaultVisible(true).sortable(true);
+        member("cumulativeNgr", "歷史累計NGR", "MONEY", G_REV).defaultVisible(true).sortable(true);
 
         // ---- 订单表（存款 / 提款 / 投注）：列固定、不提供列自选，全部默认显示 ----
-        // 存提款金额是原币种（MONEY_CUR），跨币种比大小没有意义，所以金额列不可排序
-        order(depositColumns, "orderNo", "订单号", "TEXT");
-        order(depositColumns, "userId", "用户ID", "TEXT");
-        order(depositColumns, "username", "账号名称", "TEXT");
-        order(depositColumns, "amount", "存款金额", "MONEY_CUR");
-        order(depositColumns, "currency", "币种", "TEXT");
-        order(depositColumns, "status", "状态", "TAG").filterable(true);
-        order(depositColumns, "createTime", "创建时间", "TIME").sortable(true).filterable(true);
-        order(depositColumns, "finishTime", "完成时间", "TIME").sortable(true);
-        order(depositColumns, "costMinutes", "耗时", "MIN").sortable(true);
+        // 存提款金額是原幣種（MONEY_CUR），跨幣種比大小没有意义，所以金额列不可排序
+        order(depositColumns, "orderNo", "訂單號", "TEXT");
+        order(depositColumns, "userId", "用戶ID", "TEXT");
+        order(depositColumns, "username", "帳號名稱", "TEXT");
+        order(depositColumns, "amount", "存款金額", "MONEY_CUR");
+        order(depositColumns, "currency", "幣種", "TEXT");
+        order(depositColumns, "status", "狀態", "TAG").filterable(true);
+        order(depositColumns, "createTime", "創建時間", "TIME").sortable(true).filterable(true);
+        order(depositColumns, "finishTime", "完成時間", "TIME").sortable(true);
+        order(depositColumns, "costMinutes", "耗時", "MIN").sortable(true);
 
-        order(withdrawColumns, "orderNo", "订单号", "TEXT");
-        order(withdrawColumns, "userId", "用户ID", "TEXT");
-        order(withdrawColumns, "username", "账号名称", "TEXT");
-        order(withdrawColumns, "amount", "提款金额", "MONEY_CUR");
-        order(withdrawColumns, "currency", "币种", "TEXT");
-        order(withdrawColumns, "status", "状态", "TAG").filterable(true);
-        order(withdrawColumns, "auditStatus", "审核", "TAG").filterable(true);
-        order(withdrawColumns, "auditor", "审核人", "TEXT");
-        order(withdrawColumns, "payer", "资金审批人", "TEXT");
-        order(withdrawColumns, "payTime", "资金操作时间", "TIME").sortable(true);
-        order(withdrawColumns, "bankName", "银行名称", "TEXT");
-        order(withdrawColumns, "bankCode", "银行代码", "TEXT");
-        order(withdrawColumns, "bankCountry", "银行所在国家", "TAG");
-        order(withdrawColumns, "createTime", "创建时间", "TIME").sortable(true).filterable(true);
-        order(withdrawColumns, "finishTime", "完成时间", "TIME").sortable(true);
-        order(withdrawColumns, "costMinutes", "耗时", "MIN").sortable(true);
-        order(withdrawColumns, "auditNote", "审核备注", "LONGTEXT");
+        order(withdrawColumns, "orderNo", "訂單號", "TEXT");
+        order(withdrawColumns, "userId", "用戶ID", "TEXT");
+        order(withdrawColumns, "username", "帳號名稱", "TEXT");
+        order(withdrawColumns, "amount", "提款金額", "MONEY_CUR");
+        order(withdrawColumns, "currency", "幣種", "TEXT");
+        order(withdrawColumns, "status", "狀態", "TAG").filterable(true);
+        order(withdrawColumns, "auditStatus", "審核", "TAG").filterable(true);
+        order(withdrawColumns, "auditor", "審核人", "TEXT");
+        order(withdrawColumns, "payer", "資金審批人", "TEXT");
+        order(withdrawColumns, "payTime", "資金操作時間", "TIME").sortable(true);
+        order(withdrawColumns, "bankName", "銀行名稱", "TEXT");
+        order(withdrawColumns, "bankCode", "銀行代碼", "TEXT");
+        order(withdrawColumns, "bankCountry", "銀行所在國家", "TAG");
+        order(withdrawColumns, "createTime", "創建時間", "TIME").sortable(true).filterable(true);
+        order(withdrawColumns, "finishTime", "完成時間", "TIME").sortable(true);
+        order(withdrawColumns, "costMinutes", "耗時", "MIN").sortable(true);
+        order(withdrawColumns, "auditNote", "審核備註", "LONGTEXT");
 
-        // 投注金额统一是站点币种，可以排序和按区间筛选
-        order(betColumns, "orderNo", "订单号", "TEXT");
-        order(betColumns, "userId", "用户ID", "TEXT");
-        order(betColumns, "username", "账号名称", "TEXT");
-        order(betColumns, "vendorCode", "游戏平台Code", "TEXT").filterable(true);
-        order(betColumns, "vendorName", "平台厂商名", "TEXT");
-        order(betColumns, "gameType", "游戏类型", "TAG").filterable(true);
-        order(betColumns, "gameId", "游戏ID", "TEXT").filterable(true);
-        order(betColumns, "gameName", "游戏名称", "TEXT").filterable(true);
-        order(betColumns, "betAmount", "投注金额", "MONEY").sortable(true).filterable(true);
+        // 投注金额统一是站点幣種，可以排序和按区间筛选
+        order(betColumns, "orderNo", "訂單號", "TEXT");
+        order(betColumns, "userId", "用戶ID", "TEXT");
+        order(betColumns, "username", "帳號名稱", "TEXT");
+        order(betColumns, "vendorCode", "遊戲平台Code", "TEXT").filterable(true);
+        order(betColumns, "vendorName", "平台廠商名", "TEXT");
+        order(betColumns, "gameType", "遊戲類型", "TAG").filterable(true);
+        order(betColumns, "gameId", "遊戲ID", "TEXT").filterable(true);
+        order(betColumns, "gameName", "遊戲名稱", "TEXT").filterable(true);
+        order(betColumns, "betAmount", "投注金額", "MONEY").sortable(true).filterable(true);
         order(betColumns, "payout", "派彩", "MONEY").sortable(true);
-        order(betColumns, "winLoss", "输赢", "MONEY").sortable(true);
-        order(betColumns, "settleStatus", "结算状态", "TAG").filterable(true);
-        order(betColumns, "betTime", "投注时间", "TIME").sortable(true).filterable(true);
-        order(betColumns, "settleTime", "结算时间", "TIME").sortable(true);
+        order(betColumns, "winLoss", "輸贏", "MONEY").sortable(true);
+        order(betColumns, "settleStatus", "結算狀態", "TAG").filterable(true);
+        order(betColumns, "betTime", "投注時間", "TIME").sortable(true).filterable(true);
+        order(betColumns, "settleTime", "結算時間", "TIME").sortable(true);
     }
 
     /**

@@ -98,7 +98,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildMemberRequest(query);
-        return accept("member", "会员明细", () -> gateway.submitDetailExport("member", request, maxRows()));
+        return accept("member", "用戶明細", () -> gateway.submitDetailExport("member", request, maxRows()));
     }
 
     @Override
@@ -106,7 +106,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildDepositRequest(query);
-        return accept("deposit", "存款明细", () -> gateway.submitDetailExport("deposit", request, maxRows()));
+        return accept("deposit", "存款訂單", () -> gateway.submitDetailExport("deposit", request, maxRows()));
     }
 
     @Override
@@ -114,7 +114,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildWithdrawRequest(query);
-        return accept("withdraw", "提款明细", () -> gateway.submitDetailExport("withdraw", request, maxRows()));
+        return accept("withdraw", "提款訂單", () -> gateway.submitDetailExport("withdraw", request, maxRows()));
     }
 
     @Override
@@ -122,12 +122,12 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildBetRequest(query);
-        return accept("bet", "投注明细", () -> gateway.submitDetailExport("bet", request, maxRows()));
+        return accept("bet", "投注明細", () -> gateway.submitDetailExport("bet", request, maxRows()));
     }
 
 
     private static final Map<String, String> DETAIL_LABELS = Map.of(
-        "member", "会员明细", "deposit", "存款明细", "withdraw", "提款明细", "bet", "投注明细");
+        "member", "用戶明細", "deposit", "存款訂單", "withdraw", "提款訂單", "bet", "投注明細");
 
     @Override
     public ExportTaskVO submitIfOverLimit(String tab, RecordPageRequest request)
@@ -382,36 +382,36 @@ public class DashboardExportServiceImpl implements IDashboardExportService
      */
     private String messageOf(String label, ExportJob job)
     {
-        String name = StringUtils.isEmpty(label) ? "导出文件" : label;
+        String name = StringUtils.isEmpty(label) ? "匯出檔案" : label;
         String status = job.getStatus() == null ? "" : job.getStatus();
         switch (status)
         {
             case ExportJob.PENDING:
-                return "排队中，" + name + "即将开始生成";
+                return "排隊中，" + name + "即將開始生成";
             case ExportJob.RUNNING:
-                return name + "正在生成，请稍候";
+                return name + "正在生成，請稍候";
             case ExportJob.DONE:
                 if (job.getFiles().isEmpty())
                 {
-                    return name + "已生成，但没有可下载的文件，请重新导出";
+                    return name + "已生成，但沒有可下載的檔案，請重新匯出";
                 }
                 return name + "已生成" + (job.getRowCount() == null ? "" : "，共 " + job.getRowCount() + " 行")
-                    + (job.getFiles().size() > 1 ? "，分为 " + job.getFiles().size() + " 个文件" : "")
-                    + "，下载链接 1 小时内有效";
+                    + (job.getFiles().size() > 1 ? "，分為 " + job.getFiles().size() + " 個檔案" : "")
+                    + "，下載連結 1 小時內有效";
             case ExportJob.FAILED:
                 String code = job.getErrorCode();
                 String mapped = code == null ? null : properties.getExport().getErrorMessages().get(code);
                 log.warn("[export] 导出作业失败 jobId={} code={} message={}", job.getJobId(), code, job.getErrorMessage());
                 if (StringUtils.isNotEmpty(mapped))
                 {
-                    return name + "导出失败：" + mapped;
+                    return name + "匯出失敗：" + mapped;
                 }
-                return name + "导出失败，请稍后重试；如多次失败请联系管理员"
-                    + (StringUtils.isEmpty(code) ? "" : "（错误码 " + code + "）");
+                return name + "匯出失敗，請稍後重試；如多次失敗請聯絡管理員"
+                    + (StringUtils.isEmpty(code) ? "" : "（錯誤碼 " + code + "）");
             case ExportJob.CANCELLED:
-                return name + "导出已取消";
+                return name + "匯出已取消";
             default:
-                return "导出状态未知（" + status + "），请稍后刷新";
+                return "匯出狀態未知（" + status + "），請稍後重新整理";
         }
     }
 

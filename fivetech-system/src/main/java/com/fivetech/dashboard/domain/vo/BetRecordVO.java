@@ -159,7 +159,7 @@ public class BetRecordVO implements Serializable
 
     public void setBetAmount(BigDecimal betAmount)
     {
-        this.betAmount = betAmount;
+        this.betAmount = com.fivetech.dashboard.format.MoneyScale.of(betAmount);
     }
 
     public BigDecimal getPayout()
@@ -169,7 +169,7 @@ public class BetRecordVO implements Serializable
 
     public void setPayout(BigDecimal payout)
     {
-        this.payout = payout;
+        this.payout = com.fivetech.dashboard.format.MoneyScale.of(payout);
     }
 
     public BigDecimal getWinLoss()
@@ -179,7 +179,7 @@ public class BetRecordVO implements Serializable
 
     public void setWinLoss(BigDecimal winLoss)
     {
-        this.winLoss = winLoss;
+        this.winLoss = com.fivetech.dashboard.format.MoneyScale.of(winLoss);
     }
 
     public String getSettleStatus()

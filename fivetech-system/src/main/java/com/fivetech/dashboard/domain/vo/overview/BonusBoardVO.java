@@ -15,7 +15,7 @@ public class BonusBoardVO implements Serializable
     private static final long serialVersionUID = 1L;
 
     /** 标题 */
-    private String title = "赠金项目构成";
+    private String title = "贈金項目構成";
 
     /** 赠金总额，与指标卡 bonus 同口径 */
     private BigDecimal total;
@@ -40,7 +40,7 @@ public class BonusBoardVO implements Serializable
 
     public void setTotal(BigDecimal total)
     {
-        this.total = total;
+        this.total = com.fivetech.dashboard.format.MoneyScale.integer(total);
     }
 
     public List<BonusItemVO> getItems()

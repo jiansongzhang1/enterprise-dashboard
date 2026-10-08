@@ -13,7 +13,7 @@ public class RegChannelVO extends OverviewSectionVO
     private static final long serialVersionUID = 1L;
 
     /** 标题 */
-    private String title = "注册渠道";
+    private String title = "註冊渠道";
 
     /** 注册总人数，等于指标卡 reg */
     private Long totalRegistrations;

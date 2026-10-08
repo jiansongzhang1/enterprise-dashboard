@@ -15,7 +15,7 @@ public class GameBoardVO implements Serializable
     private static final long serialVersionUID = 1L;
 
     /** 标题 */
-    private String title = "热销游戏";
+    private String title = "熱銷遊戲";
 
     /** 实际取的 N */
     private Integer topN;
@@ -56,7 +56,7 @@ public class GameBoardVO implements Serializable
 
     public void setTotalBetAmount(BigDecimal totalBetAmount)
     {
-        this.totalBetAmount = totalBetAmount;
+        this.totalBetAmount = com.fivetech.dashboard.format.MoneyScale.integer(totalBetAmount);
     }
 
     public String getTotalBetAmountPct()

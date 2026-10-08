@@ -232,7 +232,7 @@ public class MemberRecordVO implements Serializable
 
     public void setFirstDepositAmount(BigDecimal firstDepositAmount)
     {
-        this.firstDepositAmount = firstDepositAmount;
+        this.firstDepositAmount = com.fivetech.dashboard.format.MoneyScale.of(firstDepositAmount);
     }
 
     public String getFirstDepositChannel()
@@ -272,7 +272,7 @@ public class MemberRecordVO implements Serializable
 
     public void setLastDepositAmount(BigDecimal lastDepositAmount)
     {
-        this.lastDepositAmount = lastDepositAmount;
+        this.lastDepositAmount = com.fivetech.dashboard.format.MoneyScale.of(lastDepositAmount);
     }
 
     public BigDecimal getCumulativeDepositAmount()
@@ -282,7 +282,7 @@ public class MemberRecordVO implements Serializable
 
     public void setCumulativeDepositAmount(BigDecimal cumulativeDepositAmount)
     {
-        this.cumulativeDepositAmount = cumulativeDepositAmount;
+        this.cumulativeDepositAmount = com.fivetech.dashboard.format.MoneyScale.of(cumulativeDepositAmount);
     }
 
     public Long getCumulativeDepositCount()
@@ -312,7 +312,7 @@ public class MemberRecordVO implements Serializable
 
     public void setLastBetAmount(BigDecimal lastBetAmount)
     {
-        this.lastBetAmount = lastBetAmount;
+        this.lastBetAmount = com.fivetech.dashboard.format.MoneyScale.of(lastBetAmount);
     }
 
     public BigDecimal getCumulativeBetAmount()
@@ -322,7 +322,7 @@ public class MemberRecordVO implements Serializable
 
     public void setCumulativeBetAmount(BigDecimal cumulativeBetAmount)
     {
-        this.cumulativeBetAmount = cumulativeBetAmount;
+        this.cumulativeBetAmount = com.fivetech.dashboard.format.MoneyScale.of(cumulativeBetAmount);
     }
 
     public Long getCumulativeBetCount()
@@ -362,7 +362,7 @@ public class MemberRecordVO implements Serializable
 
     public void setLastWithdrawAmount(BigDecimal lastWithdrawAmount)
     {
-        this.lastWithdrawAmount = lastWithdrawAmount;
+        this.lastWithdrawAmount = com.fivetech.dashboard.format.MoneyScale.of(lastWithdrawAmount);
     }
 
     public BigDecimal getCumulativeWithdrawAmount()
@@ -372,7 +372,7 @@ public class MemberRecordVO implements Serializable
 
     public void setCumulativeWithdrawAmount(BigDecimal cumulativeWithdrawAmount)
     {
-        this.cumulativeWithdrawAmount = cumulativeWithdrawAmount;
+        this.cumulativeWithdrawAmount = com.fivetech.dashboard.format.MoneyScale.of(cumulativeWithdrawAmount);
     }
 
     public Long getCumulativeWithdrawCount()
@@ -392,7 +392,7 @@ public class MemberRecordVO implements Serializable
 
     public void setCumulativeGgr(BigDecimal cumulativeGgr)
     {
-        this.cumulativeGgr = cumulativeGgr;
+        this.cumulativeGgr = com.fivetech.dashboard.format.MoneyScale.of(cumulativeGgr);
     }
 
     public BigDecimal getCumulativeNgr()
@@ -402,6 +402,6 @@ public class MemberRecordVO implements Serializable
 
     public void setCumulativeNgr(BigDecimal cumulativeNgr)
     {
-        this.cumulativeNgr = cumulativeNgr;
+        this.cumulativeNgr = com.fivetech.dashboard.format.MoneyScale.of(cumulativeNgr);
     }
 }

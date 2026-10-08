@@ -28,7 +28,7 @@ public class CohortTableVO implements Serializable
     /** PCT / MONEY */
     private String valueFormat;
 
-    /** 按分群日升序 */
+    /** 按分群日倒序（最近的在最前） */
     private List<CohortRowVO> rows = new ArrayList<>();
 
     public String getTitle()

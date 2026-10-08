@@ -116,7 +116,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         int topN = GAME_TOP_N;
         if (query.getTopN() != null && query.getTopN() != GAME_TOP_N)
         {
-            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "topN 已忽略", "游戏榜固定为 Top " + GAME_TOP_N));
+            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "topN 已忽略", "遊戲榜固定為 Top " + GAME_TOP_N));
         }
         ignoreCompare(query, notices);
 
@@ -124,9 +124,9 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         Map<String, BigDecimal> totals = totals(query, from, to, granularity, notices, "bonus", "bet");
 
         vo.setBonus(buildBonus(totals.get("bonus"), breakdown(OverviewBreakdowns.BONUS_ITEMS, from, to,
-            "赠金项目构成", notices), notices));
+            "贈金項目構成", notices), notices));
         vo.setGames(buildGames(totals.get("bet"), topN, breakdown(OverviewBreakdowns.HOT_GAMES, from, to,
-            "热销游戏", notices)));
+            "熱銷遊戲", notices)));
 
         vo.setEmpty(vo.getBonus().getItems().isEmpty() && vo.getGames().getItems().isEmpty()
             && totals.get("bonus") == null && totals.get("bet") == null);
@@ -156,7 +156,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         {
             BigDecimal amount = r.num("amount");
             sum = sum.add(nz(amount));
-            boolean isOther = "other".equalsIgnoreCase(r.dim("code")) || "其他".equals(r.dim("name"));
+            boolean isOther = "other".equalsIgnoreCase(r.dim("code")) || ("其他".equals(r.dim("name")) || "Others".equalsIgnoreCase(r.dim("name")));
             if (!isOther && items.size() < BONUS_ITEMS - 1)
             {
                 BonusItemVO item = new BonusItemVO();
@@ -175,7 +175,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         {
             BonusItemVO item = new BonusItemVO();
             item.setCode("other");
-            item.setName("其他");
+            item.setName("Others");
             item.setAmount(other);
             items.add(item);
         }
@@ -193,16 +193,16 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             {
                 BonusItemVO item = new BonusItemVO();
                 item.setCode("other");
-                item.setName("其他");
+                item.setName("Others");
                 item.setAmount(rest);
                 items.add(item);
             }
         }
         if (metricTotal != null && denominator.compareTo(metricTotal) != 0)
         {
-            notices.add(OverviewNoticeVO.warn("BONUS_TOTAL_MISMATCH", "赠金榜全量与赠金总额不一致",
-                "赠金榜全量 " + denominator.toPlainString() + "，指标卡赠金总额 " + metricTotal.toPlainString()
-                    + "（两者来自不同数据集，请核对时间区间与来源版本）"));
+            notices.add(OverviewNoticeVO.warn("BONUS_TOTAL_MISMATCH", "贈金榜全量與贈金總額不一致",
+                "贈金榜全量 " + denominator.toPlainString() + "，指標卡贈金總額 " + metricTotal.toPlainString()
+                    + "（兩者來自不同資料集，請核對時間區間與來源版本）"));
         }
         board.setTotal(denominator);
         for (int i = 0; i < items.size(); i++)
@@ -355,14 +355,14 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (end.isBefore(to))
         {
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "分群日截至 " + lastDay.format(YMD),
-                "队列为 T-1 快照，今天及以后的分群日没有数据"));
+                "佇列為 T-1 快照，今日及以後的分群日沒有資料"));
         }
 
         boolean any = false;
         if (!"LTV".equals(type))
         {
-            CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_RETENTION, "留存率", "FIRST_BET_DATE",
-                "首投日", "投注人数", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
+            CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_RETENTION, "投注留存率", "FIRST_BET_DATE",
+                "投注日", "投注人數", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
             vo.setRetention(t);
             vo.setRetentionColumns(new ArrayList<>(OverviewBreakdowns.RETENTION_COLUMNS.keySet()));
             any |= hasBase(t);
@@ -370,7 +370,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (!"RETENTION".equals(type))
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_LTV, "LTV", "FIRST_DEPOSIT_DATE",
-                "首存日", "首存人数", "MONEY", OverviewBreakdowns.LTV_COLUMNS, from, end, lastDay, true, notices);
+                "首存日", "首存人數", "MONEY", OverviewBreakdowns.LTV_COLUMNS, from, end, lastDay, true, notices);
             vo.setLtv(t);
             vo.setLtvColumns(new ArrayList<>(OverviewBreakdowns.LTV_COLUMNS.keySet()));
             any |= hasBase(t);
@@ -408,8 +408,10 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             }
         }
         boolean monotonicBroken = false;
-        // 区间内每一个分群日都出一行，上游缺的行 base 与值都是 null —— 行数稳定，前端矩阵不跳动
-        for (LocalDate d = from; d.isBefore(end); d = d.plusDays(1))
+        // 区间内每一个分群日都出一行，上游缺的行 base 与值都是 null —— 行数稳定，前端矩阵不跳动。
+        // 按分群日倒序（最近的在最前），与原型一致。行是按日期逐天生成、再按日期去上游结果里取值的，
+        // 所以上游返回的行序不影响这里，顺序完全由这个循环决定
+        for (LocalDate d = end.minusDays(1); !d.isBefore(from); d = d.minusDays(1))
         {
             CohortRowVO row = new CohortRowVO();
             row.setCohortDate(d.format(YMD));
@@ -422,6 +424,10 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
                 int days = OverviewBreakdowns.COHORT_DAYS.get(col.getKey());
                 // 未到观察期一律 null：上游即使给了 0 也不采纳，0 会让留存曲线多出一段贴地的尾巴
                 BigDecimal v = (r == null || d.plusDays(days).isAfter(lastDay)) ? null : r.num(col.getValue());
+                if ("MONEY".equals(format))
+                {
+                    v = com.fivetech.dashboard.format.MoneyScale.integer(v);   // LTV 金额取整，不带小数
+                }
                 if (checkMonotonic && v != null && prev != null && v.compareTo(prev) < 0)
                 {
                     monotonicBroken = true;
@@ -438,7 +444,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (monotonicBroken)
         {
             // LTV 是累计值，行内应单调不减；出现下降是上游数据问题，标出来但不自行修正
-            notices.add(OverviewNoticeVO.warn("LTV_NOT_MONOTONIC", "LTV 出现下降", "累计 LTV 行内应单调不减，请联系数据平台核对"));
+            notices.add(OverviewNoticeVO.warn("LTV_NOT_MONOTONIC", "LTV 出現下降", "累計 LTV 行內應單調不減，請聯絡資料平台核對"));
         }
         return t;
     }
@@ -466,7 +472,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         ignoreCompare(query, notices);
         fillCommon(vo, query, slot(from.format(SLOT), to.format(SLOT), null));
 
-        BreakdownResult bd = breakdown(OverviewBreakdowns.REG_CHANNELS, from, to, "注册渠道", notices);
+        BreakdownResult bd = breakdown(OverviewBreakdowns.REG_CHANNELS, from, to, "註冊渠道", notices);
         boolean ready = bd != null && bd.isReady();
 
         // 渠道：上游一行一个渠道。TODO：0 注册的渠道需要渠道维表补齐，上游只回有注册的渠道时这些渠道会缺席
@@ -487,12 +493,12 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
                 long n = nzLong(toLong(r.num("registrations")));
                 if (!groupName.containsKey(g))
                 {
-                    groupName.put(g, "unknown".equals(g) ? "未知来源"
+                    groupName.put(g, "unknown".equals(g) ? "未知來源"
                         : StringUtils.isEmpty(r.dim("groupName")) ? g : r.dim("groupName"));
                 }
                 RegChannelItemVO item = new RegChannelItemVO();
                 item.setCode(g + "|" + ch);
-                item.setName(StringUtils.isEmpty(r.dim("channelName")) ? ("unknown".equals(ch) ? "未标记" : ch)
+                item.setName(StringUtils.isEmpty(r.dim("channelName")) ? ("unknown".equals(ch) ? "未標記" : ch)
                     : r.dim("channelName"));
                 item.setGroupCode(g);
                 item.setRegistrations(n);
@@ -508,8 +514,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             long full = bd.total("registrations").longValue();
             if (full != total)
             {
-                notices.add(OverviewNoticeVO.info("REG_SOURCE_PARTIAL", "渠道明细之和小于全量注册",
-                    "渠道合计 " + total + "，全量 " + full + "（超出行数上限的渠道未列出）"));
+                notices.add(OverviewNoticeVO.info("REG_SOURCE_PARTIAL", "渠道明細之和小於全量註冊",
+                    "渠道合計 " + total + "，全量 " + full + "（超出行數上限的渠道未列出）"));
             }
             total = full;
         }
@@ -545,8 +551,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             BigDecimal reg = totals(query, from, to, Granularity.HOUR, notices, "reg").get("reg");
             if (reg != null && reg.longValue() != total)
             {
-                notices.add(OverviewNoticeVO.warn("REG_TOTAL_MISMATCH", "渠道注册数之和与注册人数不一致",
-                    "渠道合计 " + total + "，指标卡注册人数 " + reg.toPlainString()));
+                notices.add(OverviewNoticeVO.warn("REG_TOTAL_MISMATCH", "渠道註冊數之和與註冊人數不一致",
+                    "渠道合計 " + total + "，指標卡註冊人數 " + reg.toPlainString()));
             }
         }
         vo.setEmpty(!ready || total == 0);
@@ -603,20 +609,20 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             BreakdownResult r = gateway.queryBreakdown(key, from, to);
             if (!r.isConfigured())
             {
-                notices.add(OverviewNoticeVO.warn("DATA_NOT_CONNECTED", label + "数据待接入",
-                    "数据平台尚未提供该数据集（dashboard.gateway.uds.breakdowns." + key + "）"));
+                notices.add(OverviewNoticeVO.warn("DATA_NOT_CONNECTED", label + "資料待接入",
+                    "資料平台尚未提供該資料集（dashboard.gateway.uds.breakdowns." + key + "）"));
             }
             else if (!r.isReady())
             {
-                notices.add(OverviewNoticeVO.warn("DATA_NOT_READY", label + "数据尚未就绪",
-                    "所选区间高于数据平台水位"));
+                notices.add(OverviewNoticeVO.warn("DATA_NOT_READY", label + "資料尚未就緒",
+                    "所選區間高於資料平台水位"));
             }
             return r;
         }
         catch (UdsQueryException e)
         {
             log.error("[overview-section] 拆解查询失败 key={} 区间={}~{}：{}", key, from, to, e.getMessage(), e);
-            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", label + "数据暂时无法获取", e.getMessage()));
+            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", label + "資料暫時無法取得", e.getMessage()));
             return null;
         }
     }
@@ -643,7 +649,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         {
             log.error("[overview-section] 合计查询失败 codes={} 区间={}~{}：{}", String.join(",", codes), from, to,
                 e.getMessage(), e);
-            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", "数据平台暂时不可用", e.getMessage()));
+            notices.add(OverviewNoticeVO.warn("DATA_LAGGING", "資料平台暫時無法使用", e.getMessage()));
             return empty;
         }
     }
@@ -653,7 +659,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (StringUtils.isNotEmpty(query.getCompareType()) || StringUtils.isNotEmpty(query.getCompareFrom())
             || StringUtils.isNotEmpty(query.getCompareTo()))
         {
-            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "已忽略对比区间", "该板块不做环比"));
+            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "已忽略對比區間", "該板塊不做環比"));
         }
     }
 
@@ -661,7 +667,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
     {
         if (StringUtils.isNotEmpty(query.getGranularity()))
         {
-            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "已忽略 granularity", "该板块返回区间聚合或快照，没有粒度可选"));
+            notices.add(OverviewNoticeVO.info("PARAM_IGNORED", "已忽略 granularity", "該板塊返回區間聚合或快照，沒有粒度可選"));
         }
     }
 
