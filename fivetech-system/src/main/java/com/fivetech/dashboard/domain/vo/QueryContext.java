@@ -57,7 +57,7 @@ public class QueryContext implements Serializable
     /** 警告码，如 GRANULARITY_DOWNGRADED。不拦截请求，仅提示 */
     private List<String> warnings = new ArrayList<>();
 
-    /** 数据更新频率：hour 每小时更新（指标汇总接口返回；其他接口为 null） */
+    /** 数据更新频率：hour 每小时更新（指标汇总、明细查询接口返回） */
     private String updateFrequency;
 
     public String getUpdateFrequency()
