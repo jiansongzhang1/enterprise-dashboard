@@ -317,6 +317,8 @@ public class RecordQueryServiceImpl implements IRecordQueryService
             ctx.request.getPageNum(), ctx.request.getPageSize());
         result.setTruncated(page.isTruncated());
         result.setRowLimit(properties.getRowLimit());
+        // 总数超过页面可展示上限时告诉前端最多展示多少条
+        result.setLimitedTotal(page.getTotal() > PageResultVO.DISPLAY_LIMIT ? Long.valueOf(PageResultVO.DISPLAY_LIMIT) : null);
         vo.setPage(result);
         vo.setSummary(page.getSummary());
         vo.setSummaryNote(summaryNote);

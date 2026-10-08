@@ -110,6 +110,8 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
 
         MetricSummaryVO vo = new MetricSummaryVO();
         QueryContext context = timeResolver.buildContext(siteCode, main, freshness, warnings);
+        // 指标汇总的数据按小时落库更新
+        context.setUpdateFrequency("hour");
         context.setAvailableGranularities(available);
         vo.setContext(context);
         vo.setColumns(buildColumns(columns));

@@ -57,6 +57,19 @@ public class QueryContext implements Serializable
     /** 警告码，如 GRANULARITY_DOWNGRADED。不拦截请求，仅提示 */
     private List<String> warnings = new ArrayList<>();
 
+    /** 数据更新频率：hour 每小时更新（指标汇总接口返回；其他接口为 null） */
+    private String updateFrequency;
+
+    public String getUpdateFrequency()
+    {
+        return updateFrequency;
+    }
+
+    public void setUpdateFrequency(String updateFrequency)
+    {
+        this.updateFrequency = updateFrequency;
+    }
+
     public void addWarning(String code)
     {
         if (code != null && !warnings.contains(code))

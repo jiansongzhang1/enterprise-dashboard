@@ -585,14 +585,14 @@ public class UdsMetricDataGateway implements MetricDataGateway
     }
 
     /**
-     * 去重人数类指标的区间值（联调手册 6.1）：
+     * 去重人数类指标（活跃人数、登录人数、ARPPU）的区间值，与原型「區間值」规则一致：
      * <ul>
      *   <li>恰好一个小时：小时数据集的该小时独立人数；</li>
-     *   <li>恰好一个完整自然日：日数据集的日去重值；</li>
-     *   <li>多个完整自然日：各日值的算术平均（汇总页口径；总览多日时这些卡片已被隐藏，不会走到这里）。
-     *       需要每一天都有值，缺任何一天保持 NULL；</li>
-     *   <li>其余（单日部分时段、非整日的跨天区间）：没有准确的去重分母来源，保持 NULL 占位。</li>
+     *   <li>区间只覆盖一个自然日：完整日取日数据集的日去重值；不完整的一天（今天截至当前）没有日去重来源，保持 NULL；</li>
+     *   <li>区间覆盖多个自然日：取各日日去重值的算术平均。只平均有值的日子——
+     *       含今天的区间（如「近 7 天」）今天还没有完整日数据，跳过它而不是让整个区间值变成 NULL；全部没有值才为 NULL。</li>
      * </ul>
+     * 区间按自然日对齐：起点取当天 00:00，终点不在整点 00:00 时向后取整到次日 00:00。
      */
     private void uniqueTotals(List<String> codes, LocalDateTime from, LocalDateTime to, Map<String, BigDecimal> out)
     {
@@ -602,28 +602,55 @@ public class UdsMetricDataGateway implements MetricDataGateway
             totalFrom(ov.getHour(), mapped(ov.getHour(), codes), from, to, "HOUR", out);
             return;
         }
-        if (!isMidnight(from) || !isMidnight(to))
-        {
-            log.debug("[uds] 区间 {}~{} 不是整日，去重人数类指标 {} 无准确来源，保持 NULL", from, to, codes);
-            return;
-        }
         List<String> dayCodes = mapped(ov.getDay(), codes);
         if (dayCodes.isEmpty())
         {
             return;
         }
-        int days = (int) ChronoUnit.DAYS.between(from, to);
+        LocalDateTime dayFrom = from.toLocalDate().atStartOfDay();
+        LocalDateTime dayTo = isMidnight(to) ? to : to.toLocalDate().plusDays(1).atStartOfDay();
+        int days = (int) ChronoUnit.DAYS.between(dayFrom, dayTo);
+        if (days <= 0)
+        {
+            return;
+        }
         if (days == 1)
         {
+            if (!isMidnight(from) || !isMidnight(to))
+            {
+                log.debug("[uds] 区间 {}~{} 不是完整自然日，去重人数类指标 {} 无日去重来源，保持 NULL", from, to, codes);
+                return;
+            }
             totalFrom(ov.getDay(), dayCodes, from, to, "DAY", out);
             return;
         }
         Map<String, List<BigDecimal>> daily = new HashMap<>();
-        seriesFrom(ov.getDay(), dayCodes, from, to, Granularity.DAY, days, daily);
+        seriesFrom(ov.getDay(), dayCodes, dayFrom, dayTo, Granularity.DAY, days, daily);
         for (String code : dayCodes)
         {
-            out.put(code, average(daily.get(code), 0, days));
+            out.put(code, averageOfPresent(daily.get(code)));
         }
+    }
+
+    /** 只对有值的元素求算术平均；没有任何值时返回 null */
+    private static BigDecimal averageOfPresent(List<BigDecimal> list)
+    {
+        if (list == null)
+        {
+            return null;
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int n = 0;
+        for (BigDecimal v : list)
+        {
+            if (v != null)
+            {
+                sum = sum.add(v);
+                n++;
+            }
+        }
+        // 保留 4 位：日均人数允许小数，最终显示位数由 MetricValueNormalizer 按指标格式决定
+        return n == 0 ? null : sum.divide(BigDecimal.valueOf(n), 4, RoundingMode.HALF_UP);
     }
 
     // ===================== 拆解（运营总览板块） =====================

@@ -60,7 +60,7 @@ public class DashboardProperties
      * <p>一期先放配置，不进数据库；取值与 API 文档第 5 章「下钻映射」一致。</p>
      */
     private java.util.List<String> summaryDrillableMetrics = new java.util.ArrayList<>(java.util.List.of(
-        "reg", "ftd", "ftdA", "dep", "arppu", "dOkR", "dT", "wd", "wOkR", "wT", "active", "bet"));
+        "reg", "ftd", "active", "dep", "wd"));
 
     public java.util.List<String> getSummaryDrillableMetrics()
     {

@@ -30,6 +30,25 @@ public class PageResultVO<T> implements Serializable
     /** 行数上限 */
     private Integer rowLimit;
 
+    /** 明细页面最多能展示的条数 */
+    public static final long DISPLAY_LIMIT = 100_000L;
+
+    /**
+     * 页面可展示条数上限：数据总数 total 大于 {@value #DISPLAY_LIMIT} 时为 {@value #DISPLAY_LIMIT}，否则为 null。
+     * <p>total 仍返回真实总数；前端分页器按 limitedTotal 计算最大页码，超出部分请走导出。</p>
+     */
+    private Long limitedTotal;
+
+    public Long getLimitedTotal()
+    {
+        return limitedTotal;
+    }
+
+    public void setLimitedTotal(Long limitedTotal)
+    {
+        this.limitedTotal = limitedTotal;
+    }
+
     public static <T> PageResultVO<T> of(List<T> rows, long total, int pageNum, int pageSize)
     {
         PageResultVO<T> vo = new PageResultVO<>();
