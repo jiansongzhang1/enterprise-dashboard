@@ -197,7 +197,7 @@ curl --location "$BASE/dashboard/records/withdraw" \
 curl --location "$BASE/dashboard/records/bet" \
   --header "Authorization: Bearer $TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"vendorCode":"JILI","gameType":"slots","game":"Super Ace","settleStatus":"done","betAmountMin":100,"betAmountMax":5000,"sortColumn":"betAmount","sortDirection":"desc"}'
+  --data '{"vendorCode":"JILI","gameType":"2","game":"Super Ace","settleStatus":"done","betAmountMin":100,"betAmountMax":5000,"sortColumn":"betAmount","sortDirection":"desc"}'
 ```
 
 预期：`columns` 14 列，默认按 `betTime desc`；未结算注单 `payout`、`winLoss` 为 `null`。
