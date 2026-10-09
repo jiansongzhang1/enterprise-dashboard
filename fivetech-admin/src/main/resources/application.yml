@@ -297,8 +297,10 @@ dashboard:
             wOk: wd_ok
             wTry: wd_try
             wT: wT_seconds
-            # eg4 投注与盈收（ngr 由后端相减；派彩 pay 无对应字段，保持 NULL）
+            # eg4 投注与盈收（ngr 由后端相减）
             bet: bet
+            # 派彩金额：GGR 构成里「投注總額 − 總派彩金額」的减数（小时数据集暂无此字段，小时序列为空）
+            pay: win_los_amt
             ggr: ggr
             killR: killR
             bonus: bonus

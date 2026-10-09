@@ -294,7 +294,7 @@ public class SysLoginService
      * @param password 密码
      * @param code 验证码
      */
-    public void confirmBind(String username, String password, String code)
+    public String confirmBind(String username, String password, String code)
     {
         loginPreCheck(username, password);
         LoginUser loginUser = authenticate(username, password);
@@ -313,6 +313,12 @@ public class SysLoginService
         }
 
         userService.updateGaStatus(user.getUserId(), GaConstants.GA_STATUS_BOUND);
+
+        // 绑定时已校验过密码 + 当前验证码，等同完成两步登录：直接签发 token，不用再走一遍登录
+        user.setGaStatus(GaConstants.GA_STATUS_BOUND);
+        AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
+        recordLoginInfo(user.getUserId());
+        return tokenService.createToken(loginUser);
     }
 
     /**

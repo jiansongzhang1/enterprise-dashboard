@@ -112,8 +112,11 @@ public class SysLoginController
     @PostMapping("/ga/bind/confirm")
     public AjaxResult gaBindConfirm(@RequestBody GaBindBody bindBody)
     {
-        loginService.confirmBind(bindBody.getUsername(), bindBody.getPassword(), bindBody.getCode());
-        return AjaxResult.success(MessageUtils.message("user.ga.bind.success"));
+        // 绑定成功即登录：返回 token，前端不用再走两步登录
+        String token = loginService.confirmBind(bindBody.getUsername(), bindBody.getPassword(), bindBody.getCode());
+        AjaxResult ajax = AjaxResult.success(MessageUtils.message("user.ga.bind.success"));
+        ajax.put(Constants.TOKEN, token);
+        return ajax;
     }
 
     /**
