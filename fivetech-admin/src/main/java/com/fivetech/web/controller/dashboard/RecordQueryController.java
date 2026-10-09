@@ -124,7 +124,7 @@ public class RecordQueryController extends BaseController
     /**
      * 投注明细（时间按投注时间）；export_csv=true 时下载 XLSX
      */
-   // @PreAuthorize("@ss.hasPermi('dashboard:record:bet')")
+    @PreAuthorize("@ss.hasPermi('dashboard:record:bet')")
     @PostMapping("/bet")
     public ResponseEntity<?> bet(@Validated @RequestBody BetRecordQuery query)
     {

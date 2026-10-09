@@ -588,7 +588,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
      * 去重人数类指标（活跃人数、登录人数、ARPPU）的区间值，与原型「區間值」规则一致：
      * <ul>
      *   <li>恰好一个小时：小时数据集的该小时独立人数；</li>
-     *   <li>区间只覆盖一个自然日：完整日取日数据集的日去重值；不完整的一天（今天截至当前）没有日去重来源，保持 NULL；</li>
+     *   <li>区间只覆盖一个自然日：配置了 overview.day-range-unique 的指标（如活跃人数）取小时数据集的区间去重值
+     *       （完整日、今天截至当前都适用）；其余完整日取日数据集的日去重值，不完整的一天保持 NULL；</li>
      *   <li>区间覆盖多个自然日：取各日日去重值的算术平均。只平均有值的日子——
      *       含今天的区间（如「近 7 天」）今天还没有完整日数据，跳过它而不是让整个区间值变成 NULL；全部没有值才为 NULL。</li>
      * </ul>
@@ -603,10 +604,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
             return;
         }
         List<String> dayCodes = mapped(ov.getDay(), codes);
-        if (dayCodes.isEmpty())
-        {
-            return;
-        }
         LocalDateTime dayFrom = from.toLocalDate().atStartOfDay();
         LocalDateTime dayTo = isMidnight(to) ? to : to.toLocalDate().plusDays(1).atStartOfDay();
         int days = (int) ChronoUnit.DAYS.between(dayFrom, dayTo);
@@ -614,8 +611,19 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             return;
         }
+        if (days != 1 && dayCodes.isEmpty())
+        {
+            return;
+        }
         if (days == 1)
         {
+            List<String> rangeCodes = dayRangeUnique(codes, from, to, out);
+            dayCodes = new ArrayList<>(dayCodes);
+            dayCodes.removeAll(rangeCodes);
+            if (dayCodes.isEmpty())
+            {
+                return;
+            }
             if (!isMidnight(from) || !isMidnight(to))
             {
                 log.debug("[uds] 区间 {}~{} 不是完整自然日，去重人数类指标 {} 无日去重来源，保持 NULL", from, to, codes);
@@ -630,6 +638,48 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             out.put(code, averageOfPresent(daily.get(code)));
         }
+    }
+
+    /**
+     * 单日区间的去重人数：按 overview.day-range-unique 的映射，在小时数据集上用 dimensions=[] 取区间值
+     * （UDS 在区间内去重，不是各小时相加）。返回本次处理了的指标编码；查询结果为空时这些编码保持 NULL
+     */
+    private List<String> dayRangeUnique(List<String> codes, LocalDateTime from, LocalDateTime to,
+            Map<String, BigDecimal> out)
+    {
+        UdsProperties.Overview ov = properties.getOverview();
+        Map<String, String> metrics = new LinkedHashMap<>();
+        for (String code : codes)
+        {
+            String metric = ov.getDayRangeUnique().get(code);
+            if (StringUtils.isNotEmpty(metric))
+            {
+                metrics.put(code, metric);
+            }
+        }
+        UdsProperties.Dataset hour = dataset(ov.getHour());
+        if (metrics.isEmpty() || hour == null)
+        {
+            return new ArrayList<>();
+        }
+        // 复用小时数据集的时间维 / 选项，只把指标换成区间去重口径
+        UdsProperties.Dataset d = new UdsProperties.Dataset();
+        d.setName(hour.getName());
+        d.setTimeDimension(hour.getTimeDimension());
+        d.setTimeFormat(hour.getTimeFormat());
+        d.setGrain(hour.getGrain());
+        d.setOptions(new LinkedHashMap<>(hour.getOptions()));
+        d.setMetrics(metrics);
+        String name = nameOf(ov.getHour(), hour);
+        List<String> rangeCodes = new ArrayList<>(metrics.keySet());
+        UdsQueryResult queried = queryRetreating(name, d, rangeCodes, from, to, "HOUR",
+            new ArrayList<>(), TOTAL_LIMIT, null);
+        UdsRow row = singleRow(queried, name);
+        for (String code : rangeCodes)
+        {
+            out.put(code, row == null ? null : row.num(metrics.get(code)));
+        }
+        return rangeCodes;
     }
 
     /** 只对有值的元素求算术平均；没有任何值时返回 null */
@@ -900,7 +950,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setFirstDepositTime(str(row, d, "firstDepositTime"));
             vo.setFirstDepositAmount(num(row, d, "firstDepositAmount"));
             vo.setFirstDepositChannel(str(row, d, "firstDepositChannel"));
-            vo.setRegToFtdHours(row.intVal(d.getFields().get("regToFtdHours")));
             vo.setLastDepositTime(str(row, d, "lastDepositTime"));
             vo.setLastDepositAmount(num(row, d, "lastDepositAmount"));
             vo.setCumulativeDepositAmount(num(row, d, "cumulativeDepositAmount"));
@@ -916,11 +965,13 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setCumulativeWithdrawCount(toLong(num(row, d, "cumulativeWithdrawCount")));
             vo.setCumulativeGgr(num(row, d, "cumulativeGgr"));
             vo.setCumulativeNgr(num(row, d, "cumulativeNgr"));
-            // 上游没给的派生值在这里补：注册→首存时长、流水倍数。分母为空或 0 时保持 null
-            if (vo.getRegToFtdHours() == null)
-            {
-                vo.setRegToFtdHours(hoursBetween(vo.getRegisterTime(), vo.getFirstDepositTime()));
-            }
+            // 注册→首存时长：取 UDS gap_seconds（秒）÷ 60 转分钟，1 位小数（setter 统一舍入）。
+            // 上游为空时用注册 / 首存时间相减兜底；未首存为 null
+            BigDecimal gapSeconds = num(row, d, "regToFtdMinutes");
+            vo.setRegToFtdMinutes(gapSeconds != null
+                ? gapSeconds.divide(BigDecimal.valueOf(60), 1, RoundingMode.HALF_UP)
+                : minutesBetween(vo.getRegisterTime(), vo.getFirstDepositTime()));
+            // 上游没给的派生值在这里补：流水倍数。分母为空或 0 时保持 null
             if (vo.getTurnoverMultiple() == null && vo.getCumulativeBetAmount() != null
                 && vo.getCumulativeDepositAmount() != null && vo.getCumulativeDepositAmount().signum() > 0)
             {
@@ -981,25 +1032,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
         catch (Exception e)
         {
             return false;
-        }
-    }
-
-    /** 两个 yyyy-MM-dd HH:mm[:ss] 时间相差的小时数（向下取整）；任一为空或解析失败返回 null */
-    private static Integer hoursBetween(String from, String to)
-    {
-        if (StringUtils.isEmpty(from) || StringUtils.isEmpty(to))
-        {
-            return null;
-        }
-        try
-        {
-            LocalDateTime a = LocalDateTime.parse(normalizeTime(from), DATETIME);
-            LocalDateTime b = LocalDateTime.parse(normalizeTime(to), DATETIME);
-            return (int) ChronoUnit.HOURS.between(a, b);
-        }
-        catch (Exception e)
-        {
-            return null;
         }
     }
 

@@ -85,6 +85,13 @@ public class UdsProperties
         /** 指标编码 → [被减数, 减数]（都是本系统指标编码） */
         private Map<String, java.util.List<String>> subtract = new LinkedHashMap<>();
 
+        /**
+         * 单日区间（含今天截至当前）去重人数的区间值：指标编码 → 小时数据集里的 UDS 指标名。
+         * 例：active → unique_active_huser_cnt（区间内小时活跃人数去重），用 dimensions=[] 直接取区间值。
+         * 未配置的编码仍走原规则（完整日取日去重值，不完整日为 NULL）
+         */
+        private Map<String, String> dayRangeUnique = new LinkedHashMap<>();
+
         public String getHour()
         {
             return hour;
@@ -123,6 +130,16 @@ public class UdsProperties
         public void setSubtract(Map<String, java.util.List<String>> subtract)
         {
             this.subtract = subtract == null ? new LinkedHashMap<>() : subtract;
+        }
+
+        public Map<String, String> getDayRangeUnique()
+        {
+            return dayRangeUnique;
+        }
+
+        public void setDayRangeUnique(Map<String, String> dayRangeUnique)
+        {
+            this.dayRangeUnique = dayRangeUnique == null ? new LinkedHashMap<>() : dayRangeUnique;
         }
     }
 

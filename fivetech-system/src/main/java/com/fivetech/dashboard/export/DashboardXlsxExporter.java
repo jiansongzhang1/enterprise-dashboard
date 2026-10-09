@@ -296,8 +296,8 @@ public class DashboardXlsxExporter
             MemberRecordVO::getFirstDepositAmount));
         member(f("firstDepositChannel", Col.text("首存通道"), "生涯首筆存款使用的支付通道。未首存為空。", U_TEXT,
             MemberRecordVO::getFirstDepositChannel));
-        member(f("regToFtdHours", Col.num("註冊→首存時長(小時)", null), "首存時間 − 註冊時間。未首存為空。", "小時，整數",
-            MemberRecordVO::getRegToFtdHours));
+        member(f("regToFtdMinutes", Col.num("註冊→首存時長(分鐘)", "0.0"), "首存時間 − 註冊時間。未首存為空。", "分鐘，1 位小數",
+            MemberRecordVO::getRegToFtdMinutes));
         member(f("lastDepositTime", Col.dateTime("最近存款時間"), "最近一筆成功存款的時刻。", U_TIME,
             MemberRecordVO::getLastDepositTime));
         member(f("lastDepositAmount", Col.num("最近存款金額(INR)", "0.00"), "最近一筆成功存款的金額。", U_INR,

@@ -57,7 +57,7 @@ public class RecordColumnRegistry
         member("firstDepositTime", "首存時間", "TIME", G_DEP).sortable(true).filterable(true);
         member("firstDepositAmount", "首存金額", "MONEY", G_DEP).defaultVisible(true).sortable(true);
         member("firstDepositChannel", "首存通道", "TEXT", G_DEP);
-        member("regToFtdHours", "註冊→首存時長", "HOUR", G_DEP).sortable(true);
+        member("regToFtdMinutes", "註冊→首存時長", "MIN", G_DEP).sortable(true);
         member("lastDepositTime", "最近存款時間", "TIME", G_DEP).sortable(true);
         member("lastDepositAmount", "最近存款金額", "MONEY", G_DEP).sortable(true);
         member("cumulativeDepositAmount", "歷史累計存款金額", "MONEY", G_DEP).defaultVisible(true).sortable(true).filterable(true);

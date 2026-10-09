@@ -80,6 +80,7 @@ public final class ExportMetricText
         put("dep", "存款總額", G_FUND, "INR", "所有會員成功存款金額加總", U_INR, "0.00");
         put("wd", "提款總額", G_FUND, "INR", "所有會員成功提款金額加總", U_INR, "0.00");
         put("net", "存提差", G_FUND, "INR", "存款總額 − 提款總額", U_INR, "0.00");
+        put("turnX", "流水倍數", G_FUND, "倍", "投注總額 ÷ 存款總額", "倍，2 位小數", "0.00");
         put("arppu", "ARPPU", G_FUND, "INR", "存款總額 ÷ 去重存款人數。同一人在區間內只計一次，因此區間值不等於各行的平均", U_INR, "0.00");
         put("ftdA", "首存ARPPU", G_ACQ, "INR", "首存總額 ÷ 首存人數", U_INR, "0.00");
         put("dOkR", "存款成功率", G_PAY, "%", "存款成功筆數 ÷ 存款總嘗試筆數 × 100%", U_PCT, "0.00");
@@ -95,7 +96,6 @@ public final class ExportMetricText
         put("login", "登錄人數", G_ACQ, "人數",
             "完成登錄的去重會員數。去重人數：各時間片各自去重，區間值按整個區間去重，因此各行相加大於區間值", U_INT, null);
         put("ngr", "NGR", G_BET, "INR", "GGR − 發放贈金總額", U_INR, "0.00");
-        put("turnX", "流水倍數", G_FUND, "倍", "投注總額 ÷ 存款總額", "倍，2 位小數", "0.00");
     }
 
     private static void put(String code, String label, String group, String unit, String note, String unitNote,

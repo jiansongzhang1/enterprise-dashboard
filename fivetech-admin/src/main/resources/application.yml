@@ -304,6 +304,10 @@ dashboard:
         subtract:
           net: [dep, wd]
           ngr: [ggr, bonus]
+        # 区间只在一个自然日内（选一天、小时粒度，含今天截至当前）时，去重人数的区间值改取小时数据集的区间去重指标：
+        # unique_active_huser_cnt = 区间内各小时活跃人数去重。多天区间仍按各日日去重值取平均
+        day-range-unique:
+          active: unique_active_huser_cnt
       # 明细数据集（联调手册第 9 节，字段见 detail-contracts.json）。
       # fields：key = 列编码（RecordColumnRegistry），value = UDS 字段名；未映射的列返回 null
       # 列表与 COUNT 用 /v1/query/batch 一次发出；排序固定以 uds_rowkey ASC 收尾；limit ≤ 1000、offset ≤ 100000
@@ -328,7 +332,7 @@ dashboard:
             firstDepositTime: first_deposit_time_india
             firstDepositAmount: first_deposit_amount
             firstDepositChannel: first_deposit_channel_name
-            regToFtdHours: gap_hours
+            regToFtdMinutes: gap_seconds   # 单位秒：后端 ÷ 60 转分钟、1 位小数；排序按秒下推
             lastDepositTime: last_deposit_time_india
             lastDepositAmount: last_deposit_amount
             cumulativeDepositAmount: total_deposit_amount

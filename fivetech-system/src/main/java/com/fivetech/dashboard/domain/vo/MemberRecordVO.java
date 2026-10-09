@@ -57,8 +57,8 @@ public class MemberRecordVO implements Serializable
     /** 首存通道 */
     private String firstDepositChannel;
 
-    /** 注册→首存时长（小时） */
-    private Integer regToFtdHours;
+    /** 注册→首存时长（分钟，1 位小数） */
+    private BigDecimal regToFtdMinutes;
 
     /** 最近存款时间 */
     private String lastDepositTime;
@@ -245,14 +245,15 @@ public class MemberRecordVO implements Serializable
         this.firstDepositChannel = firstDepositChannel;
     }
 
-    public Integer getRegToFtdHours()
+    public BigDecimal getRegToFtdMinutes()
     {
-        return regToFtdHours;
+        return regToFtdMinutes;
     }
 
-    public void setRegToFtdHours(Integer regToFtdHours)
+    public void setRegToFtdMinutes(BigDecimal regToFtdMinutes)
     {
-        this.regToFtdHours = regToFtdHours;
+        this.regToFtdMinutes = regToFtdMinutes == null ? null
+            : regToFtdMinutes.setScale(1, java.math.RoundingMode.HALF_UP);
     }
 
     public String getLastDepositTime()
