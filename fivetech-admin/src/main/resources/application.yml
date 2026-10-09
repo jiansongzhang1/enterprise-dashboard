@@ -95,7 +95,7 @@ spring:
 notification:
   email:
     enabled: ${MAIL_ENABLED:true}
-    from: ${MAIL_FROM:jackson@fivetech.co.jp}
+    from: ${MAIL_FROM:support@notify.fivetech.co.jp}
     # 账号通知邮件（繁體）：开通时发启用链接，密码变更、停用、重新启用时发通知；邮件中不含任何密码
     account:
       enabled: ${MAIL_ACCOUNT_ENABLED:true}

@@ -83,7 +83,7 @@ public final class ExportMetricText
         put("arppu", "ARPPU", G_FUND, "INR", "存款總額 ÷ 去重存款人數。同一人在區間內只計一次，因此區間值不等於各行的平均", U_INR, "0.00");
         put("ftdA", "首存ARPPU", G_ACQ, "INR", "首存總額 ÷ 首存人數", U_INR, "0.00");
         put("dOkR", "存款成功率", G_PAY, "%", "存款成功筆數 ÷ 存款總嘗試筆數 × 100%", U_PCT, "0.00");
-        put("dT", "平均到帳時間", G_PAY, "min", "存款自送出到入帳的平均耗時（UPI / 銀行卡 / USDT 合併計算）", U_MIN, "0.0");
+        put("dT", "平均到帳時間", G_PAY, "min", "存款自送出到入帳的平均耗時", U_MIN, "0.0");
         put("wOkR", "出款成功率", G_PAY, "%", "出款成功筆數 ÷ 出款總嘗試筆數 × 100%", U_PCT, "0.00");
         put("wT", "平均出款時間", G_PAY, "min", "提款自申請到撥款完成的平均耗時", U_MIN, "0.0");
         put("bonus", "發放贈金總額", G_BET, "INR", "各贈金項目實際發放金額加總", U_INR, "0.00");
