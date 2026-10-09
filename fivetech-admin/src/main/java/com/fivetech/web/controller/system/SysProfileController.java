@@ -1,6 +1,5 @@
 package com.fivetech.web.controller.system;
 
-import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,14 +16,11 @@ import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.domain.model.LoginUser;
 import com.fivetech.common.enums.BusinessType;
-import com.fivetech.common.utils.DateUtils;
 import com.fivetech.common.utils.SecurityUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.file.FileUploadUtils;
 import com.fivetech.common.utils.file.FileUtils;
 import com.fivetech.common.utils.file.MimeTypeUtils;
-import com.fivetech.common.utils.ip.IpUtils;
-import com.fivetech.framework.notification.AccountMailService;
 import com.fivetech.framework.web.service.TokenService;
 import com.fivetech.system.service.ISysUserService;
 
@@ -37,8 +33,6 @@ import com.fivetech.system.service.ISysUserService;
 @RequestMapping("/system/user/profile")
 public class SysProfileController extends BaseController
 {
-    @Autowired
-    private AccountMailService accountMailService;
 
     @Autowired
     private ISysUserService userService;
@@ -90,41 +84,6 @@ public class SysProfileController extends BaseController
             return success();
         }
         return error("修改个人信息异常，请联系管理员");
-    }
-
-    /**
-     * 重置密码
-     */
-    @Log(title = "个人信息", businessType = BusinessType.UPDATE)
-    @PutMapping("/updatePwd")
-    public AjaxResult updatePwd(@RequestBody Map<String, String> params)
-    {
-        String oldPassword = params.get("oldPassword");
-        String newPassword = params.get("newPassword");
-        LoginUser loginUser = getLoginUser();
-        Long userId = loginUser.getUserId();
-        SysUser user = userService.selectUserById(userId);
-        String password = user.getPassword();
-        if (!SecurityUtils.matchesPassword(oldPassword, password))
-        {
-            return error("修改密码失败，旧密码错误");
-        }
-        if (SecurityUtils.matchesPassword(newPassword, password))
-        {
-            return error("新密码不能与旧密码相同");
-        }
-        newPassword = SecurityUtils.encryptPassword(newPassword);
-        if (userService.resetUserPwd(userId, newPassword) > 0)
-        {
-            // 更新缓存用户密码&密码最后更新时间
-            loginUser.getUser().setPwdUpdateDate(DateUtils.getNowDate());
-            loginUser.getUser().setPassword(newPassword);
-            tokenService.setLoginUser(loginUser);
-            // 通知本人“密码已变更”，附来源 IP；不含密码
-            accountMailService.sendPasswordChanged(user, false, IpUtils.getIpAddr());
-            return success();
-        }
-        return error("修改密码异常，请联系管理员");
     }
 
     /**

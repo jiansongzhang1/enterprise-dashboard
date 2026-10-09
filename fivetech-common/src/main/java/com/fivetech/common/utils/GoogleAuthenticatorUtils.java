@@ -135,21 +135,21 @@ public final class GoogleAuthenticatorUtils
      * 构建 otpauth 绑定地址
      *
      * @param issuer 发行方名称
-     * @param account 账号名
+     * @param account 账号名；为空时标签只写发行方（验证器里只显示发行方名称）
      * @param secret Base32 密钥
      * @return otpauth:// URI
      */
     public static String buildOtpAuthUrl(String issuer, String account, String secret)
     {
-        if (StringUtils.isEmpty(issuer) || StringUtils.isEmpty(account) || StringUtils.isEmpty(secret))
+        if (StringUtils.isEmpty(issuer) || StringUtils.isEmpty(secret))
         {
-            throw new IllegalArgumentException("Issuer, account and secret are required");
+            throw new IllegalArgumentException("Issuer and secret are required");
         }
 
         String encodedIssuer = urlEncode(issuer);
-        String encodedAccount = urlEncode(account);
+        String label = StringUtils.isEmpty(account) ? encodedIssuer : encodedIssuer + ":" + urlEncode(account);
         String encodedSecret = urlEncode(secret);
-        return "otpauth://totp/" + encodedIssuer + ":" + encodedAccount + "?secret=" + encodedSecret + "&issuer=" + encodedIssuer;
+        return "otpauth://totp/" + label + "?secret=" + encodedSecret + "&issuer=" + encodedIssuer;
     }
 
     private static byte[] hmacSha1(byte[] key, byte[] data)

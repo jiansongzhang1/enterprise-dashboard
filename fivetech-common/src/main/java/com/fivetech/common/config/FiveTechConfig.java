@@ -18,6 +18,9 @@ public class FiveTechConfig
     /** 版本 */
     private String version;
 
+    /** 验证器（Google Authenticator）里显示的名称；绑定二维码只带它，不带用户名 */
+    private String gaIssuer = "Yata";
+
     /** 版权年份 */
     private String copyrightYear;
 
@@ -35,6 +38,16 @@ public class FiveTechConfig
     public void setName(String name)
     {
         this.name = name;
+    }
+
+    public String getGaIssuer()
+    {
+        return gaIssuer;
+    }
+
+    public void setGaIssuer(String gaIssuer)
+    {
+        this.gaIssuer = gaIssuer;
     }
 
     public String getVersion()

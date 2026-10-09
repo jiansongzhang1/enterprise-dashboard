@@ -2,6 +2,7 @@ package com.fivetech.web.controller.system;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,6 +60,33 @@ public class SysLoginController
         // 生成令牌
         String token = loginService.login(loginBody.getUsername(), loginBody.getPassword(), loginBody.getCode());
         ajax.put(Constants.TOKEN, token);
+        return ajax;
+    }
+
+    /**
+     * 两步登录 · 第一步：帐号 + 密码。通过后返回一次性 ticket（默认 5 分钟有效）
+     *
+     * @param loginBody username、password
+     * @return data: ticket、expireSeconds
+     */
+    @PostMapping("/login/password")
+    public AjaxResult loginPassword(@RequestBody LoginBody loginBody)
+    {
+        return AjaxResult.success(loginService.loginPassword(loginBody.getUsername(), loginBody.getPassword()));
+    }
+
+    /**
+     * 两步登录 · 第二步：ticket + 6 位验证码。通过后返回 token；
+     * ticket 已失效时 code = 4011，前端回到第一步
+     *
+     * @param body ticket、code
+     * @return token
+     */
+    @PostMapping("/login/verify")
+    public AjaxResult loginVerify(@RequestBody Map<String, String> body)
+    {
+        AjaxResult ajax = AjaxResult.success();
+        ajax.put(Constants.TOKEN, loginService.loginVerify(body.get("ticket"), body.get("code")));
         return ajax;
     }
 

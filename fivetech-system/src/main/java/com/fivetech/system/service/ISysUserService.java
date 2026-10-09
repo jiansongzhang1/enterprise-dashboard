@@ -212,13 +212,18 @@ public interface ISysUserService
     public int resetPwd(SysUser user);
 
     /**
-     * 重置用户密码
-     * 
+     * 新密码是否与最近 N 次使用过的密码相同（N = user.password.historyCount，含当前密码；0 = 不检查）
+     *
      * @param userId 用户ID
-     * @param password 密码
-     * @return 结果
+     * @param rawPassword 新密码明文
+     * @return true 表示用过，应拒绝
      */
-    public int resetUserPwd(Long userId, String password);
+    public boolean isRecentPassword(Long userId, String rawPassword);
+
+    /**
+     * 密码历史检查的次数 N（0 = 不检查）
+     */
+    public int getPasswordHistoryCount();
 
     /**
      * 通过用户ID删除用户

@@ -139,13 +139,15 @@ public interface SysUserMapper
     public int updateLoginInfo(@Param("userId") Long userId, @Param("loginIp") String loginIp, @Param("loginDate") Date loginDate);
 
     /**
-     * 重置用户密码
-     * 
+     * 管理员重置用户密码：写入密码更新时间，并记录操作人
+     *
      * @param userId 用户ID
-     * @param password 密码
+     * @param password 密码（已加密）
+     * @param updateBy 操作人
      * @return 结果
      */
-    public int resetUserPwd(@Param("userId") Long userId, @Param("password") String password);
+    public int adminResetUserPwd(@Param("userId") Long userId, @Param("password") String password,
+            @Param("updateBy") String updateBy);
 
     /**
      * 通过用户ID删除用户

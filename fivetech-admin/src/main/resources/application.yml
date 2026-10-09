@@ -4,6 +4,8 @@ fivetech:
   name: FiveTech
   # 版本
   version: 3.9.2
+  # 验证器（Google Authenticator）里显示的名称，二维码不含用户名；用户手动输入密钥时以用户自己填的名称为准
+  gaIssuer: ${GA_ISSUER:Yata}
   # 版权年份
   copyrightYear: 2026
   # 文件路径 示例（ Windows配置D:/fivetech/uploadPath，Linux配置 /home/fivetech/uploadPath）
@@ -41,10 +43,17 @@ logging:
 # 用户配置
 user:
   password:
-    # 密码最大错误次数
-    maxRetryCount: 5
-    # 密码锁定时间（默认10分钟）
-    lockTime: 10
+    # 密码最大错误次数（只统计密码错误）
+    maxRetryCount: ${LOGIN_MAX_RETRY:3}
+    # 达到上限后锁定分钟数；Redis 计数到期自动解锁，帐号状态不变（登录日志页「解锁」可手动提前解锁）
+    lockTime: ${LOGIN_LOCK_MINUTES:60}
+    # 不可与最近 N 次使用的密码相同（含当前密码；本人改密、启用链接设密码时检查，管理员重置不检查）；0 = 关闭
+    historyCount: ${PWD_HISTORY_COUNT:3}
+  login:
+    # 两步登录：密码通过后多少分钟内必须输入 6 位验证码，超时需重新登录
+    ticketMinutes: ${LOGIN_TICKET_MINUTES:5}
+    # 同一次登录允许输错验证码的次数，达到即需重新登录（防止拿到密码后穷举验证码）；0 = 不限制
+    ticketMaxCodeFails: ${LOGIN_TICKET_MAX_CODE_FAILS:5}
 
 # Spring配置
 spring:
@@ -304,10 +313,10 @@ dashboard:
         subtract:
           net: [dep, wd]
           ngr: [ggr, bonus]
-        # 区间只在一个自然日内（选一天、小时粒度，含今天截至当前）时，去重人数的区间值改取小时数据集的区间去重指标：
-        # unique_active_huser_cnt = 区间内各小时活跃人数去重。多天区间仍按各日日去重值取平均
-        day-range-unique:
-          active: unique_active_huser_cnt
+        # 区间只在一个自然日内（完整一天，或今天截至当前）时，这些去重人数指标的区间值取日数据集当天的值
+        # （active → dashboard_overview_day_v2.active_day）。多天区间仍按各日日去重值取平均；
+        # 未列出的（arppu、depU）不完整的一天保持 NULL
+        single-day-from-day: [active]
       # 明细数据集（联调手册第 9 节，字段见 detail-contracts.json）。
       # fields：key = 列编码（RecordColumnRegistry），value = UDS 字段名；未映射的列返回 null
       # 列表与 COUNT 用 /v1/query/batch 一次发出；排序固定以 uds_rowkey ASC 收尾；limit ≤ 1000、offset ≤ 100000

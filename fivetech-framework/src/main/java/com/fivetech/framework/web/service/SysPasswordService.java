@@ -41,6 +41,10 @@ public class SysPasswordService
         return CacheConstants.PWD_ERR_CNT_KEY + username;
     }
 
+    /**
+     * 校验密码：密码错误累计 maxRetryCount 次（默认 3）锁定 lockTime 分钟（默认 60）。
+     * 计数存 Redis，到期自动删除即解锁，帐号状态不变；密码正确时清零。只统计密码错误，不含验证码
+     */
     public void validate(SysUser user)
     {
         Authentication usernamePasswordAuthenticationToken = AuthenticationContextHolder.getContext();
@@ -48,21 +52,23 @@ public class SysPasswordService
         String password = usernamePasswordAuthenticationToken.getCredentials().toString();
 
         Integer retryCount = redisCache.getCacheObject(getCacheKey(username));
-
         if (retryCount == null)
         {
             retryCount = 0;
         }
-
-        if (retryCount >= Integer.valueOf(maxRetryCount).intValue())
+        if (retryCount >= maxRetryCount)
         {
             throw new UserPasswordRetryLimitExceedException(maxRetryCount, lockTime);
         }
-
         if (!matches(user, password))
         {
             retryCount = retryCount + 1;
             redisCache.setCacheObject(getCacheKey(username), retryCount, lockTime, TimeUnit.MINUTES);
+            // 达到上限的这一次直接提示已锁定，不用等下一次登录才知道
+            if (retryCount >= maxRetryCount)
+            {
+                throw new UserPasswordRetryLimitExceedException(maxRetryCount, lockTime);
+            }
             throw new UserPasswordNotMatchException();
         }
         else

@@ -121,6 +121,10 @@ public class SysAccountActivationService
         {
             return fail(PASSWORD_POLICY, policyError);
         }
+        if (userService.isRecentPassword(user.getUserId(), password))
+        {
+            return fail(PASSWORD_POLICY, "不可與最近 " + userService.getPasswordHistoryCount() + " 次使用的密碼相同。");
+        }
 
         // 先占用链接再改密码：两次并发提交只有一次能占用成功
         if (!linkService.markUsed(link.getLinkId())

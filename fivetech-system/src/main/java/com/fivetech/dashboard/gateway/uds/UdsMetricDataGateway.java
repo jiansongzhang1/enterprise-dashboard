@@ -588,8 +588,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
      * 去重人数类指标（活跃人数、登录人数、ARPPU）的区间值，与原型「區間值」规则一致：
      * <ul>
      *   <li>恰好一个小时：小时数据集的该小时独立人数；</li>
-     *   <li>区间只覆盖一个自然日：配置了 overview.day-range-unique 的指标（如活跃人数）取小时数据集的区间去重值
-     *       （完整日、今天截至当前都适用）；其余完整日取日数据集的日去重值，不完整的一天保持 NULL；</li>
+     *   <li>区间只覆盖一个自然日：配置在 overview.single-day-from-day 里的指标（如活跃人数）取日数据集当天的值
+     *       （完整日、今天截至当前都适用）；其余指标完整日取日数据集的日去重值，不完整的一天保持 NULL；</li>
      *   <li>区间覆盖多个自然日：取各日日去重值的算术平均。只平均有值的日子——
      *       含今天的区间（如「近 7 天」）今天还没有完整日数据，跳过它而不是让整个区间值变成 NULL；全部没有值才为 NULL。</li>
      * </ul>
@@ -617,19 +617,21 @@ public class UdsMetricDataGateway implements MetricDataGateway
         }
         if (days == 1)
         {
-            List<String> rangeCodes = dayRangeUnique(codes, from, to, out);
-            dayCodes = new ArrayList<>(dayCodes);
-            dayCodes.removeAll(rangeCodes);
-            if (dayCodes.isEmpty())
+            if (isMidnight(from) && isMidnight(to))
             {
+                totalFrom(ov.getDay(), dayCodes, from, to, "DAY", out);
                 return;
             }
-            if (!isMidnight(from) || !isMidnight(to))
+            // 不完整的一天（如今天截至当前）：只有 single-day-from-day 里的指标取日数据集当天的值，
+            // 其余没有日去重来源，保持 NULL。time 节点按 DATE 只写这一天的日期
+            List<String> partial = new ArrayList<>(dayCodes);
+            partial.retainAll(ov.getSingleDayFromDay());
+            if (partial.size() < dayCodes.size())
             {
-                log.debug("[uds] 区间 {}~{} 不是完整自然日，去重人数类指标 {} 无日去重来源，保持 NULL", from, to, codes);
-                return;
+                log.debug("[uds] 区间 {}~{} 不是完整自然日，去重人数类指标 {} 无日去重来源，保持 NULL",
+                    from, to, dayCodes.stream().filter(c -> !partial.contains(c)).toList());
             }
-            totalFrom(ov.getDay(), dayCodes, from, to, "DAY", out);
+            totalFrom(ov.getDay(), partial, dayFrom, dayTo, "DAY", out);
             return;
         }
         Map<String, List<BigDecimal>> daily = new HashMap<>();
@@ -638,48 +640,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             out.put(code, averageOfPresent(daily.get(code)));
         }
-    }
-
-    /**
-     * 单日区间的去重人数：按 overview.day-range-unique 的映射，在小时数据集上用 dimensions=[] 取区间值
-     * （UDS 在区间内去重，不是各小时相加）。返回本次处理了的指标编码；查询结果为空时这些编码保持 NULL
-     */
-    private List<String> dayRangeUnique(List<String> codes, LocalDateTime from, LocalDateTime to,
-            Map<String, BigDecimal> out)
-    {
-        UdsProperties.Overview ov = properties.getOverview();
-        Map<String, String> metrics = new LinkedHashMap<>();
-        for (String code : codes)
-        {
-            String metric = ov.getDayRangeUnique().get(code);
-            if (StringUtils.isNotEmpty(metric))
-            {
-                metrics.put(code, metric);
-            }
-        }
-        UdsProperties.Dataset hour = dataset(ov.getHour());
-        if (metrics.isEmpty() || hour == null)
-        {
-            return new ArrayList<>();
-        }
-        // 复用小时数据集的时间维 / 选项，只把指标换成区间去重口径
-        UdsProperties.Dataset d = new UdsProperties.Dataset();
-        d.setName(hour.getName());
-        d.setTimeDimension(hour.getTimeDimension());
-        d.setTimeFormat(hour.getTimeFormat());
-        d.setGrain(hour.getGrain());
-        d.setOptions(new LinkedHashMap<>(hour.getOptions()));
-        d.setMetrics(metrics);
-        String name = nameOf(ov.getHour(), hour);
-        List<String> rangeCodes = new ArrayList<>(metrics.keySet());
-        UdsQueryResult queried = queryRetreating(name, d, rangeCodes, from, to, "HOUR",
-            new ArrayList<>(), TOTAL_LIMIT, null);
-        UdsRow row = singleRow(queried, name);
-        for (String code : rangeCodes)
-        {
-            out.put(code, row == null ? null : row.num(metrics.get(code)));
-        }
-        return rangeCodes;
     }
 
     /** 只对有值的元素求算术平均；没有任何值时返回 null */

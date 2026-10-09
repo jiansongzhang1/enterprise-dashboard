@@ -28,6 +28,7 @@ import com.fivetech.common.core.page.TableDataInfo;
 import com.fivetech.common.enums.BusinessType;
 import com.fivetech.common.enums.UserStatus;
 import com.fivetech.common.enums.UserTypeEnum;
+import com.fivetech.common.utils.PasswordPolicy;
 import com.fivetech.common.utils.SecurityUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.poi.ExcelUtil;
@@ -168,6 +169,14 @@ public class SysUserController extends BaseController
         if (!accountMailService.isActivationEnabled())
         {
             boolean hasPassword = StringUtils.isNotEmpty(user.getPassword());
+            if (hasPassword)
+            {
+                String policyError = PasswordPolicy.check(user.getUserName(), user.getPassword());
+                if (policyError != null)
+                {
+                    return error(policyError);
+                }
+            }
             if (StringUtils.isNotEmpty(user.getEmail()))
             {
                 user.setEmail(user.getEmail().trim());
@@ -277,6 +286,17 @@ public class SysUserController extends BaseController
     {
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
+        // 请求体只有 userId / password，帐号名从库里取，用于「密码不可包含帐号」校验
+        SysUser target = userService.selectUserById(user.getUserId());
+        if (target == null)
+        {
+            return error("用户不存在");
+        }
+        String policyError = PasswordPolicy.check(target.getUserName(), user.getPassword());
+        if (policyError != null)
+        {
+            return error(policyError);
+        }
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         user.setUpdateBy(getUsername());
         int rows = userService.resetPwd(user);

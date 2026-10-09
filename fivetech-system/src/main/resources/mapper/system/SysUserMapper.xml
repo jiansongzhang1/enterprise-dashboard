@@ -259,8 +259,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  		  and del_flag = '0'
 	</update>
 
-	<update id="resetUserPwd" parameterType="SysUser">
- 		update sys_user set pwd_update_date = CURRENT_TIMESTAMP, password = #{password}, update_time = CURRENT_TIMESTAMP where user_id = #{userId}
+	<!-- 管理员重置密码：写入密码更新时间（不触发首次登录强制改密），并记录操作人 -->
+	<update id="adminResetUserPwd">
+ 		update sys_user set pwd_update_date = CURRENT_TIMESTAMP, password = #{password}, update_by = #{updateBy}, update_time = CURRENT_TIMESTAMP where user_id = #{userId}
 	</update>
 	
 	<delete id="deleteUserById" parameterType="Long">

@@ -1,7 +1,11 @@
 package com.fivetech.framework.web.service;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -13,6 +17,8 @@ import com.fivetech.common.constant.UserConstants;
 import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.domain.model.LoginUser;
 import com.fivetech.common.core.domain.model.GaBindInfo;
+import com.fivetech.common.core.redis.RedisCache;
+import com.fivetech.common.enums.UserStatus;
 import com.fivetech.common.exception.ServiceException;
 import com.fivetech.common.exception.user.BlackListException;
 import com.fivetech.common.exception.user.GoogleAuthenticatorException;
@@ -24,6 +30,7 @@ import com.fivetech.common.utils.GoogleAuthenticatorUtils;
 import com.fivetech.common.utils.MessageUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.ip.IpUtils;
+import com.fivetech.common.utils.uuid.IdUtils;
 import com.fivetech.framework.manager.AsyncManager;
 import com.fivetech.framework.manager.factory.AsyncFactory;
 import com.fivetech.framework.security.context.AuthenticationContextHolder;
@@ -53,6 +60,26 @@ public class SysLoginService
     @Autowired
     private FiveTechConfig fivetechConfig;
 
+    @Autowired
+    private RedisCache redisCache;
+
+    @Autowired
+    private SysPermissionService permissionService;
+
+    /** 两步登录：第一步通过后发的一次性凭证，Redis key 前缀 */
+    private static final String LOGIN_TICKET_KEY = "login_ticket:";
+
+    /** 两步登录凭证失效（超时未输入验证码 / 验证码错误次数过多）：前端收到后回到第一步 */
+    public static final int LOGIN_TICKET_EXPIRED = 4011;
+
+    /** 第一步通过后，多少分钟内必须完成验证码 */
+    @Value("${user.login.ticketMinutes:5}")
+    private int ticketMinutes;
+
+    /** 同一张凭证允许输错验证码的次数，达到即作废需重新登录；0 = 不限制 */
+    @Value("${user.login.ticketMaxCodeFails:5}")
+    private int ticketMaxCodeFails;
+
     /**
      * 登录验证
      * 
@@ -80,6 +107,115 @@ public class SysLoginService
         recordLoginInfo(loginUser.getUserId());
         // 生成token
         return tokenService.createToken(loginUser);
+    }
+
+    /**
+     * 两步登录 · 第一步：校验帐号密码（密码错误计入锁定次数），并确认已绑定验证器。
+     * 通过后发一次性凭证 ticket，有效期 ticketMinutes 分钟，第二步凭它提交验证码。
+     *
+     * @return ticket、expireSeconds
+     */
+    public Map<String, Object> loginPassword(String username, String password)
+    {
+        loginPreCheck(username, password);
+        LoginUser loginUser;
+        try
+        {
+            loginUser = authenticate(username, password);
+            checkGaReady(loginUser.getUser());
+        }
+        catch (UserPasswordNotMatchException | ServiceException e)
+        {
+            AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, e.getMessage()));
+            throw e;
+        }
+        String ticket = IdUtils.fastSimpleUUID();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("userId", loginUser.getUserId());
+        data.put("userName", loginUser.getUsername());
+        data.put("fails", 0);
+        redisCache.setCacheObject(LOGIN_TICKET_KEY + ticket, data, ticketMinutes, TimeUnit.MINUTES);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ticket", ticket);
+        result.put("expireSeconds", ticketMinutes * 60);
+        return result;
+    }
+
+    /**
+     * 两步登录 · 第二步：凭第一步的 ticket 提交 6 位验证码，通过后签发 token。
+     * ticket 过期（超过 ticketMinutes 分钟未提交）或已用过 → 错误码 LOGIN_TICKET_EXPIRED，前端回到第一步。
+     */
+    public String loginVerify(String ticket, String code)
+    {
+        String key = LOGIN_TICKET_KEY + StringUtils.trimToEmpty(ticket);
+        Map<String, Object> data = StringUtils.isEmpty(ticket) ? null : redisCache.getCacheObject(key);
+        if (data == null)
+        {
+            throw new ServiceException(MessageUtils.message("user.login.ticket.expired", ticketMinutes), LOGIN_TICKET_EXPIRED);
+        }
+        String username = String.valueOf(data.get("userName"));
+        Long userId = ((Number) data.get("userId")).longValue();
+        SysUser user = userService.selectUserById(userId);
+        try
+        {
+            // 两步之间帐号可能被停用 / 删除 / 重置验证器：重新检查
+            if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+            {
+                redisCache.deleteObject(key);
+                throw new ServiceException(MessageUtils.message("user.password.delete"));
+            }
+            if (UserStatus.DISABLE.getCode().equals(user.getStatus()))
+            {
+                redisCache.deleteObject(key);
+                throw new ServiceException(MessageUtils.message("user.blocked"));
+            }
+            checkGaReady(user);
+            if (!GoogleAuthenticatorUtils.verifyCode(user.getGaSecret(), code))
+            {
+                int fails = ((Number) data.getOrDefault("fails", 0)).intValue() + 1;
+                if (ticketMaxCodeFails > 0 && fails >= ticketMaxCodeFails)
+                {
+                    redisCache.deleteObject(key);
+                    throw new ServiceException(MessageUtils.message("user.login.ticket.too.many"), LOGIN_TICKET_EXPIRED);
+                }
+                // 只更新错误次数，不延长有效期
+                long ttl = redisCache.getExpire(key);
+                if (ttl > 0)
+                {
+                    data.put("fails", fails);
+                    redisCache.setCacheObject(key, data, (int) ttl, TimeUnit.SECONDS);
+                }
+                throw new GoogleAuthenticatorException();
+            }
+            // 一次性：先删再发 token，并发重放只有一次能删成功
+            if (!redisCache.deleteObject(key))
+            {
+                throw new ServiceException(MessageUtils.message("user.login.ticket.expired", ticketMinutes), LOGIN_TICKET_EXPIRED);
+            }
+        }
+        catch (GoogleAuthenticatorException | ServiceException e)
+        {
+            AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, e.getMessage()));
+            throw e;
+        }
+        LoginUser loginUser = new LoginUser(user.getUserId(), user.getDeptId(), user, permissionService.getMenuPermission(user));
+        AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
+        recordLoginInfo(user.getUserId());
+        return tokenService.createToken(loginUser);
+    }
+
+    /** 已开通且已绑定验证器，否则抛出对应提示（前端据「尚未完成绑定」切到绑定页） */
+    private void checkGaReady(SysUser user)
+    {
+        if (StringUtils.isNull(user) || StringUtils.isEmpty(user.getGaSecret()))
+        {
+            throw new ServiceException(MessageUtils.message("user.ga.secret.missing"));
+        }
+        if (user.getGaStatus() == null || user.getGaStatus().intValue() != GaConstants.GA_STATUS_BOUND)
+        {
+            throw new ServiceException(MessageUtils.message("user.ga.bind.pending"));
+        }
     }
 
     /**
@@ -141,9 +277,13 @@ public class SysLoginService
 
         GaBindInfo bindInfo = new GaBindInfo();
         bindInfo.setGaStatus(user.getGaStatus());
-        bindInfo.setAccount(user.getUserName());
-        bindInfo.setIssuer(fivetechConfig.getName());
-        bindInfo.setOtpauthUrl(GoogleAuthenticatorUtils.buildOtpAuthUrl(fivetechConfig.getName(), user.getUserName(), user.getGaSecret()));
+        // 验证器里显示的名称默认是 gaIssuer（Yata），二维码不带用户名；
+        // 手动输入设置密钥时，帐户名称由用户自己填写，以用户填的为准
+        String issuer = StringUtils.isNotEmpty(fivetechConfig.getGaIssuer()) ? fivetechConfig.getGaIssuer() : "Yata";
+        bindInfo.setIssuer(issuer);
+        bindInfo.setAccount(issuer);
+        bindInfo.setSecret(user.getGaSecret());
+        bindInfo.setOtpauthUrl(GoogleAuthenticatorUtils.buildOtpAuthUrl(issuer, null, user.getGaSecret()));
         return bindInfo;
     }
 

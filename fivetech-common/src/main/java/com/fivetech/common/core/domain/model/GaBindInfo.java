@@ -15,6 +15,19 @@ public class GaBindInfo
 
     private String otpauthUrl;
 
+    /** 设置密钥（Base32）：无法扫码时在验证器里选「输入设置密钥」手动填写；仅待绑定状态返回 */
+    private String secret;
+
+    public String getSecret()
+    {
+        return secret;
+    }
+
+    public void setSecret(String secret)
+    {
+        this.secret = secret;
+    }
+
     public Integer getGaStatus()
     {
         return gaStatus;

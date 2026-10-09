@@ -8,6 +8,7 @@ import jakarta.validation.Validator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -27,6 +28,7 @@ import com.fivetech.system.mapper.SysPostMapper;
 import com.fivetech.system.mapper.SysRoleMapper;
 import com.fivetech.system.mapper.SysUserMapper;
 import com.fivetech.system.mapper.SysUserPostMapper;
+import com.fivetech.system.mapper.SysUserPwdHistoryMapper;
 import com.fivetech.system.mapper.SysUserRoleMapper;
 import com.fivetech.system.service.ISysConfigService;
 import com.fivetech.system.service.ISysDeptService;
@@ -65,6 +67,13 @@ public class SysUserServiceImpl implements ISysUserService
 
     @Autowired
     protected Validator validator;
+
+    @Autowired
+    private SysUserPwdHistoryMapper pwdHistoryMapper;
+
+    /** 不可与最近 N 次使用的密码相同；N 含当前密码，0 = 不检查 */
+    @Value("${user.password.historyCount:3}")
+    private int passwordHistoryCount;
 
     /**
      * 根据条件分页查询用户列表
@@ -390,28 +399,68 @@ public class SysUserServiceImpl implements ISysUserService
     }
 
     /**
-     * 重置用户密码
+     * 管理员重置用户密码：写入密码更新时间，不触发首次登录强制改密
      * 
      * @param user 用户信息
      * @return 结果
      */
     @Override
+    @Transactional
     public int resetPwd(SysUser user)
     {
-        return userMapper.resetUserPwd(user.getUserId(), user.getPassword());
+        // 管理员重置不做历史检查（设的是临时密码，员工首次登录还要再改），但被替换的旧密码照样入历史
+        rememberCurrentPassword(user.getUserId());
+        return userMapper.adminResetUserPwd(user.getUserId(), user.getPassword(), user.getUpdateBy());
     }
 
-    /**
-     * 重置用户密码
-     * 
-     * @param userId 用户ID
-     * @param password 密码
-     * @return 结果
-     */
     @Override
-    public int resetUserPwd(Long userId, String password)
+    public boolean isRecentPassword(Long userId, String rawPassword)
     {
-        return userMapper.resetUserPwd(userId, password);
+        if (passwordHistoryCount <= 0 || userId == null || StringUtils.isEmpty(rawPassword))
+        {
+            return false;
+        }
+        // BCrypt 每次加盐不同，只能逐条 matches：当前密码 + 历史表最近 N-1 条
+        SysUser user = userMapper.selectUserById(userId);
+        if (user != null && StringUtils.isNotEmpty(user.getPassword())
+                && SecurityUtils.matchesPassword(rawPassword, user.getPassword()))
+        {
+            return true;
+        }
+        if (passwordHistoryCount <= 1)
+        {
+            return false;
+        }
+        for (String old : pwdHistoryMapper.selectRecentPasswords(userId, passwordHistoryCount - 1))
+        {
+            if (StringUtils.isNotEmpty(old) && SecurityUtils.matchesPassword(rawPassword, old))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public int getPasswordHistoryCount()
+    {
+        return passwordHistoryCount;
+    }
+
+    /** 改密前把当前密码记入历史，并只保留最近 N-1 条 */
+    private void rememberCurrentPassword(Long userId)
+    {
+        if (passwordHistoryCount <= 1 || userId == null)
+        {
+            return;
+        }
+        SysUser user = userMapper.selectUserById(userId);
+        if (user == null || StringUtils.isEmpty(user.getPassword()))
+        {
+            return;
+        }
+        pwdHistoryMapper.insertPassword(userId, user.getPassword());
+        pwdHistoryMapper.deleteOlderThan(userId, passwordHistoryCount - 1);
     }
 
     /**
