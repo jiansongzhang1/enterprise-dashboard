@@ -165,6 +165,56 @@ public class OverviewWorkbookExporter
         }
     }
 
+    /**
+     * 熱銷遊戲单独导出（排行榜接口 export=true）：只写「導出說明」「熱銷遊戲」「口徑說明」三张 sheet，
+     * 不导出赠金项目。数据直接用排行榜接口查到的 VO（未做页面展示精度换算，保留两位小数）。
+     */
+    public byte[] exportGames(RankingBoardQuery rq, RankingBoardVO vo)
+    {
+        OverviewExportQuery q = new OverviewExportQuery();
+        q.setSiteCode(rq.getSiteCode());
+        q.setSlotFrom(rq.getSlotFrom());
+        q.setSlotTo(rq.getSlotTo());
+        if (StringUtils.isNotEmpty(rq.getGranularity()))
+        {
+            q.setGranularity(rq.getGranularity());
+        }
+        Part<RankingBoardVO> part = new Part<>();
+        part.data = vo;
+
+        StringBuilder filter = new StringBuilder("統計區間 ");
+        String[] s = span(vo, q);
+        filter.append(s[0]).append(" – ").append(s[1]).append(" · 熱銷遊戲 Top 20");
+        Map<String, String> extra = new LinkedHashMap<>();
+        Set<String> tips = new LinkedHashSet<>();
+        collect(tips, sectionNotices(vo));
+        if (!tips.isEmpty())
+        {
+            extra.put("提示", String.join("；", tips));
+        }
+        List<String[]> notes = new ArrayList<>();
+        for (String[] line : notes(null))
+        {
+            if (S_GAMES.equals(line[0]))
+            {
+                notes.add(line);
+            }
+        }
+        try (Book book = new Book(false))
+        {
+            book.info(S_INFO, ExportTemplate.exportInfo(properties, q.getSiteCode(), filter.toString(), extra));
+            writeGames(book, q, part);
+            book.notes(S_NOTES, notes);
+            return book.toBytes();
+        }
+    }
+
+    /** 熱銷遊戲单独导出的文件名：運營總覽-熱銷遊戲-yyyyMMdd-HHmmss.xlsx */
+    public String gamesFileName()
+    {
+        return ExportTemplate.fileName(properties, PAGE + "-" + S_GAMES);
+    }
+
     /** 文件名：運營總覽-yyyyMMdd-HHmmss.xlsx */
     public String fileName(OverviewExportQuery query)
     {

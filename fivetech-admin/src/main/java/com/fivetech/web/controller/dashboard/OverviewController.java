@@ -112,8 +112,20 @@ public class OverviewController extends BaseController
      */
     @PreAuthorize("@ss.hasPermi('dashboard:overview:leaderboard')")
     @PostMapping({"/rankingboard"})
-    public AjaxResult rankingBoard(@Validated @RequestBody RankingBoardQuery query)
+    public ResponseEntity<?> rankingBoard(@Validated @RequestBody RankingBoardQuery query)
     {
+        if (query.isExport())
+        {
+            // export=true：只导出熱銷遊戲（不含赠金项目），xlsx 文件流；数据保留两位小数，不做页面展示取整
+            checkExportEnabled();
+            query.setExport(false);
+            com.fivetech.dashboard.domain.vo.overview.RankingBoardVO data = sectionService.rankingBoard(query);
+            byte[] file = workbookExporter.exportGames(query, data);
+            audit("熱銷遊戲導出", "/dashboard/metrics/rankingboard",
+                "slot=" + query.getSlotFrom() + "~" + query.getSlotTo() + ", granularity=" + query.getGranularity(),
+                file.length);
+            return DashboardExportSupport.xlsx(workbookExporter.gamesFileName(), file);
+        }
         com.fivetech.dashboard.domain.vo.overview.RankingBoardVO vo = sectionService.rankingBoard(query);
         // 分析区展示精度：金额取整、百分数 1 位小数（导出直接调 service，保留两位）
         if (vo.getBonus() != null)
@@ -124,7 +136,7 @@ public class OverviewController extends BaseController
         {
             vo.getGames().applyViewScale();
         }
-        return AjaxResult.success(vo);
+        return ResponseEntity.ok(AjaxResult.success(vo));
     }
 
     /**

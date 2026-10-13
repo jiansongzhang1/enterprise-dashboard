@@ -120,8 +120,43 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         Map<String, BigDecimal> totalRow = new java.util.LinkedHashMap<>();
         gateway.queryTotals(slotRequest(siteCode, main, columns))
             .forEach((code, value) -> totalRow.put(code, normalizer.normalize(code, value)));
+        // 小时粒度：去重人数类的区间值改为各小时值的平均（只平均有值的小时，未发生 / 未到的小时不计入分母），
+        // 不再取日数据集的 active_day
+        if (granularity == Granularity.HOUR)
+        {
+            for (String code : HOUR_AVERAGE_CODES)
+            {
+                if (totalRow.containsKey(code))
+                {
+                    totalRow.put(code, averageOfPresent(series.get(code)));
+                }
+            }
+        }
         vo.setTotalRow(totalRow);
         return vo;
+    }
+
+    /** 小时粒度时区间值取「各小时平均」的指标 */
+    private static final java.util.Set<String> HOUR_AVERAGE_CODES = java.util.Set.of("active");
+
+    /** 有值的元素求算术平均，保留 1 位小数；没有任何值返回 null */
+    private static BigDecimal averageOfPresent(List<BigDecimal> values)
+    {
+        if (values == null)
+        {
+            return null;
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int n = 0;
+        for (BigDecimal v : values)
+        {
+            if (v != null)
+            {
+                sum = sum.add(v);
+                n++;
+            }
+        }
+        return n == 0 ? null : sum.divide(BigDecimal.valueOf(n), 1, java.math.RoundingMode.HALF_UP);
     }
 
     private MetricSlotRequest slotRequest(String siteCode, ResolvedRange range,
