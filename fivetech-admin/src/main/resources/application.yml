@@ -627,8 +627,8 @@ token:
   header: Authorization
   # 令牌密钥
   secret: ${TOKEN_SECRET:}
-  # 令牌有效期，单位：分钟
-  expireTime: ${TOKEN_EXPIRE_TIME:30}
+  # 令牌有效期，单位：分钟。滑动过期：期间有任何请求就重新计时，即连续不操作满这么久自动退出
+  expireTime: ${TOKEN_EXPIRE_TIME:60}
 
 # MyBatis配置
 mybatis:
