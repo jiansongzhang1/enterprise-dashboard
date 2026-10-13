@@ -423,11 +423,7 @@ public class OverviewServiceImpl implements IOverviewService
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
             }
-            // 对比期与主区间重叠时，环比失去意义——同一批数据自己和自己比
-            if (!cmpTo.isBefore(from) && !cmpTo.isEqual(from))
-            {
-                throw new ServiceException("对比期不得与主区间重叠", 4002);
-            }
+            // 对比期允许与主区间重叠（产品确认），不做重叠校验
             String launch = properties.getLaunchDate();
             if (StringUtils.isNotEmpty(launch) && cmpFrom.toLocalDate().toString().compareTo(launch) < 0)
             {
