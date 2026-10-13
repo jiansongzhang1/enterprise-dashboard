@@ -131,6 +131,19 @@ public class UdsProperties
             this.subtract = subtract == null ? new LinkedHashMap<>() : subtract;
         }
 
+        /** 指标编码 → [加数, 加数]（都是本系统指标编码），后端相加组装；任一为 NULL 则结果为 NULL */
+        private Map<String, java.util.List<String>> add = new LinkedHashMap<>();
+
+        public Map<String, java.util.List<String>> getAdd()
+        {
+            return add;
+        }
+
+        public void setAdd(Map<String, java.util.List<String>> add)
+        {
+            this.add = add == null ? new LinkedHashMap<>() : add;
+        }
+
         public java.util.List<String> getSingleDayFromDay()
         {
             return singleDayFromDay;

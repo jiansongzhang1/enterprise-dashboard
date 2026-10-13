@@ -299,8 +299,8 @@ dashboard:
             wT: wT_seconds
             # eg4 投注与盈收（ngr 由后端相减）
             bet: bet
-            # 派彩金额：GGR 构成里「投注總額 − 總派彩金額」的减数（小时数据集暂无此字段，小时序列为空）
-            pay: win_los_amt
+            # 玩家输赢 = 派彩 − 投注（平台赢时为负，GGR = −winLoss）；只用来组装派彩，不单独展示
+            winLoss: win_los_amt
             ggr: ggr
             killR: killR
             bonus: bonus
@@ -315,6 +315,9 @@ dashboard:
         subtract:
           net: [dep, wd]
           ngr: [ggr, bonus]
+        # 后端相加组装：派彩金额 = 投注总额 + 玩家输赢（win_los_amt 是玩家净输赢，不是派彩）
+        add:
+          pay: [bet, winLoss]
         # 区间只在一个自然日内（完整一天，或今天截至当前）时，这些去重人数指标的区间值取日数据集当天的值
         # （active → dashboard_overview_day_v2.active_day）。多天区间仍按各日日去重值取平均；
         # 未列出的（arppu、depU）不完整的一天保持 NULL

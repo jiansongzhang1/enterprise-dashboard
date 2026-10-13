@@ -689,9 +689,13 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
     /** 区间边界须落在粒度的整格上：HOUR 为整点，DAY / WEEK 为 00:00 */
     private void checkAligned(LocalDateTime from, LocalDateTime to, Granularity g)
     {
+        // 排行榜数据集都是小时级（India_DDHH / uds_hh），区间合计按小时边界查即可：
+        // 日 / 周粒度只要求起点在 00:00，终点允许是整点（含今天截至当前，如「近 30 天」到今天 10:00）
+        boolean wholeHours = from.getMinute() == 0 && from.getSecond() == 0
+            && to.getMinute() == 0 && to.getSecond() == 0;
         boolean ok = g == Granularity.HOUR
-            ? from.getMinute() == 0 && to.getMinute() == 0
-            : from.toLocalTime().equals(java.time.LocalTime.MIDNIGHT) && to.toLocalTime().equals(java.time.LocalTime.MIDNIGHT);
+            ? wholeHours
+            : wholeHours && from.toLocalTime().equals(java.time.LocalTime.MIDNIGHT);
         if (!ok)
         {
             throw new ServiceException("区间边界与粒度 " + g.name() + " 不对齐", 4001);

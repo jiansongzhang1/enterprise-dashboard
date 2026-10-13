@@ -31,7 +31,7 @@ public final class OverviewMetricText
         put("dep", "存款總額", "所有會員成功存款金額加總");
         put("wd", "提款總額", "所有會員成功提款金額加總");
         put("net", "存提差", "存款總額 − 提款總額");
-        put("arppu", "ARPPU", "存款總額 ÷ 去重存款人數");
+        put("arppu", "ARPPU", "存款總額 ÷ 去重存款人數。支援按小時／日去重，僅支援查看單日資料。");
         put("ftdA", "首存ARPPU", "首存總金額 ÷ 首存人數");
         put("dOkR", "存款成功率", "存款成功筆數 ÷ 存款總嘗試筆數 × 100%");
         put("dT", "平均到帳時間", "存款自送出到入帳的平均耗時");
@@ -40,9 +40,9 @@ public final class OverviewMetricText
         put("bonus", "發放贈金總額", "各贈金項目實際發放金額加總");
         put("bonusR", "贈金比", "贈金發放總額 ÷ 投注總額 × 100%");
         put("bet", "投注總額", "所有投注金額加總");
-        put("ggr", "GGR", "投注總額 − 總派彩金額");
+        put("ggr", "GGR", "0 − 玩家輸贏（win loss amount）");
         put("killR", "平均殺率", "GGR ÷ 投注總額");
-        put("active", "活躍人數", "有投注行為的去重會員數");
+        put("active", "活躍人數", "有投注行為的去重會員數。支援按小時／日去重，僅支援查看單日資料。");
         put("login", "登錄人數", "完成登入的去重會員數");
         put("ngr", "NGR", "GGR − 發放贈金總額");
         put("turnX", "流水倍數", "投注總額 ÷ 存款總額");

@@ -197,15 +197,36 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return result;
     }
 
-    /** 把需要后端相减的指标展开成操作数，其余原样保留 */
+    /** 后端组装指标（overview.subtract / overview.add）的两个操作数；不是组装指标返回 null */
+    private List<String> composedOps(String code)
+    {
+        UdsProperties.Overview ov = properties.getOverview();
+        List<String> ops = ov.getSubtract().get(code);
+        if (ops == null)
+        {
+            ops = ov.getAdd().get(code);
+        }
+        return ops != null && ops.size() == 2 ? ops : null;
+    }
+
+    /** 按 overview.subtract（a − b）或 overview.add（a + b）组装；任一为 NULL 则 NULL */
+    private BigDecimal compose(String code, BigDecimal a, BigDecimal b)
+    {
+        if (a == null || b == null)
+        {
+            return null;
+        }
+        return properties.getOverview().getSubtract().containsKey(code) ? a.subtract(b) : a.add(b);
+    }
+
+    /** 把需要后端相减 / 相加的指标展开成操作数，其余原样保留 */
     private Set<String> expand(List<String> codes)
     {
-        Map<String, List<String>> subtract = properties.getOverview().getSubtract();
         Set<String> fetch = new LinkedHashSet<>();
         for (String code : codes)
         {
-            List<String> ops = subtract.get(code);
-            if (ops != null && ops.size() == 2)
+            List<String> ops = composedOps(code);
+            if (ops != null)
             {
                 fetch.addAll(ops);
             }
@@ -215,12 +236,6 @@ public class UdsMetricDataGateway implements MetricDataGateway
             }
         }
         return fetch;
-    }
-
-    /** a − b；任一为 NULL 则 NULL（不把缺项当 0），负值合法 */
-    private static BigDecimal minus(BigDecimal a, BigDecimal b)
-    {
-        return a == null || b == null ? null : a.subtract(b);
     }
 
     // ===================== 指标序列 =====================
@@ -269,15 +284,15 @@ public class UdsMetricDataGateway implements MetricDataGateway
 
         for (String code : request.getMetricCodes())
         {
-            List<String> ops = ov.getSubtract().get(code);
-            if (ops != null && ops.size() == 2)
+            List<String> ops = composedOps(code);
+            if (ops != null)
             {
                 List<BigDecimal> a = raw.get(ops.get(0));
                 List<BigDecimal> b = raw.get(ops.get(1));
                 List<BigDecimal> out = result.get(code);
                 for (int i = 0; i < points; i++)
                 {
-                    out.set(i, minus(a == null ? null : a.get(i), b == null ? null : b.get(i)));
+                    out.set(i, compose(code, a == null ? null : a.get(i), b == null ? null : b.get(i)));
                 }
             }
             else if (raw.containsKey(code))
@@ -546,11 +561,11 @@ public class UdsMetricDataGateway implements MetricDataGateway
 
         for (String code : request.getMetricCodes())
         {
-            List<String> ops = ov.getSubtract().get(code);
-            if (ops != null && ops.size() == 2)
+            List<String> ops = composedOps(code);
+            if (ops != null)
             {
                 // 不能先算每小时再 SUM：某小时一项 NULL 会丢掉其他存在的金额
-                result.put(code, minus(raw.get(ops.get(0)), raw.get(ops.get(1))));
+                result.put(code, compose(code, raw.get(ops.get(0)), raw.get(ops.get(1))));
             }
             else
             {

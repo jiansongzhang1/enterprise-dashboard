@@ -2,6 +2,7 @@ package com.fivetech.dashboard.service.impl;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.math.BigDecimal;
@@ -112,13 +113,30 @@ public class OverviewServiceImpl implements IOverviewService
         }
 
         Granularity granularity = query.getGranularity() == null ? Granularity.HOUR : query.getGranularity();
+
+        // 终点统一到「当前整点」（站点时区），只返回已结束的小时：
+        // · 小时粒度且截止日期是今天（前后端约定）：忽略前端传的小时，终点 = 当前整点。
+        //   例：现在 09:25，slotTo 传 06:00 / 10:00 / 次日 00:00 都按 09:00 处理，返回 00:00–09:00 共 9 个小时；
+        // · 其他粒度：终点晚于当前整点时截到当前整点（未结束的小时没有数据）。
+        // 当前整点不晚于起点（如 00:25 查今天，还没有任何完整小时）时不调整，避免区间为空
+        Duration clampedBy = Duration.ZERO;
+        LocalDateTime currentHour = LocalDateTime.now(ZoneId.of(properties.getTimezone())).truncatedTo(ChronoUnit.HOURS);
+        boolean endsToday = to.minusNanos(1).toLocalDate().equals(currentHour.toLocalDate());
+        boolean pinToNow = granularity == Granularity.HOUR ? endsToday || to.isAfter(currentHour) : to.isAfter(currentHour);
+        if (pinToNow && currentHour.isAfter(from) && !to.isEqual(currentHour))
+        {
+            clampedBy = Duration.between(currentHour, to);
+            to = currentHour;
+            notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至最近完整小時",
+                "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時尚未結束）"));
+        }
         Granularity effective = downgrade(from, to, granularity, notices);
 
         OverviewSlotVO slot = buildSlot(from, to, effective);
         vo.setSlot(slot);
 
         // ---------- 2. 对比期 ----------
-        vo.setCompare(resolveCompare(query, from, to, notices));
+        vo.setCompare(resolveCompare(query, from, to, clampedBy, notices));
         
 
         // ---------- 4. 上下文 ----------
@@ -381,7 +399,7 @@ public class OverviewServiceImpl implements IOverviewService
     }
 
     private OverviewCompareVO resolveCompare(OverviewQuery query, LocalDateTime from, LocalDateTime to,
-            List<OverviewNoticeVO> notices)
+            Duration clampedBy, List<OverviewNoticeVO> notices)
     {
         CompareType type = query.getCompareType() == null ? CompareType.PREV_PERIOD : query.getCompareType();
         if (type == CompareType.NONE)
@@ -395,6 +413,12 @@ public class OverviewServiceImpl implements IOverviewService
         {
             cmpFrom = parseSlot(query.getCompareFrom(), "compareFrom");
             cmpTo = parseSlot(query.getCompareTo(), "compareTo");
+            // 主区间终点被截到当前整点时，自定义对比期同步缩短，保持两段等长可比
+            // clampedBy 为负表示终点被往后推到当前整点，对比期同步加长
+            if (!clampedBy.isZero() && cmpTo.minus(clampedBy).isAfter(cmpFrom))
+            {
+                cmpTo = cmpTo.minus(clampedBy);
+            }
             if (!cmpTo.isAfter(cmpFrom))
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
@@ -756,6 +780,12 @@ public class OverviewServiceImpl implements IOverviewService
         {
             return ops.get(0) + "-" + ops.get(1);
         }
+        // 后端相加组装的指标（pay = bet + winLoss）
+        ops = udsProperties.getOverview().getAdd().get(code);
+        if (ops != null && ops.size() == 2)
+        {
+            return ops.get(0) + "+" + ops.get(1);
+        }
         for (UdsProperties.Dataset dataset : udsProperties.getDatasets().values())
         {
             String name = dataset.getMetrics().get(code);
@@ -794,10 +824,18 @@ public class OverviewServiceImpl implements IOverviewService
      * 反推会在派生指标身上出错：15.82% 这个转化率是「区间去重的首存人数 ÷ 区间去重的注册人数」，
      * 拿它乘回去得不到任何一个真实的数。</p>
      */
+    /** 不返回计算构成（composition）的指标，前端据此不显示「计算构成」Tab */
+    private static final Set<String> NO_COMPOSITION = Set.of("ggr");
+
     private com.fivetech.dashboard.domain.vo.MetricCompositionVO buildComposition(
             MetricDefinition def, Fetched fetched)
     {
         if (def == null || !"DERIVED".equalsIgnoreCase(def.getKind()))
+        {
+            return null;
+        }
+        // 产品要求不展示计算构成的派生指标（GGR：派彩金额上游没有字段，构成永远是半截算式）
+        if (NO_COMPOSITION.contains(def.getCode()))
         {
             return null;
         }
