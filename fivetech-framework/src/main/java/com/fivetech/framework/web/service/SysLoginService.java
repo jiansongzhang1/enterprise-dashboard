@@ -72,6 +72,9 @@ public class SysLoginService
     /** 两步登录凭证失效（超时未输入验证码 / 验证码错误次数过多）：前端收到后回到第一步 */
     public static final int LOGIN_TICKET_EXPIRED = 4011;
 
+    /** 账号尚未完成验证器绑定（未生成密钥 / 已生成但未确认）：前端收到后进入首次绑定流程 */
+    public static final int GA_NOT_BOUND = 4012;
+
     /** 第一步通过后，多少分钟内必须完成验证码 */
     @Value("${user.login.ticketMinutes:5}")
     private int ticketMinutes;
@@ -210,11 +213,11 @@ public class SysLoginService
     {
         if (StringUtils.isNull(user) || StringUtils.isEmpty(user.getGaSecret()))
         {
-            throw new ServiceException(MessageUtils.message("user.ga.secret.missing"));
+            throw new ServiceException(MessageUtils.message("user.ga.secret.missing"), GA_NOT_BOUND);
         }
         if (user.getGaStatus() == null || user.getGaStatus().intValue() != GaConstants.GA_STATUS_BOUND)
         {
-            throw new ServiceException(MessageUtils.message("user.ga.bind.pending"));
+            throw new ServiceException(MessageUtils.message("user.ga.bind.pending"), GA_NOT_BOUND);
         }
     }
 

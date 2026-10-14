@@ -65,6 +65,7 @@ public class SysLoginController
 
     /**
      * 两步登录 · 第一步：帐号 + 密码。通过后返回一次性 ticket（默认 5 分钟有效）
+     * 密码正确但尚未完成验证器绑定时 code = 4012，前端进入首次绑定流程（/ga/bind/start）
      *
      * @param loginBody username、password
      * @return data: ticket、expireSeconds
