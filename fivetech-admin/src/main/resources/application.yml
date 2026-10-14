@@ -89,8 +89,8 @@ spring:
   mail:
     host: ${MAIL_HOST:email-smtp.ap-southeast-1.amazonaws.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:AKIAWT4LD4WRGYCR44DV}
-    password: ${MAIL_PASSWORD:BJtVu2GKm+mdArnBl7O4ggaJzIR+vBR2c+AuZeAif8z1}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     protocol: ${MAIL_PROTOCOL:smtp}
     default-encoding: UTF-8
     properties:
@@ -626,9 +626,9 @@ token:
   # 令牌自定义标识return userId != null && 1L == userId;
   header: Authorization
   # 令牌密钥
-  secret: ${TOKEN_SECRET:0ce51bf42033cfcf3805e49a15dee5818802f534e8d4958122c5c4bcea63cb254a1068d727a10c2db5307a8240db083a}
-  # 令牌有效期，单位：分钟
-  expireTime: ${TOKEN_EXPIRE_TIME:30}
+  secret: ${TOKEN_SECRET:}
+  # 令牌有效期，单位：分钟。滑动过期：期间有任何请求就重新计时，即连续不操作满这么久自动退出
+  expireTime: ${TOKEN_EXPIRE_TIME:60}
 
 # MyBatis配置
 mybatis:

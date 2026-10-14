@@ -47,7 +47,7 @@ public class TokenService
     @Value("${token.secret:.secret}")
     private String secret;
 
-    // 令牌有效期（默认30分钟）
+    // 令牌有效期（默认60分钟，滑动过期）
     @Value("${token.expireTime}")
     private int expireTime;
 
@@ -55,7 +55,12 @@ public class TokenService
 
     protected static final long MILLIS_MINUTE = 60 * MILLIS_SECOND;
 
-    private static final Long MILLIS_MINUTE_TWENTY = 20 * 60 * 1000L;
+    /**
+     * 续期节流：距上次续期超过 1 分钟才重写缓存。
+     * 原来是「剩余不足 20 分钟才续期」，实际的不操作退出时间会在 (有效期 − 20) ~ 有效期 之间浮动；
+     * 改成按分钟续期后，不操作退出时间稳定在有效期（误差 ≤ 1 分钟），且不会每个请求都写一次 Redis
+     */
+    private static final long REFRESH_INTERVAL = 60 * 1000L;
 
     @Autowired
     private RedisCache redisCache;
@@ -132,16 +137,15 @@ public class TokenService
     }
 
     /**
-     * 验证令牌有效期，相差不足20分钟，自动刷新缓存
+     * 验证令牌有效期：距上次续期超过 1 分钟就自动续期（滑动过期）
      * 
      * @param loginUser 登录信息
      * @return 令牌
      */
     public void verifyToken(LoginUser loginUser)
     {
-        long expireTime = loginUser.getExpireTime();
         long currentTime = System.currentTimeMillis();
-        if (expireTime - currentTime <= MILLIS_MINUTE_TWENTY)
+        if (currentTime - loginUser.getLoginTime() >= REFRESH_INTERVAL)
         {
             refreshToken(loginUser);
         }
