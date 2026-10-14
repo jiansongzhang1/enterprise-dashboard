@@ -16,9 +16,15 @@ import com.fivetech.common.utils.ServletUtils;
 import com.fivetech.common.utils.StringUtils;
 
 /**
- * 仪表板接口（/dashboard/**）IP 白名单。
+ * 内部管理接口 IP 白名单。
  * <p>
- * 配置（{@code dashboard.ip-whitelist.*}）：
+ * 拦截范围在 {@link com.fivetech.framework.config.ResourcesConfig} 注册：<b>所有接口都拦</b>，
+ * 只放过 {@code security.admin-ip-whitelist.exclude-paths} 里的路径——仪表板（/dashboard/**）、登录与账号自助
+ * （登录、GA 绑定、账号启用、getInfo / getRouters、个人中心改密码）及页面运行必需的只读接口。
+ * 用户 / 角色 / 权限 / 部门 / 系统通知 / 日志等管理接口只能从白名单 IP 访问。
+ * 新增的 Controller 默认受白名单保护，不会因为忘了登记而对外暴露。
+ * <p>
+ * 配置（{@code security.admin-ip-whitelist.*}）：
  * <ul>
  *   <li>{@code enabled}：总开关，默认 false</li>
  *   <li>{@code allowed}：逗号分隔，支持单个 IP（IPv4 / IPv6）和 CIDR 网段，如 {@code 1.2.3.4,10.0.0.0/8}</li>
@@ -34,24 +40,24 @@ import com.fivetech.common.utils.StringUtils;
  * @author fivetech
  */
 @Component
-public class DashboardIpWhitelistInterceptor implements HandlerInterceptor
+public class AdminIpWhitelistInterceptor implements HandlerInterceptor
 {
-    private static final Logger log = LoggerFactory.getLogger(DashboardIpWhitelistInterceptor.class);
+    private static final Logger log = LoggerFactory.getLogger(AdminIpWhitelistInterceptor.class);
 
     /** 只接受 IP 字面量，避免 InetAddress.getByName 对主机名做 DNS 解析 */
     private static final java.util.regex.Pattern IP_LITERAL =
         java.util.regex.Pattern.compile("^(\\d{1,3}(\\.\\d{1,3}){3}|[0-9a-fA-F.]*:[0-9a-fA-F:.]*)$");
 
-    @Value("${dashboard.ip-whitelist.enabled:false}")
+    @Value("${security.admin-ip-whitelist.enabled:false}")
     private boolean enabled;
 
-    @Value("${dashboard.ip-whitelist.allowed:}")
+    @Value("${security.admin-ip-whitelist.allowed:}")
     private String allowed;
 
-    @Value("${dashboard.ip-whitelist.client-ip-header:}")
+    @Value("${security.admin-ip-whitelist.client-ip-header:}")
     private String clientIpHeader;
 
-    @Value("${dashboard.ip-whitelist.trusted-proxy-hops:1}")
+    @Value("${security.admin-ip-whitelist.trusted-proxy-hops:1}")
     private int trustedProxyHops;
 
     private volatile List<byte[][]> rules;
@@ -71,7 +77,7 @@ public class DashboardIpWhitelistInterceptor implements HandlerInterceptor
         log.warn("[ip-whitelist] 拒绝访问 ip={} uri={} xff={}", ip, request.getRequestURI(),
             request.getHeader("X-Forwarded-For"));
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        ServletUtils.renderString(response, JSON.toJSONString(AjaxResult.error(403, "当前网络（" + ip + "）不在访问白名单内")));
+        ServletUtils.renderString(response, JSON.toJSONString(AjaxResult.error(403, "当前网络（" + ip + "）不在管理接口访问白名单内")));
         return false;
     }
 

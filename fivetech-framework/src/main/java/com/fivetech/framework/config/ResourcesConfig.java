@@ -1,7 +1,9 @@
 package com.fivetech.framework.config;
 
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.CacheControl;
@@ -14,7 +16,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.config.FiveTechConfig;
 import com.fivetech.common.constant.Constants;
-import com.fivetech.framework.interceptor.DashboardIpWhitelistInterceptor;
+import com.fivetech.framework.interceptor.AdminIpWhitelistInterceptor;
 import com.fivetech.framework.interceptor.RepeatSubmitInterceptor;
 
 /**
@@ -29,7 +31,11 @@ public class ResourcesConfig implements WebMvcConfigurer
     private RepeatSubmitInterceptor repeatSubmitInterceptor;
 
     @Autowired
-    private DashboardIpWhitelistInterceptor dashboardIpWhitelistInterceptor;
+    private AdminIpWhitelistInterceptor adminIpWhitelistInterceptor;
+
+    /** 不受管理接口 IP 白名单限制的路径（Ant 风格，逗号分隔），见 security.admin-ip-whitelist.exclude-paths */
+    @Value("${security.admin-ip-whitelist.exclude-paths:}")
+    private String adminIpWhitelistExcludePaths;
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry)
@@ -51,8 +57,11 @@ public class ResourcesConfig implements WebMvcConfigurer
     public void addInterceptors(InterceptorRegistry registry)
     {
         registry.addInterceptor(repeatSubmitInterceptor).addPathPatterns("/**");
-        // 仪表板接口 IP 白名单（dashboard.ip-whitelist.*），暂不启用：取消注释并配置 enabled=true 与 allowed 后生效
-        // registry.addInterceptor(dashboardIpWhitelistInterceptor).addPathPatterns("/dashboard/**");
+        // 内部管理接口 IP 白名单：拦全部，只放过 exclude-paths（仪表板、登录与账号自助等）。
+        // 总开关 security.admin-ip-whitelist.enabled，关闭时拦截器直接放行
+        String[] excludes = Arrays.stream(adminIpWhitelistExcludePaths.split(","))
+            .map(String::trim).filter(s -> !s.isEmpty()).toArray(String[]::new);
+        registry.addInterceptor(adminIpWhitelistInterceptor).addPathPatterns("/**").excludePathPatterns(excludes);
     }
 
     /**
