@@ -71,7 +71,8 @@ spring:
       # 设置总上传的文件大小
       max-request-size: 20MB
   jackson:
-    time-zone: GMT+8
+    # 统一使用 IST（印度标准时间）
+    time-zone: Asia/Kolkata
     date-format: yyyy-MM-dd HH:mm:ss
   # Redis配置，生产环境通过环境变量覆盖
   data:
@@ -118,8 +119,8 @@ notification:
       portal-url: ${MAIL_PORTAL_URL:}
       # 启用链接有效小时数（24–168）
       link-expire-hours: ${MAIL_LINK_EXPIRE_HOURS:72}
-      # 邮件中时间的显示时区，如 Asia/Taipei；留空使用服务器时区
-      time-zone: ${MAIL_TIME_ZONE:}
+      # 邮件中时间的显示时区（IANA 名称），默认 IST
+      time-zone: ${MAIL_TIME_ZONE:Asia/Kolkata}
   telegram:
     enabled: ${TELEGRAM_ENABLED:false}
     bot-token: ${TELEGRAM_BOT_TOKEN:}
@@ -646,11 +647,13 @@ pagehelper:
   params: count=countSql
 
 # Springdoc配置
+# 生产默认关闭；本地开发需要时设 SWAGGER_ENABLED=true
 springdoc:
   api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
     path: /v3/api-docs
   swagger-ui:
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:false}
     path: /swagger-ui.html
     tags-sorter: alpha
   group-configs:

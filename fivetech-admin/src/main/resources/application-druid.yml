@@ -42,7 +42,8 @@ spring:
             webStatFilter: 
                 enabled: true
             statViewServlet:
-                enabled: true
+                # 监控页生产默认关闭；本地排查时设 DRUID_STAT_VIEW_ENABLED=true
+                enabled: ${DRUID_STAT_VIEW_ENABLED:false}
                 # 设置白名单，不填则允许所有访问
                 allow:
                 url-pattern: /druid/*

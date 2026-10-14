@@ -3,7 +3,7 @@
 AppName=fivetech-admin.jar
 
 # JVM参数
-JVM_OPTS="-Dname=$AppName -Duser.timezone=Asia/Tokyo -Xms512m -Xmx1024m -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=512m -XX:+HeapDumpOnOutOfMemoryError -Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=5,filesize=20M"
+JVM_OPTS="-Dname=$AppName -Duser.timezone=Asia/Kolkata -Xms512m -Xmx1024m -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=512m -XX:+HeapDumpOnOutOfMemoryError -Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=5,filesize=20M"
 APP_HOME=`pwd`
 LOG_PATH=$APP_HOME/logs/$AppName.log
 
