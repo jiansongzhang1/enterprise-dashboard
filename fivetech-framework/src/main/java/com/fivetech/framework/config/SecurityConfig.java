@@ -1,6 +1,7 @@
 package com.fivetech.framework.config;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -58,6 +59,10 @@ public class SecurityConfig
     @Autowired
     private PermitAllUrlProperties permitAllUrl;
 
+    /** management 独立端口（只对内网开放），/actuator/metrics 只在这个端口上免登录 */
+    @Value("${management.server.port:8081}")
+    private int managementPort;
+
 	/**
 	 * 身份验证实现
 	 */
@@ -103,9 +108,12 @@ public class SecurityConfig
                 requests.requestMatchers("/login", "/login/password", "/login/verify", "/ga/bind/start", "/ga/bind/confirm", "/account/activation/**").permitAll()
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
-                    .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/dashboard/**").permitAll()
+                    .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
                     // 健康检查供外部探活，正常走 management 独立端口；此处兜底放行，避免探活拿到 401
                     .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                    // 指标端点供运维采集 JVM 堆等，只在 management 端口放行，业务端口上仍需登录
+                    .requestMatchers(req -> req.getLocalPort() == managementPort
+                            && req.getRequestURI().startsWith("/actuator/metrics")).permitAll()
                     // 除上面外的所有请求全部需要鉴权认证
                     .anyRequest().authenticated();
             })

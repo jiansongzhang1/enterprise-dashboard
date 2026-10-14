@@ -1,6 +1,8 @@
 package com.fivetech.system.service.impl;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -587,8 +589,10 @@ public class SysUserServiceImpl implements ISysUserService
                 {
                     BeanValidators.validateWithException(validator, user);
                     deptService.checkDeptDataScope(user.getDeptId());
-                    String password = configService.selectConfigByKey("sys.user.initPassword");
-                    user.setPassword(SecurityUtils.encryptPassword(password));
+                    // 不再使用默认初始密码（原 sys.user.initPassword=123456）：写入无人知道的随机密码，
+                    // 账号在管理员「重置密码」或员工通过启用链接设密码之前无法登录
+                    user.setPassword(SecurityUtils.encryptPassword(unusablePassword()));
+                    user.setPwdUpdateDate(null);
                     user.setCreateBy(operName);
                     userMapper.insertUser(user);
                     successNum++;
@@ -628,8 +632,18 @@ public class SysUserServiceImpl implements ISysUserService
         }
         else
         {
-            successMsg.insert(0, "恭喜您，数据已全部导入成功！共 " + successNum + " 条，数据如下：");
+            successMsg.insert(0, "恭喜您，数据已全部导入成功！共 " + successNum + " 条，新账号需在用户列表中「重置密码」后才能登录，数据如下：");
         }
         return successMsg.toString();
+    }
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /** 无人知道的随机密码，只用于占位（BCrypt 后入库），账号需另行设置密码才能登录 */
+    private static String unusablePassword()
+    {
+        byte[] bytes = new byte[24];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

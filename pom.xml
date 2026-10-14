@@ -30,11 +30,37 @@
         <jwt.version>0.9.1</jwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
         <springdoc.version>3.1.0</springdoc.version>
+        <tomcat.version>11.0.26</tomcat.version>
+        <commons-compress.version>1.27.1</commons-compress.version>
     </properties>
 
     <!-- 依赖声明 -->
     <dependencyManagement>
         <dependencies>
+
+            <!-- 安全修复：覆盖 Spring Boot BOM 管理的版本，必须写在 BOM import 之前才生效 -->
+            <!-- Tomcat 11.0.22 受 11.0.24/11.0.25 修复的多个漏洞影响 -->
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-core</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-el</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-websocket</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <!-- poi 4.1.2 传递引入的 commons-compress 1.19 有多个 DoS 漏洞（CVE-2021-35515~36090、CVE-2024-25710） -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
+            </dependency>
 
             <!-- SpringBoot的依赖配置 -->
             <dependency>

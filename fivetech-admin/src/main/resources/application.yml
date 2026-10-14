@@ -34,7 +34,8 @@ server:
 # 日志配置
 logging:
   level:
-    com.fivetech: debug
+    # 生产默认 info；排查时设 APP_LOG_LEVEL=debug 重启（debug 会打印 SQL 参数）
+    com.fivetech: ${APP_LOG_LEVEL:info}
     # UDS 调用的请求体按 DEBUG 记录，默认关闭；排查时设环境变量 UDS_LOG_LEVEL=debug 重启即可看到
     # （失败请求的请求体始终会记：4403 记 INFO，其他错误记 WARN）
     com.fivetech.dashboard.gateway.uds: ${UDS_LOG_LEVEL:info}
@@ -590,10 +591,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # metrics 供运维采集 JVM 堆等指标（只在内网 8081 上）
+        include: health,info,metrics
   endpoint:
     health:
       show-details: never
+      # 只显示各组件 UP/DOWN（db、redis、diskSpace…），不暴露连接串等细节
+      show-components: always
       probes:
         enabled: true
   health:
