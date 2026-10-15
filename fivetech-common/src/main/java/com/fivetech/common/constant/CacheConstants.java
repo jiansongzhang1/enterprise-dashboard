@@ -41,4 +41,9 @@ public class CacheConstants
      * 登录账户密码错误次数缓存 key
      */
     public static final String PWD_ERR_CNT_KEY = "pwd_err_cnt:";
+
+    /**
+     * 登录第二步（Google Authenticator 验证码）错误次数缓存 key，按帐号累计
+     */
+    public static final String GA_ERR_CNT_KEY = "ga_err_cnt:";
 }

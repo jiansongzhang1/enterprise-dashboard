@@ -54,6 +54,9 @@ public class SysAccountActivationService
     @Autowired
     private SysPasswordService passwordService;
 
+    @Autowired
+    private TokenService tokenService;
+
     /**
      * 生成新的启用链接并发送邮件；该账号之前未使用的链接立即作废。
      *
@@ -76,6 +79,32 @@ public class SysAccountActivationService
     }
 
     /**
+     * 管理员「重设密码与验证器」：原密码换成无人知道的随机密码、清空验证器（待绑定）、
+     * 作废旧链接并踢出全部会话，然后发一次性链接，员工依序设置新密码、在登录页绑定新验证器。
+     *
+     * @param user 已启用、未停用的账号（需含 userId、userName、email）
+     * @param unusableEncodedPassword 已加密的随机占位密码
+     * @param operator 操作人
+     */
+    @Transactional
+    public void resetPasswordAndGa(SysUser user, String unusableEncodedPassword, String operator)
+    {
+        SysUser change = new SysUser();
+        change.setUserId(user.getUserId());
+        change.setPassword(unusableEncodedPassword);
+        change.setUpdateBy(operator);
+        // resetPwd 会把被替换的旧密码写入历史：员工设新密码时不能沿用旧密码
+        userService.resetPwd(change);
+        userService.resetGaSecret(user.getUserId(), operator);
+        IssuedLink link = linkService.issue(user.getUserId(), SysAccountLink.TYPE_RESET,
+                accountMailService.getLinkExpireHours(), operator);
+        tokenService.forceLogoutByUserId(user.getUserId());
+        passwordService.clearLoginRecordCache(user.getUserName());
+        accountMailService.sendResetPasswordAndGa(user, link.getToken(), link.getExpireTime());
+        log.info("管理员 {} 重设了账号 {} 的密码与验证器", operator, user.getUserName());
+    }
+
+    /**
      * 打开链接时校验，不改变链接状态。
      *
      * @return valid=true 时带 userName、expireTime；否则带 errorCode、msg
@@ -83,8 +112,8 @@ public class SysAccountActivationService
     public Map<String, Object> inspect(String token)
     {
         Map<String, Object> result = new LinkedHashMap<>();
-        SysAccountLink link = linkService.findUsable(token, SysAccountLink.TYPE_ACTIVATE);
-        SysUser user = link == null ? null : loadActivatableUser(link.getUserId());
+        SysAccountLink link = findLink(token);
+        SysUser user = link == null ? null : loadUserFor(link);
         if (user == null)
         {
             result.put("valid", false);
@@ -93,6 +122,7 @@ public class SysAccountActivationService
             return result;
         }
         result.put("valid", true);
+        result.put("linkType", link.getLinkType());
         result.put("userName", user.getUserName());
         result.put("expireTime", link.getExpireTime());
         return result;
@@ -106,12 +136,13 @@ public class SysAccountActivationService
     @Transactional
     public Map<String, Object> complete(String token, String password, String confirmPassword)
     {
-        SysAccountLink link = linkService.findUsable(token, SysAccountLink.TYPE_ACTIVATE);
-        SysUser user = link == null ? null : loadActivatableUser(link.getUserId());
+        SysAccountLink link = findLink(token);
+        SysUser user = link == null ? null : loadUserFor(link);
         if (user == null)
         {
             return fail(LINK_INVALID, MSG_LINK_INVALID);
         }
+        boolean reset = SysAccountLink.TYPE_RESET.equals(link.getLinkType());
         if (password == null || !password.equals(confirmPassword))
         {
             return fail(PASSWORD_MISMATCH, MSG_PASSWORD_MISMATCH);
@@ -127,20 +158,57 @@ public class SysAccountActivationService
         }
 
         // 先占用链接再改密码：两次并发提交只有一次能占用成功
+        String encoded = SecurityUtils.encryptPassword(password);
         if (!linkService.markUsed(link.getLinkId())
-                || userService.activateUser(user.getUserId(), SecurityUtils.encryptPassword(password)) != 1)
+                || (reset ? userService.setPasswordByLink(user.getUserId(), encoded, user.getUserName())
+                          : userService.activateUser(user.getUserId(), encoded)) != 1)
         {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             return fail(LINK_INVALID, MSG_LINK_INVALID);
         }
         linkService.revokeAll(user.getUserId());
         passwordService.clearLoginRecordCache(user.getUserName());
-        log.info("账号已通过邮件链接启用：{}", user.getUserName());
+        log.info(reset ? "账号已通过邮件链接设置新密码（重设密码与验证器）：{}" : "账号已通过邮件链接启用：{}", user.getUserName());
+        if (!reset)
+        {
+            // 第 6 封「帳號已啟用」：只在首次启用时发；重设密码与验证器后设新密码不发
+            accountMailService.sendAccountActivated(user);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", true);
+        result.put("linkType", link.getLinkType());
         result.put("userName", user.getUserName());
         return result;
+    }
+
+    /** 按凭证找可用链接：启用链接或重设链接 */
+    private SysAccountLink findLink(String token)
+    {
+        SysAccountLink link = linkService.findUsable(token, SysAccountLink.TYPE_ACTIVATE);
+        return link != null ? link : linkService.findUsable(token, SysAccountLink.TYPE_RESET);
+    }
+
+    private SysUser loadUserFor(SysAccountLink link)
+    {
+        return SysAccountLink.TYPE_RESET.equals(link.getLinkType())
+                ? loadResettableUser(link.getUserId())
+                : loadActivatableUser(link.getUserId());
+    }
+
+    /** 重设链接：账号已启用、未删除、未停用 */
+    private SysUser loadResettableUser(Long userId)
+    {
+        SysUser user = userService.selectUserById(userId);
+        if (user == null
+                || UserStatus.DELETED.getCode().equals(user.getDelFlag())
+                || UserStatus.DISABLE.getCode().equals(user.getStatus())
+                || user.getActivateTime() == null
+                || StringUtils.isEmpty(user.getUserName()))
+        {
+            return null;
+        }
+        return user;
     }
 
     /** 账号仍处于待启用、未删除、未停用时才允许使用启用链接 */

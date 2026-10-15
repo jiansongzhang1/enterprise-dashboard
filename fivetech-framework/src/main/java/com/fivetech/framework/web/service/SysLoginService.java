@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import com.fivetech.common.constant.Constants;
 import com.fivetech.common.constant.GaConstants;
+import com.fivetech.framework.notification.AccountMailService;
 import com.fivetech.common.constant.UserConstants;
 import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.domain.model.LoginUser;
@@ -46,6 +47,9 @@ import com.fivetech.system.service.ISysUserService;
 public class SysLoginService
 {
     @Autowired
+    private AccountMailService accountMailService;
+
+    @Autowired
     private TokenService tokenService;
 
     @Resource
@@ -66,6 +70,9 @@ public class SysLoginService
     @Autowired
     private SysPermissionService permissionService;
 
+    @Autowired
+    private SysPasswordService passwordService;
+
     /** 两步登录：第一步通过后发的一次性凭证，Redis key 前缀 */
     private static final String LOGIN_TICKET_KEY = "login_ticket:";
 
@@ -75,10 +82,6 @@ public class SysLoginService
     /** 第一步通过后，多少分钟内必须完成验证码 */
     @Value("${user.login.ticketMinutes:5}")
     private int ticketMinutes;
-
-    /** 同一张凭证允许输错验证码的次数，达到即作废需重新登录；0 = 不限制 */
-    @Value("${user.login.ticketMaxCodeFails:5}")
-    private int ticketMaxCodeFails;
 
     /**
      * 登录验证
@@ -121,6 +124,11 @@ public class SysLoginService
         LoginUser loginUser;
         try
         {
+            // 验证码错误次数过多被锁定：锁定期内直接拒绝，不再校验密码
+            if (passwordService.isCodeLocked(username))
+            {
+                throw new ServiceException(passwordService.codeLockMessage());
+            }
             loginUser = authenticate(username, password);
             checkGaReady(loginUser.getUser());
         }
@@ -133,7 +141,6 @@ public class SysLoginService
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("userId", loginUser.getUserId());
         data.put("userName", loginUser.getUsername());
-        data.put("fails", 0);
         redisCache.setCacheObject(LOGIN_TICKET_KEY + ticket, data, ticketMinutes, TimeUnit.MINUTES);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -171,23 +178,26 @@ public class SysLoginService
                 throw new ServiceException(MessageUtils.message("user.blocked"));
             }
             checkGaReady(user);
+            // 已锁定（例如另一个窗口里刚输错到上限）：作废凭证，回到第一步并提示锁定
+            if (passwordService.isCodeLocked(username))
+            {
+                redisCache.deleteObject(key);
+                throw new ServiceException(passwordService.codeLockMessage(), LOGIN_TICKET_EXPIRED);
+            }
             if (!GoogleAuthenticatorUtils.verifyCode(user.getGaSecret(), code))
             {
-                int fails = ((Number) data.getOrDefault("fails", 0)).intValue() + 1;
-                if (ticketMaxCodeFails > 0 && fails >= ticketMaxCodeFails)
+                // 按帐号累计（不是按凭证），重新登录也不会清零；达到上限锁定 codeLockMinutes 分钟
+                int remaining = passwordService.recordCodeFailure(username);
+                if (remaining == 0)
                 {
                     redisCache.deleteObject(key);
-                    throw new ServiceException(MessageUtils.message("user.login.ticket.too.many"), LOGIN_TICKET_EXPIRED);
+                    // 只在验证码错误触发锁定时提醒（密码已正确，通常说明密码已泄露）；密码错误触发的锁定不发邮件
+                    accountMailService.sendCodeLocked(user, passwordService.getCodeLockMinutes());
+                    throw new ServiceException(passwordService.codeLockMessage(), LOGIN_TICKET_EXPIRED);
                 }
-                // 只更新错误次数，不延长有效期
-                long ttl = redisCache.getExpire(key);
-                if (ttl > 0)
-                {
-                    data.put("fails", fails);
-                    redisCache.setCacheObject(key, data, (int) ttl, TimeUnit.SECONDS);
-                }
-                throw new GoogleAuthenticatorException();
+                throw remaining > 0 ? new GoogleAuthenticatorException(remaining) : new GoogleAuthenticatorException();
             }
+            passwordService.clearCodeFailures(username);
             // 一次性：先删再发 token，并发重放只有一次能删成功
             if (!redisCache.deleteObject(key))
             {
@@ -208,6 +218,12 @@ public class SysLoginService
     /** 已开通且已绑定验证器，否则抛出对应提示（前端据「尚未完成绑定」切到绑定页） */
     private void checkGaReady(SysUser user)
     {
+        // 管理员重置验证器后：密钥为空、状态为待绑定 → 提示去登录页「绑定」重新绑定，而不是「未开通」
+        if (StringUtils.isNotNull(user) && StringUtils.isEmpty(user.getGaSecret())
+                && user.getGaStatus() != null && user.getGaStatus().intValue() == GaConstants.GA_STATUS_PENDING)
+        {
+            throw new ServiceException(MessageUtils.message("user.ga.bind.pending"));
+        }
         if (StringUtils.isNull(user) || StringUtils.isEmpty(user.getGaSecret()))
         {
             throw new ServiceException(MessageUtils.message("user.ga.secret.missing"));
@@ -277,13 +293,14 @@ public class SysLoginService
 
         GaBindInfo bindInfo = new GaBindInfo();
         bindInfo.setGaStatus(user.getGaStatus());
-        // 验证器里显示的名称默认是 gaIssuer（Yata），二维码不带用户名；
-        // 手动输入设置密钥时，帐户名称由用户自己填写，以用户填的为准
+        // 验证器里显示为「Yata: 用户名」：发行方取 gaIssuer（默认 Yata），帐户名取登录帐号，
+        // 一个手机上绑定多个帐号时可以区分；手动输入设置密钥时，帐户名称仍由用户自己填写
         String issuer = StringUtils.isNotEmpty(fivetechConfig.getGaIssuer()) ? fivetechConfig.getGaIssuer() : "Yata";
         bindInfo.setIssuer(issuer);
-        bindInfo.setAccount(issuer);
+        String account = StringUtils.isNotEmpty(user.getUserName()) ? user.getUserName() : issuer;
+        bindInfo.setAccount(account);
         bindInfo.setSecret(user.getGaSecret());
-        bindInfo.setOtpauthUrl(GoogleAuthenticatorUtils.buildOtpAuthUrl(issuer, null, user.getGaSecret()));
+        bindInfo.setOtpauthUrl(GoogleAuthenticatorUtils.buildOtpAuthUrl(issuer, account, user.getGaSecret()));
         return bindInfo;
     }
 

@@ -94,6 +94,9 @@ public class SysUser extends BaseEntity
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date activateTime;
 
+    /** 登录是否被锁定（密码或验证码错误次数达到上限，存 Redis，不入库）；仅用户列表返回 */
+    private Boolean locked;
+
     /** 部门对象 */
     @Excels({
         @Excel(name = "部门名称", targetAttr = "deptName", type = Type.EXPORT),
@@ -328,6 +331,16 @@ public class SysUser extends BaseEntity
     public void setActivateTime(Date activateTime)
     {
         this.activateTime = activateTime;
+    }
+
+    public Boolean getLocked()
+    {
+        return locked;
+    }
+
+    public void setLocked(Boolean locked)
+    {
+        this.locked = locked;
     }
 
     public SysDept getDept()

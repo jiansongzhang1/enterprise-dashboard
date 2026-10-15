@@ -53,8 +53,10 @@ user:
   login:
     # 两步登录：密码通过后多少分钟内必须输入 6 位验证码，超时需重新登录
     ticketMinutes: ${LOGIN_TICKET_MINUTES:5}
-    # 同一次登录允许输错验证码的次数，达到即需重新登录（防止拿到密码后穷举验证码）；0 = 不限制
+    # 帐号累计输错验证码的次数（按帐号，不按单次登录），达到即锁定 codeLockMinutes 分钟；0 = 不限制
     ticketMaxCodeFails: ${LOGIN_TICKET_MAX_CODE_FAILS:5}
+    # 验证码错误达到上限后的锁定分钟数；用户管理「解锁」或登录日志「解锁」可提前解锁
+    codeLockMinutes: ${LOGIN_CODE_LOCK_MINUTES:50}
 
 # Spring配置
 spring:

@@ -96,6 +96,15 @@ public interface SysUserMapper
     public int updateGaStatus(@Param("userId") Long userId, @Param("gaStatus") Integer gaStatus);
 
     /**
+     * 管理员重置 Google Authenticator：清空密钥，状态改为待绑定
+     *
+     * @param userId 用户ID
+     * @param updateBy 操作人
+     * @return 结果
+     */
+    public int resetGaSecret(@Param("userId") Long userId, @Param("updateBy") String updateBy);
+
+    /**
      * 通过启用链接设置密码并标记账号已启用；仅对待启用账号生效。
      *
      * @param userId 用户ID

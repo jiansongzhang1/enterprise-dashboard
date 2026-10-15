@@ -132,6 +132,50 @@ public class AccountMailService
                 user.getUserName(), now, zone()));
     }
 
+    /** 发送“验证器已重设”通知（管理员重置验证器后） */
+    public void sendGaReset(SysUser user)
+    {
+        Date now = new Date();
+        String loginUrl = StringUtils.hasText(portalUrl()) ? portalUrl() + "/login" : "";
+        submit(user, "验证器重设通知", () -> AccountMailTemplates.gaReset(platform(), user.getUserName(), now, zone(), loginUrl));
+    }
+
+    /**
+     * 发送“重设密码与验证器”邮件（含一次性设置链接，与启用邮件共用 /activate 页面）。
+     *
+     * @param token 链接凭证原文（只出现在邮件里，不写日志）
+     */
+    public void sendResetPasswordAndGa(SysUser user, String token, Date expireTime)
+    {
+        if (!canSendActivation())
+        {
+            log.warn("跳过重设密码与验证器邮件：邮件未启用或未配置 notification.email.account.portal-url，账号={}", userName(user));
+            return;
+        }
+        String url = portalUrl() + "/activate?token=" + token;
+        submit(user, "重设密码与验证器邮件", () -> AccountMailTemplates.resetPasswordAndGa(platform(),
+                user.getUserName(), url, expireTime, zone()));
+    }
+
+    /**
+     * 发送“账号已暂时锁定”通知：仅验证码连续错误触发锁定时调用。
+     *
+     * @param lockMinutes 锁定分钟数，用于计算解锁时间
+     */
+    public void sendCodeLocked(SysUser user, int lockMinutes)
+    {
+        Date now = new Date();
+        Date unlock = new Date(now.getTime() + lockMinutes * 60_000L);
+        submit(user, "验证码锁定通知", () -> AccountMailTemplates.codeLocked(platform(), user.getUserName(), now, unlock, zone()));
+    }
+
+    /** 发送“账号已启用”通知：仅账号首次通过启用链接完成启用时调用 */
+    public void sendAccountActivated(SysUser user)
+    {
+        Date now = new Date();
+        submit(user, "启用完成通知", () -> AccountMailTemplates.accountActivated(platform(), user.getUserName(), now, zone()));
+    }
+
     /** 发送“账号已重新启用”通知 */
     public void sendAccountEnabled(SysUser user)
     {

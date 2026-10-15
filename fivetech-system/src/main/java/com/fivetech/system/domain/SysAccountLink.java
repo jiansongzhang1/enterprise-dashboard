@@ -14,6 +14,9 @@ public class SysAccountLink
     /** 链接类型：启用账号 */
     public static final String TYPE_ACTIVATE = "ACTIVATE";
 
+    /** 链接类型：管理员重设密码与验证器后，员工设置新密码 */
+    public static final String TYPE_RESET = "RESET";
+
     private Long linkId;
 
     private Long userId;

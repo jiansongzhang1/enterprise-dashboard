@@ -100,17 +100,96 @@ public final class AccountMailTemplates
     }
 
     /**
-     * 帳號已停用。
+     * 帳號已停用（停用時未使用的設定連結同時作廢）。
      */
     public static Mail accountDisabled(String platform, String displayName, String userName,
             Date time, ZoneId zone)
     {
+        String p = escape(platform);
         StringBuilder body = new StringBuilder(1024);
-        body.append(greeting(displayName, userName));
-        body.append("<p>您的 ").append(escape(platform)).append(" 帳號已由管理員停用，停用期間無法登入。</p>");
-        body.append(table(row("登入帳號", escape(userName)) + row("停用時間", escape(formatTime(time, zone)))));
-        body.append(warning("如有疑問，請聯繫管理員。"));
-        return new Mail("【" + safeSubject(platform) + "】您的帳號已停用", wrap(body));
+        body.append("<p>您好，</p>");
+        body.append("<p>您的帳號已於 ").append(escape(formatTime(time, zone))).append(" 停用，目前無法登入 ")
+            .append(p).append("，先前寄出的設定連結也已失效。</p>");
+        body.append(accountLine(userName));
+        body.append("<p>如有疑問，請聯繫管理員。</p>");
+        return new Mail("【" + safeSubject(platform) + "】帳號已停用", wrap(body));
+    }
+
+    /**
+     * 驗證器已重設：管理員清空驗證器密鑰，員工用目前密碼登入後重新綁定。
+     *
+     * @param loginUrl 登入網址，未配置 portal-url 時為空，不顯示該行
+     */
+    public static Mail gaReset(String platform, String userName, Date time, ZoneId zone, String loginUrl)
+    {
+        String p = escape(platform);
+        StringBuilder body = new StringBuilder(1536);
+        body.append("<p>您好，</p>");
+        body.append("<p>管理員已於 ").append(escape(formatTime(time, zone))).append(" 重設您的驗證器，原驗證器已失效。</p>");
+        body.append(accountLine(userName));
+        body.append("<p>請使用此帳號與目前的密碼登入 ").append(p).append("，系統會引導您綁定新的驗證器，完成後即可正常使用。</p>");
+        if (hasText(loginUrl))
+        {
+            String url = escape(loginUrl);
+            body.append("<p>登入網址：<a href=\"").append(url).append("\">").append(url).append("</a></p>");
+        }
+        body.append("<ul style=\"padding-left:18px;color:#646a73;\">")
+            .append("<li>如您忘記密碼，請聯繫管理員改為重設密碼與驗證器。</li>")
+            .append("<li>如非本人申請，請立即聯繫管理員。</li>")
+            .append("</ul>");
+        return new Mail("【" + safeSubject(platform) + "】驗證器已重設", wrap(body));
+    }
+
+    /**
+     * 重設密碼與驗證器：一次性連結，員工依序設定新密碼、綁定新的驗證器。
+     */
+    public static Mail resetPasswordAndGa(String platform, String userName, String setupUrl,
+            Date expireTime, ZoneId zone)
+    {
+        String url = escape(setupUrl);
+        StringBuilder body = new StringBuilder(2048);
+        body.append("<p>您好，</p>");
+        body.append("<p>管理員已重設您的密碼與驗證器，原密碼與原驗證器均已失效。請點擊下方按鈕，依序設定新密碼並綁定新的驗證器。</p>");
+        body.append(accountLine(userName));
+        body.append("<p style=\"margin:24px 0;\"><a href=\"").append(url).append("\" ")
+            .append("style=\"display:inline-block;padding:10px 24px;background:#5b5bd6;color:#ffffff;")
+            .append("text-decoration:none;border-radius:6px;font-weight:600;\">開始設定</a></p>");
+        body.append("<p style=\"color:#646a73;\">若按鈕無法點擊，請複製以下網址至瀏覽器開啟：<br>")
+            .append("<span style=\"word-break:break-all;\">").append(url).append("</span></p>");
+        body.append("<p>此連結將於 <strong>").append(escape(formatTime(expireTime, zone)))
+            .append("</strong> 失效，且僅能使用一次。</p>");
+        body.append("<ul style=\"padding-left:18px;color:#646a73;\">")
+            .append("<li>如非本人申請，請立即聯繫管理員。</li>")
+            .append("<li>請勿轉寄此郵件。</li>")
+            .append("</ul>");
+        return new Mail(safeSubject(platform) + "重設密碼與驗證器", wrap(body));
+    }
+
+    /**
+     * 帳號已啟用：員工首次透過啟用連結設定密碼、完成啟用後系統自動發送。
+     */
+    public static Mail accountActivated(String platform, String userName, Date time, ZoneId zone)
+    {
+        StringBuilder body = new StringBuilder(1024);
+        body.append("<p>您好，</p>");
+        body.append("<p>您的帳號已於 ").append(escape(formatTime(time, zone))).append(" 完成啟用。</p>");
+        body.append(accountLine(userName));
+        body.append(warning("如非本人操作，請立即聯繫管理員。"));
+        return new Mail("【" + safeSubject(platform) + "】帳號已啟用", wrap(body));
+    }
+
+    /**
+     * 帳號已暫時鎖定：密碼正確但驗證碼連續輸入錯誤達上限。
+     */
+    public static Mail codeLocked(String platform, String userName, Date lockTime, Date unlockTime, ZoneId zone)
+    {
+        StringBuilder body = new StringBuilder(1024);
+        body.append("<p>您好，</p>");
+        body.append("<p>您的帳號於 ").append(escape(formatTime(lockTime, zone)))
+            .append(" 因多次輸入錯誤的驗證碼，已暫時鎖定至 ").append(escape(formatTime(unlockTime, zone))).append("。</p>");
+        body.append(accountLine(userName));
+        body.append(warning("這通常表示有人已知道您的密碼並嘗試登入。如非本人操作，請立即聯繫管理員重設密碼。"));
+        return new Mail(safeSubject(platform) + "帳號已暫時鎖定", wrap(body));
     }
 
     /**
@@ -150,6 +229,11 @@ public final class AccountMailTemplates
     {
         String name = hasText(displayName) ? displayName : userName;
         return "<p>" + escape(name) + " 您好：</p>";
+    }
+
+    private static String accountLine(String userName)
+    {
+        return "<p>帳號：<strong>" + escape(userName) + "</strong></p>";
     }
 
     private static String table(String rows)

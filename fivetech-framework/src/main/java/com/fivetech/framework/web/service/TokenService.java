@@ -210,6 +210,36 @@ public class TokenService
         return true;
     }
 
+    /**
+     * 踢出某个用户的全部登录会话（重置密码 / 重置验证器后调用）。
+     * 按 login_tokens:* 逐个比对 userId：在线会话 key 只有 2 分钟心跳 TTL，空闲但未过期的 token 不在里面，不能只扫它。
+     *
+     * @return 删除的会话数
+     */
+    public int forceLogoutByUserId(Long userId)
+    {
+        if (userId == null)
+        {
+            return 0;
+        }
+        int count = 0;
+        Collection<String> keys = redisCache.keys(CacheConstants.LOGIN_TOKEN_KEY + "*");
+        for (String key : keys)
+        {
+            LoginUser loginUser = redisCache.getCacheObject(key);
+            if (loginUser != null && userId.equals(loginUser.getUserId()))
+            {
+                delLoginUser(key.substring(CacheConstants.LOGIN_TOKEN_KEY.length()));
+                count++;
+            }
+        }
+        if (count > 0)
+        {
+            log.info("forceLogoutByUserId userId={} sessions={}", userId, count);
+        }
+        return count;
+    }
+
     private OnlineUser toOnlineUser(LoginUser loginUser)
     {
         OnlineUser onlineUser = new OnlineUser();

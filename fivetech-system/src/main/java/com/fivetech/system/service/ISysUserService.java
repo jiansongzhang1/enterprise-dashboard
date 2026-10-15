@@ -153,6 +153,15 @@ public interface ISysUserService
     public int updateGaStatus(Long userId, Integer gaStatus);
 
     /**
+     * 管理员重置 Google Authenticator：清空密钥，状态改为待绑定
+     *
+     * @param userId 用户ID
+     * @param updateBy 操作人
+     * @return 结果
+     */
+    public int resetGaSecret(Long userId, String updateBy);
+
+    /**
      * 通过启用链接设置密码并标记账号已启用；仅对待启用账号生效。
      *
      * @param userId 用户ID
@@ -210,6 +219,17 @@ public interface ISysUserService
      * @return 结果
      */
     public int resetPwd(SysUser user);
+
+    /**
+     * 员工通过「重设密码与验证器」邮件链接设置新密码。
+     * 当前密码是管理员重设时写入的随机占位密码，不写入密码历史。
+     *
+     * @param userId 用户ID
+     * @param encodedPassword 已加密的新密码
+     * @param updateBy 操作人（员工本人帐号）
+     * @return 结果
+     */
+    public int setPasswordByLink(Long userId, String encodedPassword, String updateBy);
 
     /**
      * 新密码是否与最近 N 次使用过的密码相同（N = user.password.historyCount，含当前密码；0 = 不检查）

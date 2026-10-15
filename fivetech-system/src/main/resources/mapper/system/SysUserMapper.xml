@@ -78,6 +78,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<if test="phonenumber != null and phonenumber != ''">
 			AND u.phonenumber like concat('%', #{phonenumber}, '%')
 		</if>
+		<if test="email != null and email != ''">
+			AND u.email ILIKE concat('%', #{email}, '%')
+		</if>
 		<if test="params.beginTime != null and params.beginTime != ''"><!-- 开始时间检索 -->
 			AND u.create_time::date &gt;= CAST(#{params.beginTime} AS date)
 		</if>
@@ -216,6 +219,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<update id="updateGaStatus">
  		update sys_user set ga_status = #{gaStatus}, update_time = CURRENT_TIMESTAMP where user_id = #{userId}
+ 	</update>
+
+	<!-- 管理员重置验证器：清空密钥、状态回到待绑定(1)，用户下次在登录页重新绑定（绑定时生成新密钥） -->
+	<update id="resetGaSecret">
+ 		update sys_user set ga_secret = NULL, ga_status = 1, update_by = #{updateBy}, update_time = CURRENT_TIMESTAMP where user_id = #{userId}
  	</update>
 
 	<update id="updateGaSecretIfEmpty">

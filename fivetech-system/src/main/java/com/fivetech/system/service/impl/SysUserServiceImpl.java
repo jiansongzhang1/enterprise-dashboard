@@ -345,6 +345,12 @@ public class SysUserServiceImpl implements ISysUserService
     }
 
     @Override
+    public int resetGaSecret(Long userId, String updateBy)
+    {
+        return userMapper.resetGaSecret(userId, updateBy);
+    }
+
+    @Override
     public int activateUser(Long userId, String encodedPassword)
     {
         return userMapper.activateUser(userId, encodedPassword);
@@ -413,6 +419,12 @@ public class SysUserServiceImpl implements ISysUserService
         // 管理员重置不做历史检查（设的是临时密码，员工首次登录还要再改），但被替换的旧密码照样入历史
         rememberCurrentPassword(user.getUserId());
         return userMapper.adminResetUserPwd(user.getUserId(), user.getPassword(), user.getUpdateBy());
+    }
+
+    @Override
+    public int setPasswordByLink(Long userId, String encodedPassword, String updateBy)
+    {
+        return userMapper.adminResetUserPwd(userId, encodedPassword, updateBy);
     }
 
     @Override

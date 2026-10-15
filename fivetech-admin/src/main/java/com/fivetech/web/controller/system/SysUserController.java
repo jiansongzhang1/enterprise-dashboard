@@ -34,6 +34,8 @@ import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.poi.ExcelUtil;
 import com.fivetech.framework.notification.AccountMailService;
 import com.fivetech.framework.web.service.SysAccountActivationService;
+import com.fivetech.framework.web.service.SysPasswordService;
+import com.fivetech.framework.web.service.TokenService;
 import com.fivetech.system.service.ISysDeptService;
 import com.fivetech.system.service.ISysPostService;
 import com.fivetech.system.service.ISysRoleService;
@@ -66,6 +68,12 @@ public class SysUserController extends BaseController
     @Autowired
     private SysAccountActivationService activationService;
 
+    @Autowired
+    private SysPasswordService passwordService;
+
+    @Autowired
+    private TokenService tokenService;
+
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
@@ -77,6 +85,11 @@ public class SysUserController extends BaseController
     {
         startPage();
         List<SysUser> list = userService.selectUserList(user);
+        // 登录锁定状态在 Redis 里，按当前页逐个标记，前端据此显示「解锁」按钮
+        for (SysUser u : list)
+        {
+            u.setLocked(passwordService.isLocked(u.getUserName()));
+        }
         return getDataTable(list);
     }
 
@@ -302,10 +315,80 @@ public class SysUserController extends BaseController
         int rows = userService.resetPwd(user);
         if (rows > 0)
         {
+            // 旧密码登录的会话全部失效，并清除错误计数，用户可以用新密码立即登录
+            tokenService.forceLogoutByUserId(user.getUserId());
+            passwordService.clearLoginRecordCache(target.getUserName());
             // 只通知“密码已变更”，邮件中不含新密码
             accountMailService.sendPasswordChanged(userService.selectUserById(user.getUserId()), true, null);
         }
         return toAjax(rows);
+    }
+
+    /**
+     * 重置 Google Authenticator：清空密钥、状态改为待绑定，并踢出该用户全部会话。
+     * 用户下次登录需在登录页「绑定」重新扫码（绑定时生成新密钥），旧验证器立即失效。
+     */
+    @PreAuthorize("@ss.hasPermi('system:user:resetGa')")
+    @Log(title = "用户管理-重置验证器", businessType = BusinessType.UPDATE)
+    @PostMapping("/resetGa/{userId}")
+    public AjaxResult resetGa(@PathVariable("userId") Long userId)
+    {
+        SysUser target = new SysUser();
+        target.setUserId(userId);
+        userService.checkUserAllowed(target);
+        userService.checkUserDataScope(userId);
+        SysUser user = userService.selectUserById(userId);
+        if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+        {
+            return error("用户不存在");
+        }
+        int rows = userService.resetGaSecret(userId, getUsername());
+        if (rows > 0)
+        {
+            tokenService.forceLogoutByUserId(userId);
+            passwordService.clearLoginRecordCache(user.getUserName());
+            accountMailService.sendGaReset(user);
+        }
+        return toAjax(rows);
+    }
+
+    /**
+     * 重设密码与验证器：原密码、原验证器立即失效并踢出全部会话，给员工发一次性链接，
+     * 员工依序设置新密码、在登录页绑定新验证器。仅限已启用、未停用、邮箱有效的账号。
+     */
+    @PreAuthorize("@ss.hasPermi('system:user:resetPwdGa')")
+    @Log(title = "用户管理-重设密码与验证器", businessType = BusinessType.UPDATE)
+    @PostMapping("/resetPwdGa/{userId}")
+    public AjaxResult resetPwdGa(@PathVariable("userId") Long userId)
+    {
+        SysUser target = new SysUser();
+        target.setUserId(userId);
+        userService.checkUserAllowed(target);
+        userService.checkUserDataScope(userId);
+        SysUser user = userService.selectUserById(userId);
+        if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+        {
+            return error("用户不存在");
+        }
+        if (user.getActivateTime() == null)
+        {
+            return error("该账号尚未启用，请使用「重发启用邮件」");
+        }
+        if (UserStatus.DISABLE.getCode().equals(user.getStatus()))
+        {
+            return error("该账号已停用，请先启用账号");
+        }
+        if (!AccountMailService.isDeliverable(user.getEmail()))
+        {
+            return error("该账号没有有效的邮箱，请先修改邮箱");
+        }
+        // 先确认邮件能发出，避免改了密码却收不到设置链接
+        if (!accountMailService.canSendActivation())
+        {
+            return error("未开启邮件发送或未配置前台地址 notification.email.account.portal-url");
+        }
+        activationService.resetPasswordAndGa(user, SecurityUtils.encryptPassword(unusablePassword()), getUsername());
+        return success();
     }
 
     /**
@@ -346,6 +429,24 @@ public class SysUserController extends BaseController
             return error("未开启邮件发送或未配置前台地址 notification.email.account.portal-url");
         }
         activationService.issueActivation(user, getUsername());
+        return success();
+    }
+
+    /**
+     * 解锁登录：清除该账号的密码错误、验证码错误计数（Redis），立即可以重新登录
+     */
+    @PreAuthorize("@ss.hasPermi('system:user:unlock')")
+    @Log(title = "用户管理-账号解锁", businessType = BusinessType.UPDATE)
+    @PostMapping("/unlock/{userId}")
+    public AjaxResult unlock(@PathVariable("userId") Long userId)
+    {
+        userService.checkUserDataScope(userId);
+        SysUser user = userService.selectUserById(userId);
+        if (user == null || UserStatus.DELETED.getCode().equals(user.getDelFlag()))
+        {
+            return error("用户不存在");
+        }
+        passwordService.clearLoginRecordCache(user.getUserName());
         return success();
     }
 
