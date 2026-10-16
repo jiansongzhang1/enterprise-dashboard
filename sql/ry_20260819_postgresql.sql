@@ -87,8 +87,6 @@ COMMENT ON TABLE sys_user IS '用户信息表';
 -- check-then-insert validation is not safe under concurrent requests.
 CREATE UNIQUE INDEX uk_sys_user_user_name_active
   ON sys_user (user_name) WHERE del_flag = '0';
-CREATE UNIQUE INDEX uk_sys_user_email_active
-  ON sys_user (email) WHERE del_flag = '0' AND email <> '';
 CREATE UNIQUE INDEX uk_sys_user_phone_active
   ON sys_user (phonenumber) WHERE del_flag = '0' AND phonenumber <> '';
 

@@ -97,6 +97,12 @@ public class SysUser extends BaseEntity
     /** 登录是否被锁定（密码或验证码错误次数达到上限，存 Redis，不入库）；仅用户列表返回 */
     private Boolean locked;
 
+    /**
+     * 新增用户方式（仅新增请求使用，不入库）：
+     * EMAIL = 通过邮箱发送启用链接，员工自己设置密码；ADMIN = 管理员直接指定用户名和密码
+     */
+    private String createMode;
+
     /** 部门对象 */
     @Excels({
         @Excel(name = "部门名称", targetAttr = "deptName", type = Type.EXPORT),
@@ -341,6 +347,16 @@ public class SysUser extends BaseEntity
     public void setLocked(Boolean locked)
     {
         this.locked = locked;
+    }
+
+    public String getCreateMode()
+    {
+        return createMode;
+    }
+
+    public void setCreateMode(String createMode)
+    {
+        this.createMode = createMode;
     }
 
     public SysDept getDept()

@@ -76,6 +76,9 @@ public class SysUserController extends BaseController
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
+    /** 新增用户方式：管理员直接指定用户名和密码 */
+    private static final String CREATE_MODE_ADMIN = "ADMIN";
+
     /**
      * 获取用户列表
      */
@@ -163,7 +166,7 @@ public class SysUserController extends BaseController
         {
             return error("新增用户'" + user.getUserName() + "'失败，手机号码已存在");
         }
-        else if (StringUtils.isNotEmpty(user.getEmail()) && !isMockMail(user.getEmail()) && !userService.checkEmailUnique(user))
+        else if (StringUtils.isNotEmpty(user.getEmail()) && !userService.checkEmailUnique(user))
         {
             return error("新增用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
@@ -177,36 +180,31 @@ public class SysUserController extends BaseController
         {
             user.setUserType(UserTypeEnum.NORMAL.getCode());
         }
-        // 启用链接功能关闭，或邮箱填的是占位邮箱 mock@mail.com：不发启用邮件、不要求前台地址。
-        // 提交了密码就用它作为初始密码；没提交则写入不可用的随机密码，由管理员「重置密码」后再告知员工
-        boolean mock = isMockMail(user.getEmail());
-        if (!accountMailService.isActivationEnabled() || mock)
+        if (StringUtils.isNotEmpty(user.getEmail()))
         {
-            boolean hasPassword = StringUtils.isNotEmpty(user.getPassword());
-            if (hasPassword)
+            user.setEmail(user.getEmail().trim());
+        }
+        // 方式二：管理员直接指定用户名和密码，邮箱选填，不发启用邮件，账号创建即启用
+        if (CREATE_MODE_ADMIN.equalsIgnoreCase(StringUtils.trim(user.getCreateMode())))
+        {
+            if (StringUtils.isEmpty(user.getPassword()))
             {
-                String policyError = PasswordPolicy.check(user.getUserName(), user.getPassword());
-                if (policyError != null)
-                {
-                    return error(policyError);
-                }
+                return error("新增用户'" + user.getUserName() + "'失败，请设置登录密码");
             }
-            if (StringUtils.isNotEmpty(user.getEmail()))
+            String policyError = PasswordPolicy.check(user.getUserName(), user.getPassword());
+            if (policyError != null)
             {
-                user.setEmail(user.getEmail().trim());
+                return error(policyError);
             }
-            user.setPassword(SecurityUtils.encryptPassword(hasPassword ? user.getPassword() : unusablePassword()));
-            user.setPwdUpdateDate(hasPassword ? new java.util.Date() : null);
-            // 不走启用流程的账号视为已启用（停用 / 重新启用时照常发通知）
+            user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
+            user.setPwdUpdateDate(new java.util.Date());
             user.setActivateTime(new java.util.Date());
-            int created = userService.insertUser(user);
-            if (created > 0 && !hasPassword)
-            {
-                return success(mock
-                    ? "账号已创建（邮箱为 mock@mail.com，不发送启用邮件），请在用户列表中通过「重置密码」为该用户设置初始密码"
-                    : "账号已创建，请在用户列表中通过「重置密码」为该用户设置初始密码");
-            }
-            return toAjax(created);
+            return toAjax(userService.insertUser(user));
+        }
+        // 方式一（默认）：通过用户邮箱新增，邮箱必填
+        if (!accountMailService.isActivationEnabled())
+        {
+            return error("新增用户'" + user.getUserName() + "'失败，启用邮件功能未开启（notification.email.account.activation-enabled），请选择「管理员设置密码」方式");
         }
         // 员工通过邮件里的一次性链接自己设置密码，管理员不分配、不接触密码
         if (!AccountMailService.isDeliverable(user.getEmail()))
@@ -217,7 +215,6 @@ public class SysUserController extends BaseController
         {
             return error("新增用户'" + user.getUserName() + "'失败，未开启邮件发送或未配置前台地址 notification.email.account.portal-url");
         }
-        user.setEmail(user.getEmail().trim());
         // 启用前写入一个无人知道的随机密码，账号在员工设置密码前无法登录
         user.setPassword(SecurityUtils.encryptPassword(unusablePassword()));
         user.setPwdUpdateDate(null);
@@ -259,7 +256,7 @@ public class SysUserController extends BaseController
         {
             return error("修改用户'" + user.getUserName() + "'失败，手机号码已存在");
         }
-        else if (StringUtils.isNotEmpty(user.getEmail()) && !isMockMail(user.getEmail()) && !userService.checkEmailUnique(user))
+        else if (StringUtils.isNotEmpty(user.getEmail()) && !userService.checkEmailUnique(user))
         {
             return error("修改用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
@@ -513,12 +510,6 @@ public class SysUserController extends BaseController
     }
 
     /** 生成一个无人知道的随机密码，用于待启用账号 */
-    /** 占位邮箱 mock@mail.com：跳过启用邮件，由管理员手动「重置密码」；不参与邮箱唯一性校验 */
-    private static boolean isMockMail(String email)
-    {
-        return AccountMailService.isMockMail(email);
-    }
-
     private static String unusablePassword()
     {
         byte[] bytes = new byte[24];

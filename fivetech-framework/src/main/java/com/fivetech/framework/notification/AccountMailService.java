@@ -50,22 +50,11 @@ public class AccountMailService
     }
 
     /**
-     * 不发邮件的占位邮箱：新建账号时填它，跳过启用邮件，由管理员手动「重置密码」。
-     * 格式上是合法邮箱（能通过 @Email 校验），但任何邮件都不会发往这个地址
-     */
-    public static final String MOCK_MAIL = "mock@mail.com";
-
-    public static boolean isMockMail(String email)
-    {
-        return email != null && MOCK_MAIL.equalsIgnoreCase(email.trim());
-    }
-
-    /**
-     * 判断邮箱是否可投递。空、超长、格式非法、占位邮箱 mock@mail.com 一律返回 false。
+     * 判断邮箱是否可投递。空、超长、格式非法一律返回 false。
      */
     public static boolean isDeliverable(String email)
     {
-        if (!StringUtils.hasText(email) || isMockMail(email))
+        if (!StringUtils.hasText(email))
         {
             return false;
         }
