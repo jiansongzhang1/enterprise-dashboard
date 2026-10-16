@@ -177,7 +177,7 @@ public class SysUserController extends BaseController
         {
             user.setUserType(UserTypeEnum.NORMAL.getCode());
         }
-        // 启用链接功能关闭，或邮箱填的是 mockMail（不发邮件的占位邮箱）：不发启用邮件、不要求前台地址。
+        // 启用链接功能关闭，或邮箱填的是占位邮箱 mock@mail.com：不发启用邮件、不要求前台地址。
         // 提交了密码就用它作为初始密码；没提交则写入不可用的随机密码，由管理员「重置密码」后再告知员工
         boolean mock = isMockMail(user.getEmail());
         if (!accountMailService.isActivationEnabled() || mock)
@@ -203,7 +203,7 @@ public class SysUserController extends BaseController
             if (created > 0 && !hasPassword)
             {
                 return success(mock
-                    ? "账号已创建（邮箱为 mockMail，不发送启用邮件），请在用户列表中通过「重置密码」为该用户设置初始密码"
+                    ? "账号已创建（邮箱为 mock@mail.com，不发送启用邮件），请在用户列表中通过「重置密码」为该用户设置初始密码"
                     : "账号已创建，请在用户列表中通过「重置密码」为该用户设置初始密码");
             }
             return toAjax(created);
@@ -513,12 +513,10 @@ public class SysUserController extends BaseController
     }
 
     /** 生成一个无人知道的随机密码，用于待启用账号 */
-    /** 不发邮件的占位邮箱：新建账号时填它，跳过启用邮件，由管理员手动「重置密码」；不参与邮箱唯一性校验 */
-    private static final String MOCK_MAIL = "mockMail";
-
+    /** 占位邮箱 mock@mail.com：跳过启用邮件，由管理员手动「重置密码」；不参与邮箱唯一性校验 */
     private static boolean isMockMail(String email)
     {
-        return email != null && MOCK_MAIL.equalsIgnoreCase(email.trim());
+        return AccountMailService.isMockMail(email);
     }
 
     private static String unusablePassword()
