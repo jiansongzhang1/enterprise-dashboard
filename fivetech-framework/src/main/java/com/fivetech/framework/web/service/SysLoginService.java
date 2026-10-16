@@ -79,6 +79,9 @@ public class SysLoginService
     /** 两步登录凭证失效（超时未输入验证码 / 验证码错误次数过多）：前端收到后回到第一步 */
     public static final int LOGIN_TICKET_EXPIRED = 4011;
 
+    /** 第一步密码正确但尚未绑定验证器（新帐号 / 管理员重置了验证器）：不是错误，前端转到首次绑定流程 */
+    public static final int GA_NOT_BOUND = 4012;
+
     /** 第一步通过后，多少分钟内必须完成验证码 */
     @Value("${user.login.ticketMinutes:5}")
     private int ticketMinutes;
@@ -113,10 +116,12 @@ public class SysLoginService
     }
 
     /**
-     * 两步登录 · 第一步：校验帐号密码（密码错误计入锁定次数），并确认已绑定验证器。
-     * 通过后发一次性凭证 ticket，有效期 ticketMinutes 分钟，第二步凭它提交验证码。
+     * 两步登录 · 第一步：校验帐号密码（密码错误计入锁定次数）。
+     * 已绑定验证器：发一次性凭证 ticket（有效期 ticketMinutes 分钟），第二步凭它提交验证码；
+     * 未绑定（新帐号 / 管理员重置了验证器）：不报错，返回 bindRequired=true，前端转到首次绑定流程
+     * （/ga/bind/start → /ga/bind/confirm，绑定成功直接返回 token）。
      *
-     * @return ticket、expireSeconds
+     * @return bindRequired；已绑定时另有 ticket、expireSeconds
      */
     public Map<String, Object> loginPassword(String username, String password)
     {
@@ -130,12 +135,18 @@ public class SysLoginService
                 throw new ServiceException(passwordService.codeLockMessage());
             }
             loginUser = authenticate(username, password);
-            checkGaReady(loginUser.getUser());
         }
         catch (UserPasswordNotMatchException | ServiceException e)
         {
             AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, e.getMessage()));
             throw e;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (!isGaBound(loginUser.getUser()))
+        {
+            // 密码正确但还没绑定验证器：放行到绑定流程，不发 ticket（第二步验证码无从校验）
+            result.put("bindRequired", true);
+            return result;
         }
         String ticket = IdUtils.fastSimpleUUID();
         Map<String, Object> data = new LinkedHashMap<>();
@@ -143,7 +154,7 @@ public class SysLoginService
         data.put("userName", loginUser.getUsername());
         redisCache.setCacheObject(LOGIN_TICKET_KEY + ticket, data, ticketMinutes, TimeUnit.MINUTES);
 
-        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("bindRequired", false);
         result.put("ticket", ticket);
         result.put("expireSeconds", ticketMinutes * 60);
         return result;
@@ -213,6 +224,13 @@ public class SysLoginService
         AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
         recordLoginInfo(user.getUserId());
         return tokenService.createToken(loginUser);
+    }
+
+    /** 是否已完成验证器绑定（有密钥且状态为已绑定） */
+    private boolean isGaBound(SysUser user)
+    {
+        return StringUtils.isNotNull(user) && StringUtils.isNotEmpty(user.getGaSecret())
+                && user.getGaStatus() != null && user.getGaStatus().intValue() == GaConstants.GA_STATUS_BOUND;
     }
 
     /** 已开通且已绑定验证器，否则抛出对应提示（前端据「尚未完成绑定」切到绑定页） */

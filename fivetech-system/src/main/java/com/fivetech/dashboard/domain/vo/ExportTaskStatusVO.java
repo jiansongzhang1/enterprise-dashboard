@@ -34,4 +34,10 @@ public class ExportTaskStatusVO implements Serializable
     public void setMessage(String message) { this.message = message; }
     public List<String> getUrls() { return urls; }
     public void setUrls(List<String> urls) { this.urls = urls; }
+
+    /** 与 urls 一一对应的下载文件名（XLSX 业务导出为 UDS 生成的繁中文件名，超 20 万行为 .zip） */
+    private List<String> fileNames = new ArrayList<>();
+
+    public List<String> getFileNames() { return fileNames; }
+    public void setFileNames(List<String> fileNames) { this.fileNames = fileNames; }
 }

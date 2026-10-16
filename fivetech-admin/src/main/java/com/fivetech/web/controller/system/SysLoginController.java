@@ -72,7 +72,13 @@ public class SysLoginController
     @PostMapping("/login/password")
     public AjaxResult loginPassword(@RequestBody LoginBody loginBody)
     {
-        return AjaxResult.success(loginService.loginPassword(loginBody.getUsername(), loginBody.getPassword()));
+        Map<String, Object> data = loginService.loginPassword(loginBody.getUsername(), loginBody.getPassword());
+        if (Boolean.TRUE.equals(data.get("bindRequired")))
+        {
+            // 未绑定验证器：code = 4012（不是错误），前端转到首次绑定流程
+            return new AjaxResult(SysLoginService.GA_NOT_BOUND, MessageUtils.message("user.ga.bind.pending"), data);
+        }
+        return AjaxResult.success(data);
     }
 
     /**

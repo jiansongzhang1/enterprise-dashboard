@@ -109,8 +109,9 @@ public interface MetricDataGateway
      * @param tab member / deposit / withdraw / bet
      * @param request 与分页查询相同的请求（分页参数被忽略）
      * @param maxRows 行数上限，&lt;=0 表示用数据平台默认上限
+     * @param operator 发起人稳定 ID（X-Uds-Operator），同一任务的创建 / 轮询 / 取消必须相同
      */
-    ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows);
+    ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows, String operator);
 
     /**
      * 提交压测数据集导出，只用于验证大文件的生成与下载链路。
@@ -119,11 +120,11 @@ public interface MetricDataGateway
      * @param detailRows true 按明细行导出（大文件），false 按天 × 商户汇总（几行）
      * @param maxRows 行数上限，&lt;=0 表示不限
      */
-    ExportJob submitBenchmarkExport(String merchantCode, boolean detailRows, long maxRows);
+    ExportJob submitBenchmarkExport(String merchantCode, boolean detailRows, long maxRows, String operator);
 
     /** 查询导出作业；DONE 时文件链接为现签 */
-    ExportJob getExportJob(String jobId);
+    ExportJob getExportJob(String jobId, String operator);
 
     /** 取消排队或运行中的导出作业 */
-    ExportJob cancelExportJob(String jobId);
+    ExportJob cancelExportJob(String jobId, String operator);
 }

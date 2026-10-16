@@ -189,9 +189,14 @@ dashboard:
       # 异步导出作业：POST 提交，GET/DELETE /{jobId} 查状态与取消
       jobs-path: ${UDS_JOBS_PATH:/v1/jobs}
       # 异步导出（UDS 生成、S3 直连下载）的文件格式与压缩：CSV / PARQUET，GZIP / ZSTD / SNAPPY。
-      # 注意：这是数据平台生成的文件，与本服务同步导出（统一 XLSX）无关；平台目前不支持 XLSX
+      # 注意：只用于压测导出；四类业务明细异步导出固定为 XLSX，见下方 business-export
       export-format: ${UDS_EXPORT_FORMAT:CSV}
       export-compression: ${UDS_EXPORT_COMPRESSION:GZIP}
+      # 四类业务明细（用户 / 存款 / 提款 / 投注）异步导出一律为 XLSX（UDS 四类业务明细导出联调手册 2026-10-15）：
+      # UDS 按 details.<tab>.export-profile 套模板生成繁中表头、业务字典和文件名，后端不传表头文字。
+      # 上面的 export-format / export-compression 只用于压测导出（benchmark）
+      business-export:
+        locale: ${UDS_EXPORT_LOCALE:zh-TW}
       # 压测数据集（3200 万行压测表，只开放 2026-09-10 一天），仅用于验证大文件下载链路
       benchmark:
         dataset: ${UDS_BENCHMARK_DATASET:bulk_bets}
@@ -334,6 +339,10 @@ dashboard:
           # 会员快照（v3）：time 固定 snapshot_at now~now，按与数据团队的约定表示「返回全部数据」；
           # 页面选了注册时间时，区间只落在 register_date_india 筛选上
           dataset: dashboard_player_snapshot_v3
+          export-profile: player-details-v1
+          # 用户自选列 → UDS 导出列代码（export.visibleColumns）。只写与 fields 不同的，其余沿用 fields
+          export-columns:
+            regToFtdMinutes: reg_to_ftd_seconds
           time-dimension: snapshot_at
           snapshot: true
           time-column: register_date_india
@@ -378,6 +387,7 @@ dashboard:
         deposit:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
           dataset: dashboard_deposit_snapshot_v3
+          export-profile: deposit-details-v1
           time-dimension: snapshot_at
           snapshot: true
           time-column: created_date_india
@@ -406,6 +416,7 @@ dashboard:
         withdraw:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
           dataset: dashboard_withdraw_snapshot_v3
+          export-profile: withdraw-details-v1
           time-dimension: snapshot_at
           snapshot: true
           time-column: created_date_india
@@ -441,6 +452,7 @@ dashboard:
         bet:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 bet_time_india 筛选上
           dataset: dashboard_bet_snapshot_v3
+          export-profile: bet-details-v1
           time-dimension: snapshot_at
           snapshot: true
           time-column: bet_time_india
@@ -573,8 +585,10 @@ dashboard:
     # 异步导出失败（job.status=FAILED）时，UDS error.code → 给用户看的中文提示。
     # 平台尚未提供完整错误码清单，遇到新码时取消注释补上；未配置的码提示「导出失败，请稍后重试（错误码 xxx）」
     # 注意：没有映射时不要写 `error-messages: {}`——Spring Boot 会把空的 {} 当成空字符串，绑定 Map 失败导致启动报错
-    # error-messages:
-    #   "4402": 时间范围超出可导出的数据范围，请缩小区间后重试
+    error-messages:
+      "4402": 時間範圍超出可匯出的資料範圍，請縮小區間後重試
+      "4001": 匯出參數不正確（欄位選擇或條件不合法），請調整後重試
+      "4403": 資料平台尚未開放此匯出格式，請聯絡管理員
 
 # 健康检查与监控端点
 # 独立端口 8081，安全组只对内网/探活来源开放，绝不暴露公网

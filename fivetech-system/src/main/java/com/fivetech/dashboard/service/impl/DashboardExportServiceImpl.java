@@ -98,7 +98,9 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildMemberRequest(query);
-        return accept("member", "用戶明細", () -> gateway.submitDetailExport("member", request, maxRows()));
+        // 用户自选列：XLSX 导出时作为 visibleColumns 传给 UDS（顺序即文件列顺序）
+        request.setColumns(query.getColumns());
+        return accept("member", "用戶明細", op -> gateway.submitDetailExport("member", request, maxRows(), op));
     }
 
     @Override
@@ -106,7 +108,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildDepositRequest(query);
-        return accept("deposit", "存款訂單", () -> gateway.submitDetailExport("deposit", request, maxRows()));
+        return accept("deposit", "存款訂單", op -> gateway.submitDetailExport("deposit", request, maxRows(), op));
     }
 
     @Override
@@ -114,7 +116,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildWithdrawRequest(query);
-        return accept("withdraw", "提款訂單", () -> gateway.submitDetailExport("withdraw", request, maxRows()));
+        return accept("withdraw", "提款訂單", op -> gateway.submitDetailExport("withdraw", request, maxRows(), op));
     }
 
     @Override
@@ -122,7 +124,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         precheck();
         RecordPageRequest request = recordQueryService.buildBetRequest(query);
-        return accept("bet", "投注明細", () -> gateway.submitDetailExport("bet", request, maxRows()));
+        return accept("bet", "投注明細", op -> gateway.submitDetailExport("bet", request, maxRows(), op));
     }
 
 
@@ -174,7 +176,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         // 3. 超过上限：转异步导出，文件由数据平台生成，前端轮询任务状态后直连下载
         log.info("[export] {} 结果 {} 行 > {}，转异步导出", tab, total, limit);
         String label = DETAIL_LABELS.getOrDefault(tab, tab);
-        return accept(tab, label, () -> gateway.submitDetailExport(tab, request, maxRows()));
+        return accept(tab, label, op -> gateway.submitDetailExport(tab, request, maxRows(), op));
     }
 
     @Override
@@ -183,7 +185,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         precheck();
         String label = "压测导出_" + (StringUtils.isEmpty(merchantCode) ? "ALL" : merchantCode)
             + (detailRows ? "_明细" : "_汇总");
-        return accept("benchmark", label, () -> gateway.submitBenchmarkExport(merchantCode, detailRows, maxRows));
+        return accept("benchmark", label, op -> gateway.submitBenchmarkExport(merchantCode, detailRows, maxRows, op));
     }
 
     private long maxRows()
@@ -192,12 +194,13 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     }
 
     /** 提交、登记归属、写审计 */
-    private ExportTaskVO accept(String kind, String label, java.util.function.Supplier<ExportJob> submit)
+    private ExportTaskVO accept(String kind, String label, java.util.function.Function<String, ExportJob> submit)
     {
+        String operator = operator();
         ExportJob job;
         try
         {
-            job = submit.get();
+            job = submit.apply(operator);
         }
         catch (UdsQueryException e)
         {
@@ -213,6 +216,8 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         record.put("kind", kind);
         record.put("label", label);
         record.put("submittedAt", submittedAt);
+        // 创建 / 轮询 / 取消必须是同一个 X-Uds-Operator，否则 UDS 返回 4406
+        record.put("operator", operator);
         // 只存文件名主干，扩展名按平台实际生成的文件决定（见 fileNames）
         record.put("fileBase", label + "_" + LocalDateTime.now().format(STAMP));
         String key = taskKey(userId, job.getJobId());
@@ -239,7 +244,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         ExportTaskVO task;
         try
         {
-            task = toVO(record, gateway.getExportJob(jobId));
+            task = toVO(record, gateway.getExportJob(jobId, operatorOf(record)));
         }
         catch (UdsQueryException e)
         {
@@ -258,6 +263,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
                 if (StringUtils.isNotEmpty(f.getUrl()))
                 {
                     vo.getUrls().add(f.getUrl());
+                    vo.getFileNames().add(f.getFileName());
                 }
             }
         }
@@ -270,7 +276,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         Map<String, String> record = ownRecord(jobId);
         try
         {
-            return toVO(record, gateway.cancelExportJob(jobId));
+            return toVO(record, gateway.cancelExportJob(jobId, operatorOf(record)));
         }
         catch (UdsQueryException e)
         {
@@ -279,6 +285,22 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     }
 
 
+
+    /**
+     * X-Uds-Operator：当前登录用户的稳定 ID（不含个人信息，不接受浏览器传值），
+     * 格式满足手册的 [A-Za-z0-9_.:@-]{1,64}
+     */
+    private static String operator()
+    {
+        return "uid:" + SecurityUtils.getUserId();
+    }
+
+    /** 任务记录里的 operator；旧记录没有时按当前用户生成（ownRecord 已保证是本人的任务） */
+    private static String operatorOf(Map<String, String> record)
+    {
+        String op = record.get("operator");
+        return StringUtils.isNotEmpty(op) ? op : operator();
+    }
 
     private Map<String, String> ownRecord(String jobId)
     {
@@ -321,9 +343,14 @@ public class DashboardExportServiceImpl implements IDashboardExportService
                 return new ServiceException("时间范围超出可导出的数据范围，请缩小区间后重试");
             case 4403:
                 String hint = match(HINT, body);
-                return new ServiceException("导出通道不可用" + (hint == null ? "" : "：" + hint));
+                // XLSX 业务导出在目标 UDS 环境未启用时也是 4403（UDS 不会自动回退 CSV）
+                return new ServiceException("資料平台尚未開放此匯出" + (hint == null ? "" : "：" + hint));
+            case 4001:
+                return new ServiceException("匯出參數不正確（欄位選擇或條件不合法），請調整後重試");
+            case 4010:
+                return new ServiceException("匯出身份校驗失敗，請重新登入後再試");
             case 4406:
-                // 跨 principal 访问或作业已过期（7 天）
+                // 跨 principal / operator 访问或作业已过期（7 天）
                 return new ServiceException("导出任务不存在或已过期，请重新提交");
             case 4407:
                 // 接入说明：对已结束（DONE）的作业执行取消返回 400/4407
@@ -355,7 +382,9 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         vo.setLabel(record.get("label"));
         vo.setSubmittedAt(record.get("submittedAt"));
         String base = fileBase(record);
-        vo.setSuggestedFileName(base + extensionOf(job == null || job.getFiles().isEmpty() ? null : job.getFiles().get(0).getKey()));
+        ExportJob.ExportFile first = job == null || job.getFiles().isEmpty() ? null : job.getFiles().get(0);
+        vo.setSuggestedFileName(first != null && StringUtils.isNotEmpty(first.getName())
+            ? first.getName() : base + extensionOf(first == null ? null : first.getKey()));
         vo.setJobId(job == null ? null : job.getJobId());
         if (job != null)
         {
@@ -364,7 +393,9 @@ public class DashboardExportServiceImpl implements IDashboardExportService
             for (int i = 0; i < n; i++)
             {
                 ExportJob.ExportFile f = job.getFiles().get(i);
-                f.setFileName(base + (n > 1 ? "_part" + (i + 1) : "") + extensionOf(f.getKey()));
+                // XLSX 业务导出：直接用 UDS 生成的繁中文件名（超 20 万行为 .zip）；CSV 导出仍按本系统规则命名
+                f.setFileName(StringUtils.isNotEmpty(f.getName()) ? f.getName()
+                    : base + (n > 1 ? "_part" + (i + 1) : "") + extensionOf(f.getKey()));
             }
         }
         vo.setJob(job);
@@ -395,9 +426,11 @@ public class DashboardExportServiceImpl implements IDashboardExportService
                 {
                     return name + "已生成，但沒有可下載的檔案，請重新匯出";
                 }
+                boolean zip = job.getFiles().stream().anyMatch(f -> "application/zip".equals(f.getMediaType()));
                 return name + "已生成" + (job.getRowCount() == null ? "" : "，共 " + job.getRowCount() + " 行")
+                    + (zip ? "，資料較多已打包為 ZIP" : "")
                     + (job.getFiles().size() > 1 ? "，分為 " + job.getFiles().size() + " 個檔案" : "")
-                    + "，下載連結 1 小時內有效";
+                    + "，下載連結 10 分鐘內有效，過期請重新整理";
             case ExportJob.FAILED:
                 String code = job.getErrorCode();
                 String mapped = code == null ? null : properties.getExport().getErrorMessages().get(code);

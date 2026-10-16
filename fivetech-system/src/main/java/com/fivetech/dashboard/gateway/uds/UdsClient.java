@@ -393,6 +393,15 @@ public class UdsClient
      */
     public JsonNode submitJob(Map<String, Object> body)
     {
+        return submitJob(body, null);
+    }
+
+    /**
+     * 提交导出作业并带上 {@code X-Uds-Operator}（四类业务明细导出必填）：
+     * 创建、轮询、取消必须是同一个 operator，否则 UDS 返回 4406
+     */
+    public JsonNode submitJob(Map<String, Object> body, String operator)
+    {
         String json;
         try
         {
@@ -402,19 +411,48 @@ public class UdsClient
         {
             throw new UdsQueryException("UDS 请求体序列化失败", 0, e);
         }
-        return readJson(post(properties.getJobsPath(), json));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri(properties.getJobsPath()))
+            .POST(HttpRequest.BodyPublishers.ofString(json, java.nio.charset.StandardCharsets.UTF_8));
+        return readJson(send(withOperator(builder, operator), json));
     }
 
-    /** 查询作业状态：{@code GET /v1/jobs/{jobId}}。DONE 时每次都会现签新的 1 小时预签名链接 */
+    /** 查询作业状态：{@code GET /v1/jobs/{jobId}}。DONE 时每次都会现签新的预签名链接 */
     public JsonNode getJob(String jobId)
     {
-        return readJson(send(HttpRequest.newBuilder(uri(jobPath(jobId))).GET(), null));
+        return getJob(jobId, null);
+    }
+
+    public JsonNode getJob(String jobId, String operator)
+    {
+        return readJson(send(withOperator(HttpRequest.newBuilder(uri(jobPath(jobId))).GET(), operator), null));
     }
 
     /** 取消作业：{@code DELETE /v1/jobs/{jobId}}。已完成的作业返回 4407 */
     public JsonNode cancelJob(String jobId)
     {
-        return readJson(send(HttpRequest.newBuilder(uri(jobPath(jobId))).DELETE(), null));
+        return cancelJob(jobId, null);
+    }
+
+    public JsonNode cancelJob(String jobId, String operator)
+    {
+        return readJson(send(withOperator(HttpRequest.newBuilder(uri(jobPath(jobId))).DELETE(), operator), null));
+    }
+
+    /** X-Uds-Operator 格式（联调手册）：[A-Za-z0-9_.:@-]{1,64} */
+    private static final java.util.regex.Pattern OPERATOR = java.util.regex.Pattern.compile("^[A-Za-z0-9_.:@-]{1,64}$");
+
+    /** operator 为空不发；格式不合法直接拒绝，不把不可信的值发给上游 */
+    private static HttpRequest.Builder withOperator(HttpRequest.Builder builder, String operator)
+    {
+        if (StringUtils.isEmpty(operator))
+        {
+            return builder;
+        }
+        if (!OPERATOR.matcher(operator).matches())
+        {
+            throw new UdsQueryException("非法的 X-Uds-Operator", 0, 4010, null);
+        }
+        return builder.header("X-Uds-Operator", operator);
     }
 
     private String jobPath(String jobId)

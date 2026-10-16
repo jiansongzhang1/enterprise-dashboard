@@ -167,6 +167,35 @@ public class UdsProperties
     /** 压测数据集配置（只用于验证大文件下载链路） */
     private Benchmark benchmark = new Benchmark();
 
+    /** 四类业务明细异步导出为 XLSX（UDS 按 profile 生成繁中表头与文件名） */
+    private BusinessExport businessExport = new BusinessExport();
+
+    public BusinessExport getBusinessExport()
+    {
+        return businessExport;
+    }
+
+    public void setBusinessExport(BusinessExport businessExport)
+    {
+        this.businessExport = businessExport;
+    }
+
+    public static class BusinessExport
+    {
+        /** 表头与字典的语言 */
+        private String locale = "zh-TW";
+
+        public String getLocale()
+        {
+            return locale;
+        }
+
+        public void setLocale(String locale)
+        {
+            this.locale = locale;
+        }
+    }
+
     /** 触发 UDS 限流（429 / 4290）时的最大重试次数，0 表示不重试 */
     private int rateLimitRetries = 3;
 
@@ -692,6 +721,32 @@ public class UdsProperties
          * UDS 对 BIGINT 字段不做字符串转换，发 "1" 会 4001「字面量与字段类型不符」
          */
         private java.util.List<String> numericFilters = new java.util.ArrayList<>();
+
+        /** XLSX 导出模板（UDS profile），如 player-details-v1；为空表示该明细不走 XLSX 业务导出 */
+        private String exportProfile;
+
+        /** 页面列编码 → UDS 导出列代码（visibleColumns），只需写与 fields 不同的项 */
+        private Map<String, String> exportColumns = new LinkedHashMap<>();
+
+        public String getExportProfile()
+        {
+            return exportProfile;
+        }
+
+        public void setExportProfile(String exportProfile)
+        {
+            this.exportProfile = exportProfile;
+        }
+
+        public Map<String, String> getExportColumns()
+        {
+            return exportColumns;
+        }
+
+        public void setExportColumns(Map<String, String> exportColumns)
+        {
+            this.exportColumns = exportColumns;
+        }
 
         public java.util.List<String> getNumericFilters()
         {

@@ -50,6 +50,19 @@ public class RecordPageRequest implements Serializable
     /** 行数上限，超过时网关应返回 truncated 标记而不是把全量拉回来 */
     private int rowLimit;
 
+    /** 导出时用户选择的列（页面列编码，按显示顺序）；仅用户明细的 XLSX 异步导出用作 visibleColumns */
+    private java.util.List<String> columns;
+
+    public java.util.List<String> getColumns()
+    {
+        return columns;
+    }
+
+    public void setColumns(java.util.List<String> columns)
+    {
+        this.columns = columns;
+    }
+
     public String getSiteCode()
     {
         return siteCode;

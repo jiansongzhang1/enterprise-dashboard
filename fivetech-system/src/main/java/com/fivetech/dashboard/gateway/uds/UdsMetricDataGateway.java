@@ -1573,7 +1573,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
     }
 
     @Override
-    public ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows)
+    public ExportJob submitDetailExport(String tab, RecordPageRequest request, long maxRows, String operator)
     {
         UdsProperties.DetailDataset detail = detailOf(tab);
         if (detail == null)
@@ -1582,12 +1582,75 @@ public class UdsMetricDataGateway implements MetricDataGateway
             throw new com.fivetech.common.exception.ServiceException(
                 "明细数据集未配置（dashboard.gateway.uds.details." + tab + "），暂不能导出");
         }
+        if (StringUtils.isEmpty(detail.getExportProfile()))
+        {
+            throw new com.fivetech.common.exception.ServiceException(
+                "明细导出模板未配置（dashboard.gateway.uds.details." + tab + ".export-profile），暂不能导出");
+        }
         Map<String, Object> body = detailBody(detail, request, DetailMode.EXPORT, 0, 0);
-        return submit(body, maxRows);
+        return submitBusiness(tab, detail, request, body, maxRows, operator);
+    }
+
+    /**
+     * 四类业务明细导出为 XLSX（UDS 四类业务明细导出联调手册 2026-10-15）：
+     * options.export = {format: XLSX, profile, locale[, maxRows][, visibleColumns]}，不传 compression；
+     * 表头、业务字典、文件名都由 UDS 按 profile 生成，后端不传表头文字。
+     * 只有用户明细支持 visibleColumns（用户自选列，顺序即文件列顺序）；存款 / 提款 / 投注是固定模板，传了会 4001
+     */
+    @SuppressWarnings("unchecked")
+    private ExportJob submitBusiness(String tab, UdsProperties.DetailDataset detail, RecordPageRequest request,
+            Map<String, Object> body, long maxRows, String operator)
+    {
+        Map<String, Object> options = (Map<String, Object>) body.computeIfAbsent("options", k -> new LinkedHashMap<>());
+        options.put("channel", "EXPORT");
+        Map<String, Object> export = new LinkedHashMap<>();
+        export.put("format", "XLSX");
+        export.put("profile", detail.getExportProfile());
+        export.put("locale", properties.getBusinessExport().getLocale());
+        if (maxRows > 0)
+        {
+            export.put("maxRows", maxRows);
+        }
+        if ("member".equals(tab) && request.getColumns() != null && !request.getColumns().isEmpty())
+        {
+            export.put("visibleColumns", exportColumns(detail, request.getColumns()));
+        }
+        options.put("export", export);
+        // 手册：limit 不控制导出行数（用 export.maxRows），offset 为 0；按手册示例保留 limit=20
+        body.put("limit", 20);
+        body.put("offset", 0);
+        ExportJob job = toExportJob(client.submitJob(body, operator));
+        log.info("[uds] XLSX 导出作业已提交 jobId={} status={} deduplicated={} dataset={} profile={} operator={}",
+            job.getJobId(), job.getStatus(), job.isDeduplicated(), body.get("dataset"), detail.getExportProfile(), operator);
+        return job;
+    }
+
+    /** 页面列编码 → UDS 导出列代码，保持用户选择的顺序；映射不到的列直接拒绝（UDS 会返回 4001） */
+    private static List<String> exportColumns(UdsProperties.DetailDataset detail, List<String> columns)
+    {
+        Set<String> out = new LinkedHashSet<>();
+        for (String code : columns)
+        {
+            if (StringUtils.isEmpty(code))
+            {
+                continue;
+            }
+            String uds = detail.getExportColumns().get(code);
+            if (StringUtils.isEmpty(uds))
+            {
+                uds = detail.getFields().get(code);
+            }
+            if (StringUtils.isEmpty(uds))
+            {
+                throw new com.fivetech.common.exception.ServiceException("不支援匯出的欄位：" + code, 4001);
+            }
+            out.add(uds);
+        }
+        return new ArrayList<>(out);
     }
 
     @Override
-    public ExportJob submitBenchmarkExport(String merchantCode, boolean detailRows, long maxRows)
+    public ExportJob submitBenchmarkExport(String merchantCode, boolean detailRows, long maxRows, String operator)
     {
         UdsProperties.Benchmark bench = properties.getBenchmark();
         Map<String, Object> body = new LinkedHashMap<>();
@@ -1612,24 +1675,24 @@ public class UdsMetricDataGateway implements MetricDataGateway
             body.put("filters", filters);
         }
         body.put("options", new LinkedHashMap<String, Object>());
-        return submit(body, maxRows);
+        return submit(body, maxRows, operator);
     }
 
     @Override
-    public ExportJob getExportJob(String jobId)
+    public ExportJob getExportJob(String jobId, String operator)
     {
-        return toExportJob(client.getJob(jobId));
+        return toExportJob(client.getJob(jobId, operator));
     }
 
     @Override
-    public ExportJob cancelExportJob(String jobId)
+    public ExportJob cancelExportJob(String jobId, String operator)
     {
-        return toExportJob(client.cancelJob(jobId));
+        return toExportJob(client.cancelJob(jobId, operator));
     }
 
-    /** 统一补上导出通道与导出参数后提交 */
+    /** 压测导出：补上导出通道与 CSV / PARQUET 导出参数后提交（四类业务明细走 submitBusiness） */
     @SuppressWarnings("unchecked")
-    private ExportJob submit(Map<String, Object> body, long maxRows)
+    private ExportJob submit(Map<String, Object> body, long maxRows, String operator)
     {
         Map<String, Object> options = (Map<String, Object>) body.computeIfAbsent("options", k -> new LinkedHashMap<>());
         // 同步查询的 channel（ONLINE/ADHOC）必须覆盖成 EXPORT，否则 UDS 返回 4403
@@ -1649,7 +1712,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         // 时间参数始终是完整时间戳（导出的「只传日期」拒绝修复尚未部署，不能指望服务端纠错）
         body.remove("limit");
         body.remove("offset");
-        ExportJob job = toExportJob(client.submitJob(body));
+        ExportJob job = toExportJob(client.submitJob(body, operator));
         log.info("[uds] 导出作业已提交 jobId={} status={} deduplicated={} dataset={} costTier={}",
             job.getJobId(), job.getStatus(), job.isDeduplicated(), body.get("dataset"), job.getCostTier());
         return job;
@@ -1678,6 +1741,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
                 file.setBytes(num(f, "bytes"));
                 file.setRows(num(f, "rows"));
                 file.setUrlExpiresAt(text(f, "urlExpiresAt"));
+                file.setName(text(f, "name"));
+                file.setMediaType(text(f, "mediaType"));
+                file.setSha256(text(f, "sha256"));
                 job.getFiles().add(file);
             }
         }

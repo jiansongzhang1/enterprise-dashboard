@@ -97,6 +97,22 @@ public class ExportJob implements Serializable
         public void setRows(Long rows) { this.rows = rows; }
         public String getUrlExpiresAt() { return urlExpiresAt; }
         public void setUrlExpiresAt(String urlExpiresAt) { this.urlExpiresAt = urlExpiresAt; }
+
+        /** UDS 生成的文件名（XLSX 业务导出，如「存款訂單-日期時間.xlsx」）；CSV 导出没有 */
+        private String name;
+
+        /** 文件类型：XLSX 为 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet，超 20 万行为 application/zip */
+        private String mediaType;
+
+        /** 文件 SHA-256，用于核对下载完整性 */
+        private String sha256;
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getMediaType() { return mediaType; }
+        public void setMediaType(String mediaType) { this.mediaType = mediaType; }
+        public String getSha256() { return sha256; }
+        public void setSha256(String sha256) { this.sha256 = sha256; }
     }
 
     public String getJobId() { return jobId; }

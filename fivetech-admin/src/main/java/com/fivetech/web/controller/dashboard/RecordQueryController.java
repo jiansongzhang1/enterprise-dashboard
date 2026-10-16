@@ -73,7 +73,10 @@ public class RecordQueryController extends BaseController
     {
         if (query.isExportCsv())
         {
-            ResponseEntity<?> async = asyncIfLarge("member", recordQueryService.buildMemberRequest(query));
+            RecordPageRequest memberRequest = recordQueryService.buildMemberRequest(query);
+            // 用户自选列：转异步 XLSX 导出时作为 visibleColumns 传给 UDS
+            memberRequest.setColumns(query.getColumns());
+            ResponseEntity<?> async = asyncIfLarge("member", memberRequest);
             if (async != null)
             {
                 return async;

@@ -17,6 +17,7 @@ import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.common.core.text.Convert;
 import com.fivetech.common.exception.DemoModeException;
 import com.fivetech.common.exception.ServiceException;
+import com.fivetech.common.exception.base.BaseException;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.utils.html.EscapeUtil;
@@ -121,6 +122,17 @@ public class GlobalExceptionHandler
         log.debug("数据服务调用失败堆栈", e);
         pushAlert("数据服务调用失败", e, request);
         return errorWithTrace(e.userMessage());
+    }
+
+    /**
+     * 用户类业务异常（验证码错误、密码错误、帐号锁定等）：属于预期内的用户输入错误，
+     * 只记一行 WARN，不打堆栈、不推送告警，提示语原样返回（不追加追踪号）
+     */
+    @ExceptionHandler(BaseException.class)
+    public AjaxResult handleBaseException(BaseException e, HttpServletRequest request)
+    {
+        log.warn("请求地址'{}',{}", request.getRequestURI(), e.getMessage());
+        return AjaxResult.error(e.getMessage());
     }
 
     /**

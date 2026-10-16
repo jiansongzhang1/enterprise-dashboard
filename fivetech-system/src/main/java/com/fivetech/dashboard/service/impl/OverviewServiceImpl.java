@@ -411,14 +411,10 @@ public class OverviewServiceImpl implements IOverviewService
         LocalDateTime cmpTo;
         if (type == CompareType.CUSTOM)
         {
+            // CUSTOM：完全按用户选择的区间取数，不做任何调整。
+            // 时间按站点时区（IST）的墙上时间理解，不做时区换算；主区间终点被截到当前整点时，对比期也不跟着缩短
             cmpFrom = parseSlot(query.getCompareFrom(), "compareFrom");
             cmpTo = parseSlot(query.getCompareTo(), "compareTo");
-            // 主区间终点被截到当前整点时，自定义对比期同步缩短，保持两段等长可比
-            // clampedBy 为负表示终点被往后推到当前整点，对比期同步加长
-            if (!clampedBy.isZero() && cmpTo.minus(clampedBy).isAfter(cmpFrom))
-            {
-                cmpTo = cmpTo.minus(clampedBy);
-            }
             if (!cmpTo.isAfter(cmpFrom))
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
@@ -446,9 +442,17 @@ public class OverviewServiceImpl implements IOverviewService
             cmpFrom = from.minusYears(1);
             cmpTo = to.minusYears(1);
         }
+        else if (from.toLocalDate().equals(to.minusNanos(1).toLocalDate()))
+        {
+            // PREV_PERIOD · 区间在同一自然日内（站点时区 IST）：固定对比前一天的同一时段。
+            // 例：今天 00:00–12:00（终点已截到当前整点）→ 昨天 00:00–12:00；
+            //     昨天全天 → 前天全天。不能用「等长紧邻」，否则今天 00:00–12:00 会对比到昨天 12:00–24:00
+            cmpFrom = from.minusDays(1);
+            cmpTo = to.minusDays(1);
+        }
         else
         {
-            // PREV_PERIOD：与主区间等长且紧邻
+            // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前 7 天）
             Duration span = Duration.between(from, to);
             cmpTo = from;
             cmpFrom = from.minus(span);
