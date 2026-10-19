@@ -16,11 +16,14 @@ import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.common.core.domain.entity.SysUser;
 import com.fivetech.common.core.domain.model.LoginUser;
 import com.fivetech.common.enums.BusinessType;
+import com.fivetech.common.utils.PasswordPolicy;
 import com.fivetech.common.utils.SecurityUtils;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.common.utils.file.FileUploadUtils;
 import com.fivetech.common.utils.file.FileUtils;
 import com.fivetech.common.utils.file.MimeTypeUtils;
+import com.fivetech.common.utils.ip.IpUtils;
+import com.fivetech.framework.notification.AccountMailService;
 import com.fivetech.framework.web.service.TokenService;
 import com.fivetech.system.service.ISysUserService;
 
@@ -39,6 +42,9 @@ public class SysProfileController extends BaseController
 
     @Autowired
     private TokenService tokenService;
+
+    @Autowired
+    private AccountMailService accountMailService;
 
     /**
      * 个人信息
@@ -84,6 +90,58 @@ public class SysProfileController extends BaseController
             return success();
         }
         return error("修改个人信息异常，请联系管理员");
+    }
+
+    /**
+     * 本人修改密码（管理后台「个人中心 → 修改密码」）。
+     * 校验旧密码、密码规则（PasswordPolicy）、不能与最近 N 次密码相同；
+     * 被替换的旧密码记入历史、更新 pwd_update_date，并发「密码已变更」通知（不含密码）
+     */
+    @Log(title = "个人信息-修改密码", businessType = BusinessType.UPDATE)
+    @PutMapping("/updatePwd")
+    public AjaxResult updatePwd(@RequestBody java.util.Map<String, String> params)
+    {
+        String oldPassword = params == null ? null : params.get("oldPassword");
+        String newPassword = params == null ? null : params.get("newPassword");
+        if (StringUtils.isEmpty(oldPassword) || StringUtils.isEmpty(newPassword))
+        {
+            return error("旧密码和新密码不能为空");
+        }
+        LoginUser loginUser = getLoginUser();
+        Long userId = loginUser.getUserId();
+        SysUser user = userService.selectUserById(userId);
+        if (user == null)
+        {
+            return error("用户不存在");
+        }
+        if (!SecurityUtils.matchesPassword(oldPassword, user.getPassword()))
+        {
+            return error("修改密码失败，旧密码错误");
+        }
+        String policyError = PasswordPolicy.check(user.getUserName(), newPassword);
+        if (policyError != null)
+        {
+            return error(policyError);
+        }
+        // 含当前密码：新密码与旧密码相同也在这里拦下
+        if (userService.isRecentPassword(userId, newPassword))
+        {
+            return error("新密码不可与最近 " + userService.getPasswordHistoryCount() + " 次使用的密码相同");
+        }
+        SysUser update = new SysUser();
+        update.setUserId(userId);
+        update.setPassword(SecurityUtils.encryptPassword(newPassword));
+        update.setUpdateBy(user.getUserName());
+        if (userService.resetPwd(update) > 0)
+        {
+            // 同步当前会话里的密码与改密时间，避免本次登录态里还是旧值
+            loginUser.getUser().setPwdUpdateDate(new java.util.Date());
+            loginUser.getUser().setPassword(update.getPassword());
+            tokenService.setLoginUser(loginUser);
+            accountMailService.sendPasswordChanged(user, false, IpUtils.getIpAddr());
+            return success();
+        }
+        return error("修改密码异常，请联系管理员");
     }
 
     /**

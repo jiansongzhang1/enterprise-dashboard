@@ -136,7 +136,7 @@ public class OverviewServiceImpl implements IOverviewService
         vo.setSlot(slot);
 
         // ---------- 2. 对比期 ----------
-        vo.setCompare(resolveCompare(query, from, to, clampedBy, notices));
+        vo.setCompare(resolveCompare(query, from, to, clampedBy, granularity, notices));
         
 
         // ---------- 4. 上下文 ----------
@@ -399,7 +399,7 @@ public class OverviewServiceImpl implements IOverviewService
     }
 
     private OverviewCompareVO resolveCompare(OverviewQuery query, LocalDateTime from, LocalDateTime to,
-            Duration clampedBy, List<OverviewNoticeVO> notices)
+            Duration clampedBy, Granularity granularity, List<OverviewNoticeVO> notices)
     {
         CompareType type = query.getCompareType() == null ? CompareType.PREV_PERIOD : query.getCompareType();
         if (type == CompareType.NONE)
@@ -411,13 +411,23 @@ public class OverviewServiceImpl implements IOverviewService
         LocalDateTime cmpTo;
         if (type == CompareType.CUSTOM)
         {
-            // CUSTOM：完全按用户选择的区间取数，不做任何调整。
-            // 时间按站点时区（IST）的墙上时间理解，不做时区换算；主区间终点被截到当前整点时，对比期也不跟着缩短
+            // CUSTOM：按用户选择的区间取数，时间按站点时区（IST）的墙上时间理解，不做时区换算。
+            // 主区间终点被截到当前整点时：
+            // · 小时粒度：对比期终点同步往前截同样的时长，两边小时数对齐，逐小时对比才有意义；
+            // · 天 / 周粒度：对比期保持用户所选，不截断、不因此报错 —— 当天数据偏低用户自己知道原因
             cmpFrom = parseSlot(query.getCompareFrom(), "compareFrom");
             cmpTo = parseSlot(query.getCompareTo(), "compareTo");
             if (!cmpTo.isAfter(cmpFrom))
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
+            }
+            boolean clamped = clampedBy != null && !clampedBy.isZero();
+            boolean hourly = granularity == Granularity.HOUR;
+            if (clamped && hourly && cmpTo.minus(clampedBy).isAfter(cmpFrom))
+            {
+                cmpTo = cmpTo.minus(clampedBy);
+                notices.add(OverviewNoticeVO.info("CMP_CLAMPED", "對比期已同步截斷",
+                    "對比期終點調整為 " + cmpTo.format(SLOT_IN) + "，與主區間小時數一致"));
             }
             // 对比期允许与主区间重叠（产品确认），不做重叠校验
             String launch = properties.getLaunchDate();
@@ -425,7 +435,10 @@ public class OverviewServiceImpl implements IOverviewService
             {
                 throw new ServiceException("对比期早于站点上线日 " + launch, 4002);
             }
-            long mainDays = ChronoUnit.DAYS.between(from, to);
+            // 长度校验用「截断前」的主区间：天 / 周粒度下主区间被截到当前整点不算长度不一致；
+            // 小时粒度两边已同步截断，用截断后的长度比较
+            LocalDateTime mainTo = clamped && !hourly ? to.plus(clampedBy) : to;
+            long mainDays = ChronoUnit.DAYS.between(from, mainTo);
             long cmpDays = ChronoUnit.DAYS.between(cmpFrom, cmpTo);
             if (mainDays != cmpDays)
             {
