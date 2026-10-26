@@ -4938,13 +4938,14 @@
 									"const j = pm.response.json();",
 									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
 									"const d = j.data;",
-									"pm.test('结构', () => pm.expect(d).to.include.all.keys('window','periodHours','unit','usual','preview','tooFewData'));",
+									"pm.test('结构', () => { pm.expect(d).to.include.all.keys('window','periodHours','unit','usual','preview'); pm.expect(d).to.not.have.property('tooFewData'); });",
 									"pm.test('窗口从 00:00 开始', () => pm.expect(d.window.from).to.match(/ 00:00$/));",
-									"pm.test('usual：p5 / p95 / min / max（不再有 p95Side）', () => { pm.expect(d.usual).to.include.all.keys('sampleHours','skippedHours','median','p5','p95','min','max','extreme'); pm.expect(d.usual).to.not.have.property('p95Side'); if (d.usual.min) pm.expect(d.usual.min).to.include.all.keys('value','hour','inOpenEvent'); });",
+									"pm.test('usual 来自 UDS metric_distribution：source / status / p5 / p95 / min / max', () => { pm.expect(d.usual).to.include.all.keys('source','status','sampleHours','skippedHours','median','p5','p95','min','max'); pm.expect(d.usual).to.not.have.property('extreme'); pm.expect(d.usual.source).to.eql('uds'); pm.expect(['ok','empty','notReady','notConfigured']).to.include(d.usual.status); pm.expect(d.usual).to.not.have.property('p95Side'); if (d.usual.min) pm.expect(d.usual.min).to.include.all.keys('value','hour','inOpenEvent'); });",
 									"pm.test('triggers.total = crit + warn', () => pm.expect(d.preview.triggers.total).to.eql(d.preview.triggers.crit + d.preview.triggers.warn));",
 									"pm.test('events 按 startHour 倒序、最多 50', () => { const s = d.preview.events.map(e => e.startHour); pm.expect(s).to.eql([...s].sort().reverse()); pm.expect(s.length).to.be.at.most(50); });",
 									"pm.test('durationCount 回传', () => pm.expect(d.durationCount).to.eql(2));",
-									"pm.test('p5 ≤ median ≤ p95', () => { if (d.usual.p5 !== null) { pm.expect(d.usual.p5).to.be.at.most(d.usual.median); pm.expect(d.usual.median).to.be.at.most(d.usual.p95); } });"
+									"pm.test('min ≤ p5 ≤ p95 ≤ max，极值时间是周期起点', () => { const u = d.usual; if (u.status === 'ok') { pm.expect(u.min.value).to.be.at.most(u.p5); pm.expect(u.p5).to.be.at.most(u.p95); pm.expect(u.p95).to.be.at.most(u.max.value); if (u.min.hour) pm.expect(u.min.hour).to.match(/:00$/); if (u.max.hour) pm.expect(u.max.hour).to.match(/:00$/); pm.expect(u.median).to.eql(null); } });",
+									"pm.test('sampleHours = UDS valid_point_count（有数据时为非负整数）', () => { if (d.usual.status === 'ok') { pm.expect(d.usual.sampleHours).to.be.a('number'); pm.expect(d.usual.sampleHours).to.be.at.least(0); } });"
 								]
 							}
 						}

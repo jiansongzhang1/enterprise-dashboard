@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +24,9 @@ import com.fivetech.common.exception.ServiceException;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.dashboard.gateway.HourlyFetch;
+import com.fivetech.dashboard.gateway.MetricDataGateway;
+import com.fivetech.dashboard.gateway.MetricDistribution;
+import com.fivetech.dashboard.service.MetricValueNormalizer;
 import com.fivetech.monitor.config.MonitorProperties;
 import com.fivetech.monitor.domain.MonitorMetricOption;
 import com.fivetech.monitor.domain.MonitorScope;
@@ -47,10 +51,12 @@ import tools.jackson.databind.ObjectMapper;
  * POST /monitor/rules/preview · 平时水平与触发预览（不写库）。
  *
  * <ol>
- *   <li>按站点 + 指标取近 30 天（今天往前 29 天的 00:00 起，到最近一个已落库的整点）逐小时序列、样本量序列，跌幅类另取基准；
+ *   <li>usual（平时水平）：直接取 UDS metric_distribution 数据集按检测周期统计好的 p5 / p95 / min / max / min_at / max_at
+ *       （2026-10-26 起，后端不再自己统计）。时间范围为近 30 天（今天往前 29 天的 00:00 起）内已结束的周期；
+ *       Redis 缓存 {@code monitor:dist:{site}:{metric}:{period}:{first}:{last}}，10 分钟。</li>
+ *   <li>preview（触发回测）：按站点 + 指标取同一窗口的逐小时序列（跌幅类另取基准），按检测周期聚合，
+ *       用和线上完全相同的判定函数（{@link MonitorJudge#judge}）重放；
  *       Redis 缓存 {@code monitor:series:{site}:{metric}}，1 小时；同一站点同一指标并发只发一次 UDS 请求。</li>
- *   <li>按检测周期聚合成周期序列，用和线上完全相同的判定函数（{@link MonitorJudge#judge}）跑一遍，得到越线段。</li>
- *   <li>usual 按检测周期统计，只用参与判定的周期（排除样本量不足、数据缺失、跌幅缺基准）；p5 / p95 用最近排名法，不插值。</li>
  * </ol>
  * 同一用户每秒最多 2 次（Redis 计数；Redis 不可用时不限流）。
  *
@@ -65,13 +71,13 @@ public class MonitorPreviewService
 
     static final int WINDOW_DAYS = 30;
 
-    static final int MIN_HOURS = 48;
-
     static final int MAX_EVENTS = 50;
 
     static final int RATE_PER_SECOND = 2;
 
     private static final Duration CACHE_TTL = Duration.ofHours(1);
+
+    private static final Duration DIST_CACHE_TTL = Duration.ofMinutes(10);
 
     private final MonitorMetaMapper metaMapper;
 
@@ -87,14 +93,20 @@ public class MonitorPreviewService
 
     private final ObjectMapper json;
 
+    private final MetricDataGateway gateway;
+
+    private final MetricValueNormalizer normalizer;
+
     private final ZoneId zone;
 
     private final Map<String, Object> fetchLocks = new ConcurrentHashMap<>();
 
     public MonitorPreviewService(MonitorMetaMapper metaMapper, MonitorEventMapper eventMapper, MonitorDataFetcher fetcher,
             MonitorPeriodBuilder periodBuilder, MonitorProperties properties, ObjectProvider<StringRedisTemplate> redisProvider,
-            ObjectMapper json, DashboardProperties dashboard)
+            ObjectMapper json, DashboardProperties dashboard, MetricDataGateway gateway, MetricValueNormalizer normalizer)
     {
+        this.gateway = gateway;
+        this.normalizer = normalizer;
         this.metaMapper = metaMapper;
         this.eventMapper = eventMapper;
         this.fetcher = fetcher;
@@ -164,116 +176,163 @@ public class MonitorPreviewService
         {
             points.add(periodBuilder.build(rule, data, p, p.plusHours(period)));
         }
-        // 参与判定的周期：排除样本量不足、数据缺失、跌幅缺基准（与判定同一函数）
-        List<PeriodPoint> valid = new ArrayList<>();
-        for (PeriodPoint p : points)
-        {
-            if (!Levels.SKIP.equals(MonitorJudge.periodLevel(judge, p)))
-            {
-                valid.add(p);
-            }
-        }
-        boolean tooFew = (long) valid.size() * period < MIN_HOURS;
+        // 平时水平：UDS 按周期统计好的四值与极值时间，时间范围 = 窗口内已结束的周期（与回测同一组周期起点）
         LocalDateTime openStart = openEventStart(scope, metric.getMetricCode());
-        out.put("usual", usual(metric.getJudgeType(), fmt, valid, points.size() - valid.size(), openStart));
+        MetricDistribution dist = points.isEmpty() ? null
+            : distribution(scope.getSiteCode(), metric.getMetricCode(), period, from, points.get(points.size() - 1).getFrom());
+        String code = metric.getMetricCode();
+        out.put("usual", usualOf(fmt, dist, v -> normalizer.normalize(code, v), openStart));
         out.put("preview", previewOf(judge, fmt, points));
-        out.put("tooFewData", tooFew);
         return out;
     }
 
     // ------------------------------------------------------------------ usual
 
     /**
-     * 平时水平（原型 y12usual、设计文档 usual）：近 30 天每个检测周期的值，只用参与判定的周期。
+     * 平时水平（原型 y12usual、设计文档 usual）：取 UDS metric_distribution 的结果，后端只做单位换算和格式化，不统计。
      * <ul>
-     *   <li>p5 / p95：第 5 / 第 95 百分位，最近排名法（n 个值升序，取第 floor(p×(n−1)) 个，从 0 计，不插值）。</li>
-     *   <li>min / max：最小值 / 最大值，hour 为该周期的开始小时，同值取最早一次；属于当前未恢复事件时 inOpenEvent = true。</li>
-     *   <li>跌幅类：p5 / p95 / min / max / median 都是较基准的跌幅百分比（1 位小数）。</li>
-     *   <li>sampleHours / skippedHours：参与 / 不参与判定的周期数（字段名沿用，周期为 1 小时时即小时数）。</li>
-     *   <li>extreme：保留兼容，最差的一个周期（下限取 min、上限取 max、跌幅取跌得最多的、区间取离中位数更远的一端）。</li>
+     *   <li>p5 / p95 / min / max：UDS 按检测周期的周期值统计（最近排名法，不插值）；比率 ×100、时长秒 → 分钟（MetricValueNormalizer）。</li>
+     *   <li>min / max 的 hour：极值所在周期的起点（UDS min_at / max_at）；属于当前未恢复事件时 inOpenEvent = true。</li>
+     *   <li>跌幅类同样是周期原始值（如注册人数）的四值，不是较基准的跌幅百分比。</li>
+     *   <li>sampleHours：参与统计的有效周期数（UDS valid_point_count，字段名沿用）；skippedHours、median UDS 不提供，为 null（字段保留兼容）。</li>
+     *   <li>source = uds；status：ok / empty（窗口内没有有效周期）/ notReady（上游未就绪）/ notConfigured（未接入）。</li>
      * </ul>
-     * 周期少于 20 个时前端不估计「约 5%」的位置、只给极值（原型 Y12USN），后端照常返回。
      */
-    private Map<String, Object> usual(String judgeType, String fmt, List<PeriodPoint> periods, int skipped,
+    static Map<String, Object> usualOf(String fmt, MetricDistribution d, UnaryOperator<BigDecimal> norm,
             LocalDateTime openStart)
     {
         Map<String, Object> u = new LinkedHashMap<>();
-        u.put("sampleHours", periods.size());
-        u.put("skippedHours", skipped);
-        boolean drop = JudgeRule.DROP.equals(judgeType);
-        List<BigDecimal> values = new ArrayList<>();
-        for (PeriodPoint p : periods)
+        u.put("source", "uds");
+        String status = d == null || !d.isConfigured() ? "notConfigured" : d.isNotReady() ? "notReady" : d.isEmpty() ? "empty" : "ok";
+        u.put("status", status);
+        u.put("sampleHours", d == null ? null : d.getCount());
+        u.put("skippedHours", null);
+        u.put("median", null);
+        if (!"ok".equals(status))
         {
-            BigDecimal v = drop ? MonitorJudge.dropPct(p.getValue(), p.getBaseline()) : p.getValue();
-            values.add(v == null ? BigDecimal.ZERO : v);
-        }
-        if (values.isEmpty())
-        {
-            u.put("median", null);
             u.put("p5", null);
             u.put("p95", null);
             u.put("min", null);
             u.put("max", null);
-            u.put("extreme", null);
             return u;
         }
-        u.put("median", out(drop, fmt, nearestRank(values, 0.50)));
-        u.put("p5", out(drop, fmt, nearestRank(values, 0.05)));
-        u.put("p95", out(drop, fmt, nearestRank(values, 0.95)));
-        int iMin = 0;
-        int iMax = 0;
-        for (int i = 1; i < values.size(); i++)
-        {
-            // 严格小于 / 大于：同值保留最早一次
-            if (values.get(i).compareTo(values.get(iMin)) < 0)
-            {
-                iMin = i;
-            }
-            if (values.get(i).compareTo(values.get(iMax)) > 0)
-            {
-                iMax = i;
-            }
-        }
-        Map<String, Object> min = point(drop, fmt, values.get(iMin), periods.get(iMin), openStart);
-        Map<String, Object> max = point(drop, fmt, values.get(iMax), periods.get(iMax), openStart);
-        u.put("min", min);
-        u.put("max", max);
-        Map<String, Object> extreme;
-        switch (judgeType)
-        {
-            case JudgeRule.LO:
-                extreme = min;
-                break;
-            case JudgeRule.HI:
-            case JudgeRule.DROP:
-                extreme = max;
-                break;
-            default:
-                BigDecimal median = nearestRank(values, 0.50);
-                extreme = values.get(iMin).subtract(median).abs().compareTo(values.get(iMax).subtract(median).abs()) > 0 ? min : max;
-                break;
-        }
-        u.put("extreme", extreme);
+        BigDecimal p5 = round(fmt, norm.apply(d.getP5()));
+        BigDecimal p95 = round(fmt, norm.apply(d.getP95()));
+        BigDecimal minV = round(fmt, norm.apply(d.getMin()));
+        BigDecimal maxV = round(fmt, norm.apply(d.getMax()));
+        u.put("p5", p5);
+        u.put("p95", p95);
+        u.put("min", point(minV, d.getMinAt(), openStart));
+        u.put("max", point(maxV, d.getMaxAt(), openStart));
+        u.put("stale", d.isStale());
         return u;
     }
 
-    private static Map<String, Object> point(boolean drop, String fmt, BigDecimal v, PeriodPoint p, LocalDateTime openStart)
+    private static Map<String, Object> point(BigDecimal v, LocalDateTime at, LocalDateTime openStart)
     {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("value", out(drop, fmt, v));
-        m.put("hour", p.getFrom().format(MINUTE));
-        m.put("inOpenEvent", openStart != null && !p.getFrom().isBefore(openStart));
+        m.put("value", v);
+        m.put("hour", at == null ? null : at.format(MINUTE));
+        m.put("inOpenEvent", openStart != null && at != null && !at.isBefore(openStart));
         return m;
     }
 
-    /** 跌幅百分比 1 位小数；其余按指标展示精度 */
-    private static BigDecimal out(boolean drop, String fmt, BigDecimal v)
+    /** UDS 周期值分布（Redis 缓存 10 分钟；取数失败不影响回测，平时水平返回 notReady） */
+    private MetricDistribution distribution(String site, String metricCode, int period, LocalDateTime firstStart,
+            LocalDateTime lastStart)
     {
-        if (v == null)
+        String key = "monitor:dist:" + site + ":" + metricCode + ":" + period + ":" + firstStart + ":" + lastStart;
+        MetricDistribution cached = readDistCache(key);
+        if (cached != null)
+        {
+            return cached;
+        }
+        MetricDistribution d;
+        try
+        {
+            d = gateway.queryDistribution(metricCode, period, firstStart, lastStart);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[monitor] 回测预览取平时水平失败 site={} metric={} period={}：{}", site, metricCode, period, e.getMessage());
+            d = new MetricDistribution();
+            d.setConfigured(true);
+            d.setNotReady(true);
+            return d;
+        }
+        if (d != null && d.isConfigured() && !d.isNotReady())
+        {
+            writeDistCache(key, d);
+        }
+        return d;
+    }
+
+    private MetricDistribution readDistCache(String key)
+    {
+        StringRedisTemplate redis = redisProvider.getIfAvailable();
+        if (redis == null)
         {
             return null;
         }
-        return drop ? v.setScale(1, RoundingMode.HALF_UP) : round(fmt, v);
+        try
+        {
+            String text = redis.opsForValue().get(key);
+            if (StringUtils.isEmpty(text))
+            {
+                return null;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = json.readValue(text, Map.class);
+            MetricDistribution d = new MetricDistribution();
+            d.setConfigured(true);
+            d.setEmpty(Boolean.TRUE.equals(m.get("empty")));
+            d.setStale(Boolean.TRUE.equals(m.get("stale")));
+            d.setP5(dec(m.get("p5")));
+            d.setP95(dec(m.get("p95")));
+            d.setMin(dec(m.get("min")));
+            d.setMax(dec(m.get("max")));
+            d.setMinAt(m.get("minAt") == null ? null : LocalDateTime.parse(String.valueOf(m.get("minAt"))));
+            d.setMaxAt(m.get("maxAt") == null ? null : LocalDateTime.parse(String.valueOf(m.get("maxAt"))));
+            d.setCount(m.get("count") == null ? null : Integer.valueOf(String.valueOf(m.get("count"))));
+            return d;
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[monitor] 平时水平缓存读取失败 {}：{}", key, e.getMessage());
+            return null;
+        }
+    }
+
+    private void writeDistCache(String key, MetricDistribution d)
+    {
+        StringRedisTemplate redis = redisProvider.getIfAvailable();
+        if (redis == null)
+        {
+            return;
+        }
+        try
+        {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("empty", d.isEmpty());
+            m.put("stale", d.isStale());
+            m.put("p5", d.getP5() == null ? null : d.getP5().toPlainString());
+            m.put("p95", d.getP95() == null ? null : d.getP95().toPlainString());
+            m.put("min", d.getMin() == null ? null : d.getMin().toPlainString());
+            m.put("max", d.getMax() == null ? null : d.getMax().toPlainString());
+            m.put("minAt", d.getMinAt() == null ? null : d.getMinAt().toString());
+            m.put("maxAt", d.getMaxAt() == null ? null : d.getMaxAt().toString());
+            m.put("count", d.getCount());
+            redis.opsForValue().set(key, json.writeValueAsString(m), DIST_CACHE_TTL);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[monitor] 平时水平缓存写入失败 {}：{}", key, e.getMessage());
+        }
+    }
+
+    private static BigDecimal dec(Object o)
+    {
+        return o == null ? null : new BigDecimal(String.valueOf(o));
     }
 
     private LocalDateTime openEventStart(MonitorScope scope, String metricCode)
@@ -522,19 +581,6 @@ public class MonitorPreviewService
     private static BigDecimal high(Threshold t)
     {
         return t == null ? null : t.getHigh();
-    }
-
-    /** 最近排名法百分位：升序后取第 floor(p × (n − 1)) 个（从 0 计），不插值；空列表为 null */
-    static BigDecimal nearestRank(List<BigDecimal> values, double p)
-    {
-        if (values == null || values.isEmpty())
-        {
-            return null;
-        }
-        List<BigDecimal> sorted = new ArrayList<>(values);
-        sorted.sort(Comparator.naturalOrder());
-        int i = (int) Math.floor(p * (sorted.size() - 1));
-        return sorted.get(Math.max(0, Math.min(sorted.size() - 1, i)));
     }
 
     /** 按指标展示精度取整：分钟 1 位，其余 2 位；去掉尾零 */

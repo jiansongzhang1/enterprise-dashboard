@@ -77,6 +77,7 @@
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/ExportJob.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/HourlyFetch.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/MetricDataGateway.java
+/Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/MetricDistribution.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/MetricSlotRequest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/RecordPage.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/RecordPageRequest.java

@@ -6,6 +6,7 @@ com/fivetech/monitor/MonitorNotifySenderTest.class
 com/fivetech/monitor/service/impl/MonitorRuleOwnerSiteTest.class
 com/fivetech/monitor/MonitorMapperScopeTest.class
 com/fivetech/common/lark/LarkClientTest.class
+com/fivetech/dashboard/gateway/uds/UdsDistributionQueryTest.class
 com/fivetech/monitor/engine/MonitorTestAlertServiceTest$2.class
 com/fivetech/monitor/service/impl/MonitorPreviewMathTest.class
 com/fivetech/monitor/SiteSettingServiceTest.class
@@ -27,6 +28,7 @@ com/fivetech/monitor/SiteSettingServiceTest$FakeMapper.class
 com/fivetech/monitor/service/impl/MonitorEventServiceTest$FakeEvents.class
 com/fivetech/dashboard/config/DashboardPropertiesAccessibleSitesTest.class
 com/fivetech/monitor/engine/MonitorEventWriterMissingDataTest.class
+com/fivetech/monitor/service/impl/MonitorPreviewUsualTest.class
 com/fivetech/dashboard/service/MetricDictServiceTest.class
 com/fivetech/monitor/MonitorNaturalOrderTest.class
 com/fivetech/dashboard/service/impl/OverviewChartTypeTest.class

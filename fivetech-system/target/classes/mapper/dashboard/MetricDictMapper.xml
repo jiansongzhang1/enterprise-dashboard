@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  系统管理 · 指标管理（dashboard_metric_card 的口径与取数说明）。
+  运营总览、指标汇总读这张表走 DashboardConfigMapper，启动时加载 status = '0' 的行；这里的写操作：
+    - 所有行：只改 remark、source_table / source_field、uds_*_field（这些列没有取数代码读）
+    - 仅登记（status = '1'）的行：还能改名称、分组、格式、方向、更新频率，能删除
+-->
+<mapper namespace="com.fivetech.dashboard.mapper.MetricDictMapper">
+
+	<resultMap type="MetricDictItem" id="MetricDictResult">
+		<result property="metricCode"       column="metric_code"        />
+		<result property="metricName"       column="metric_name"        />
+		<result property="metricNameEn"     column="metric_name_en"     />
+		<result property="groupCode"        column="group_code"         />
+		<result property="groupName"        column="group_name"         />
+		<result property="remark"           column="remark"             />
+		<result property="sourceTable"      column="source_table"       />
+		<result property="sourceField"      column="source_field"       />
+		<result property="udsHourField"     column="uds_hour_field"     />
+		<result property="udsDayField"      column="uds_day_field"      />
+		<result property="udsAmountField"   column="uds_amount_field"   />
+		<result property="udsBaselineField" column="uds_baseline_field" />
+		<result property="updateFrequency"  column="update_frequency"   />
+		<result property="singleDayOnly"    column="single_day_only"    />
+		<result property="chartType"        column="chart_type"         />
+		<result property="valueFormat"      column="value_format"       />
+		<result property="valueDecimals"    column="value_decimals"     />
+		<result property="direction"        column="direction"          />
+		<result property="showAsCard"       column="show_as_card"       />
+		<result property="sortNo"           column="sort_no"            />
+		<result property="calcType"         column="calc_type"          />
+		<result property="leftCode"         column="left_code"          />
+		<result property="rightCode"        column="right_code"         />
+		<result property="aggType"          column="agg_type"           />
+		<result property="weightField"      column="weight_field"       />
+		<result property="monitorable"      column="monitorable"        />
+		<result property="judgeType"        column="judge_type"         />
+		<result property="minSampleKey"     column="min_sample_key"     />
+		<result property="minSampleDefault" column="min_sample_default" />
+		<result property="allowNegative"    column="allow_negative"     />
+		<result property="gaugeMin"         column="gauge_min"          />
+		<result property="gaugeMax"         column="gauge_max"          />
+		<result property="status"           column="status"             />
+		<result property="createBy"         column="create_by"          />
+		<result property="createTime"       column="create_time"        />
+		<result property="updateBy"         column="update_by"          />
+		<result property="updateTime"       column="update_time"        />
+	</resultMap>
+
+	<sql id="selectDictVo">
+		select c.metric_code, c.metric_name, c.metric_name_en, c.group_code, g.group_name, c.remark,
+		       c.source_table, c.source_field, c.uds_hour_field, c.uds_day_field, c.uds_amount_field, c.uds_baseline_field,
+		       c.update_frequency, c.single_day_only, c.chart_type, c.value_format, c.value_decimals, c.direction,
+		       c.show_as_card, c.sort_no, c.calc_type, c.left_code, c.right_code, c.agg_type, c.weight_field,
+		       c.monitorable, c.judge_type, c.min_sample_key, c.min_sample_default, c.allow_negative,
+		       c.gauge_min, c.gauge_max, c.status, c.create_by, c.create_time, c.update_by, c.update_time
+		  from dashboard_metric_card c
+		  left join dashboard_metric_group g on g.group_code = c.group_code
+	</sql>
+
+	<select id="selectAll" resultMap="MetricDictResult">
+		<include refid="selectDictVo"/>
+		 order by case when c.status = '0' then 0 else 1 end, c.group_code, c.show_as_card desc, c.sort_no, c.metric_code
+	</select>
+
+	<select id="selectByCode" resultMap="MetricDictResult">
+		<include refid="selectDictVo"/>
+		 where c.metric_code = #{metricCode}
+	</select>
+
+	<select id="countCodeIgnoreCase" resultType="int">
+		select count(*) from dashboard_metric_card where lower(metric_code) = lower(#{metricCode})
+	</select>
+
+	<select id="selectGroups" resultType="java.util.LinkedHashMap">
+		select group_code as "groupCode", group_name as "groupName"
+		  from dashboard_metric_group
+		 order by sort_no, group_code
+	</select>
+
+	<select id="selectPageRefs" resultType="java.util.LinkedHashMap">
+		select metric_code as "metricCode", page_code as "pageCode"
+		  from dashboard_page_metric
+		 order by metric_code, page_code
+	</select>
+
+	<select id="selectRuleCounts" resultType="java.util.LinkedHashMap">
+		select metric_code as "metricCode", count(*) as "cnt"
+		  from monitor_rule
+		 where del_flag = '0'
+		 group by metric_code
+	</select>
+
+	<select id="countEvents" resultType="int">
+		select count(*) from monitor_event where metric_code = #{metricCode}
+	</select>
+
+	<insert id="insertRegistered">
+		insert into dashboard_metric_card (
+		    metric_code, metric_name, metric_name_en, group_code,
+		    source_table, source_field, uds_hour_field, uds_day_field, uds_amount_field, uds_baseline_field,
+		    update_frequency, single_day_only, chart_type, value_format, direction, show_as_card, sort_no,
+		    calc_type, agg_type, monitorable, allow_negative, status, remark, create_by, create_time
+		) values (
+		    #{item.metricCode}, #{item.metricName}, #{item.metricNameEn}, #{item.groupCode},
+		    #{item.sourceTable}, #{item.sourceField}, #{item.udsHourField}, #{item.udsDayField},
+		    #{item.udsAmountField}, #{item.udsBaselineField},
+		    #{item.updateFrequency}, false, 'NUMBER', #{item.valueFormat}, #{item.direction}, false,
+		    (select coalesce(max(sort_no), 900) + 1 from dashboard_metric_card),
+		    'NONE', 'SUM', false, false, '1', #{item.remark}, #{item.createBy}, current_timestamp
+		)
+	</insert>
+
+	<update id="updateDictionary">
+		update dashboard_metric_card
+		   set remark             = #{item.remark},
+		       source_table       = #{item.sourceTable},
+		       source_field       = #{item.sourceField},
+		       uds_hour_field     = #{item.udsHourField},
+		       uds_day_field      = #{item.udsDayField},
+		       uds_amount_field   = #{item.udsAmountField},
+		       uds_baseline_field = #{item.udsBaselineField},
+		       update_by          = #{item.updateBy},
+		       update_time        = current_timestamp
+		 where metric_code = #{item.metricCode}
+	</update>
+
+	<update id="updateRegisteredBasic">
+		update dashboard_metric_card
+		   set metric_name      = #{item.metricName},
+		       metric_name_en   = #{item.metricNameEn},
+		       group_code       = #{item.groupCode},
+		       value_format     = #{item.valueFormat},
+		       direction        = #{item.direction},
+		       update_frequency = #{item.updateFrequency},
+		       update_by        = #{item.updateBy},
+		       update_time      = current_timestamp
+		 where metric_code = #{item.metricCode}
+		   and status = '1'
+	</update>
+
+	<delete id="deleteRegistered">
+		delete from dashboard_metric_card where metric_code = #{metricCode} and status = '1'
+	</delete>
+
+</mapper>

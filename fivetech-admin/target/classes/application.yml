@@ -341,6 +341,38 @@ dashboard:
         # （active → dashboard_overview_day_v2.active_day）。多天区间仍按各日日去重值取平均；
         # 未列出的（arppu、depU）不完整的一天保持 NULL
         single-day-from-day: [active]
+      # 回测预览「平时水平」（POST /monitor/rules/preview 的 usual）：UDS metric_distribution_v1 直接给出
+      # 每个指标按检测周期切分后的 p5 / p95 / min / max / min_at / max_at，以及有效周期数 valid_point_count（平时水平的 sampleHours），
+      # 后端不再统计（UDS 20 指标四值联调文档，2026-10-26）。
+      # period_code 默认 1→H1、4→H4、6→H6、12→H12、24→DAY；列名默认 p5 / p95 / min / max / min_at / max_at / valid_point_count（columns 可覆盖）。
+      # 比率 0～1、时长秒，与 overview 数据集一样由 MetricValueNormalizer 换算。name 置空 = 不接入，平时水平返回空。
+      distribution:
+        name: ${UDS_DISTRIBUTION_DATASET:metric_distribution_v1}
+        time-dimension: period_start
+        options:
+          channel: ${UDS_QUERY_CHANNEL:ONLINE}
+        # 本系统指标编码 → UDS metric_code（20 个可监控指标）
+        metrics:
+          dOkR: deposit_success_rate
+          wOkR: withdrawal_success_rate
+          ftdr: first_deposit_conversion_rate
+          net: net_deposit
+          dT: avg_deposit_time_seconds
+          wT: avg_withdrawal_time_seconds
+          turnX: turnover_multiple
+          killR: average_kill_rate
+          bonusR: bonus_ratio
+          reg: registration_count
+          ftd: first_deposit_count
+          ftdA: first_deposit_arppu
+          dep: deposit_amount
+          wd: withdrawal_amount
+          arppu: arppu
+          active: active_hour_sum
+          bet: bet_amount
+          ggr: ggr_amount
+          bonus: bonus_amount
+          ngr: ngr_amount
       # 明细数据集（联调手册第 9 节，字段见 detail-contracts.json）。
       # fields：key = 列编码（RecordColumnRegistry），value = UDS 字段名；未映射的列返回 null
       # 列表与 COUNT 用 /v1/query/batch 一次发出；排序固定以 uds_rowkey ASC 收尾；limit ≤ 1000、offset ≤ 100000

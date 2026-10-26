@@ -71,6 +71,21 @@ public interface MetricDataGateway
             java.time.LocalDateTime from, java.time.LocalDateTime to);
 
     /**
+     * 回测预览「平时水平」专用：UDS metric_distribution 数据集里某个指标按检测周期切分后的
+     * p5 / p95 / min / max 与 min_at / max_at（UDS 计算，后端不统计）。调用方负责站点上下文（SiteContext）。
+     *
+     * @param metricCode  指标编码（本系统编码，按 dashboard.gateway.uds.distribution.metrics 映射成 UDS 的 metric_code）
+     * @param periodHours 检测周期 1 / 4 / 6 / 12 / 24 小时（映射成 period_code H1 / H4 / H6 / H12 / DAY）
+     * @param firstStart  第一个周期的起点（含）
+     * @param lastStart   最后一个周期的起点（含）；UDS 按周期起点筛选，两端都包含
+     */
+    default MetricDistribution queryDistribution(String metricCode, int periodHours,
+            java.time.LocalDateTime firstStart, java.time.LocalDateTime lastStart)
+    {
+        return MetricDistribution.notConfigured();
+    }
+
+    /**
      * 查询会员明细分页
      */
     RecordPage<MemberRecordVO> queryMemberRecords(RecordPageRequest request);

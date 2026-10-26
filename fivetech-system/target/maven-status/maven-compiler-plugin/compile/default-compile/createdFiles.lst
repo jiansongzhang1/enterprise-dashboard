@@ -28,6 +28,7 @@ com/fivetech/system/service/ISysDictDataService.class
 com/fivetech/system/service/impl/SysMenuServiceImpl.class
 com/fivetech/system/service/impl/SysDictTypeServiceImpl.class
 com/fivetech/monitor/domain/MonitorCardRule.class
+com/fivetech/system/mapper/SysUserPwdHistoryMapper.class
 com/fivetech/monitor/service/IMonitorLarkChatService.class
 com/fivetech/monitor/engine/judge/JudgeResult.class
 com/fivetech/dashboard/domain/vo/PageResultVO.class
@@ -170,6 +171,7 @@ com/fivetech/monitor/engine/judge/RunState.class
 com/fivetech/dashboard/format/MoneyScale.class
 com/fivetech/dashboard/domain/ResolvedRange.class
 com/fivetech/dashboard/domain/query/CohortQuery.class
+com/fivetech/dashboard/gateway/uds/UdsProperties$Enrich.class
 com/fivetech/monitor/domain/MonitorEventQuery.class
 com/fivetech/monitor/mapper/MonitorEventMapper.class
 com/fivetech/monitor/service/MonitorRuleValidator.class
@@ -184,6 +186,7 @@ com/fivetech/monitor/domain/dto/MonitorHandleBody.class
 com/fivetech/system/service/ISysDeptService.class
 com/fivetech/dashboard/domain/vo/OverviewBlockErrorVO.class
 com/fivetech/monitor/mapper/MonitorEngineMapper.class
+com/fivetech/dashboard/gateway/MetricDistribution.class
 com/fivetech/dashboard/gateway/RecordPageRequest.class
 com/fivetech/dashboard/domain/query/BaseRecordQuery.class
 com/fivetech/system/service/ISysAccountLinkService.class
@@ -246,6 +249,7 @@ com/fivetech/monitor/service/MonitorNaturalOrder.class
 com/fivetech/dashboard/domain/vo/OverviewSlotVO.class
 com/fivetech/monitor/engine/judge/MonitorJudge$1.class
 com/fivetech/dashboard/domain/vo/WithdrawRecordVO.class
+com/fivetech/dashboard/gateway/uds/UdsProperties$Distribution.class
 com/fivetech/monitor/service/MonitorSlotService.class
 com/fivetech/dashboard/format/RenderContext.class
 com/fivetech/dashboard/service/IOverviewSectionService.class

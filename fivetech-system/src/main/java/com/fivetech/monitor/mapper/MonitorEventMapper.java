@@ -24,7 +24,7 @@ public interface MonitorEventMapper
     int markHandled(@Param("scope") MonitorScope scope, @Param("ids") List<Long> eventIds, @Param("note") String note,
             @Param("userId") Long userId, @Param("now") LocalDateTime now);
 
-    /** 本站该指标异常中事件的起点（回测预览 extreme.inOpenEvent 用）；没有为 null */
+    /** 本站该指标异常中事件的起点（回测预览平时水平 min / max 的 inOpenEvent 用）；没有为 null */
     LocalDateTime selectOpenEventStart(@Param("scope") MonitorScope scope, @Param("metricCode") String metricCode);
 
     /** 撤销处理：回到 pending，清空处理说明、处理人、时间、处理时等级 */

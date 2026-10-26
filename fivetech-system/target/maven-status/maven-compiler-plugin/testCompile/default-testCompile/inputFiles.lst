@@ -1,6 +1,7 @@
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/common/lark/LarkClientTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/config/DashboardPropertiesAccessibleSitesTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/config/DashboardPropertiesSiteTimezoneTest.java
+/Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/gateway/uds/UdsDistributionQueryTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/service/MetricDictServiceTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/service/impl/OverviewChartTypeTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/dashboard/service/impl/OverviewCoversTodayTest.java
@@ -17,4 +18,5 @@
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/monitor/service/MonitorSlotServiceTextProbe.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/monitor/service/impl/MonitorEventServiceTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/monitor/service/impl/MonitorPreviewMathTest.java
+/Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/monitor/service/impl/MonitorPreviewUsualTest.java
 /Users/jackson/Documents/dashboard/dashboard-backend/fivetech-system/src/test/java/com/fivetech/monitor/service/impl/MonitorRuleOwnerSiteTest.java

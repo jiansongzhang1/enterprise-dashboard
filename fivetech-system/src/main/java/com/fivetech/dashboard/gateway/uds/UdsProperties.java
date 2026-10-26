@@ -42,6 +42,105 @@ public class UdsProperties
     /** 运营总览 / 指标汇总的数据集路由（见 {@link Overview}） */
     private Overview overview = new Overview();
 
+    /** 回测预览「平时水平」的周期值分布（metric_distribution 数据集，见 {@link Distribution}） */
+    private Distribution distribution = new Distribution();
+
+    public Distribution getDistribution()
+    {
+        return distribution;
+    }
+
+    public void setDistribution(Distribution distribution)
+    {
+        this.distribution = distribution == null ? new Distribution() : distribution;
+    }
+
+    /**
+     * 周期值分布数据集（UDS 20 指标四值联调文档，2026-10-26）：每行 = metric_code × period_code，
+     * 值为 p5 / p95 / min / max、min_at / max_at（极值所在周期的起点）和 valid_point_count（参与统计的有效周期数）。时间维度是周期起点 period_start，
+     * time.from / time.to 两端都包含。比率为 0～1 小数、时长为秒，与 overview 数据集一致，由 MetricValueNormalizer 换算。
+     */
+    public static class Distribution
+    {
+        /** 数据集名；为空表示未接入，平时水平返回空 */
+        private String name;
+
+        /** 时间维度（周期起点） */
+        private String timeDimension = "period_start";
+
+        /** 指标列名 */
+        private String metricField = "metric_code";
+
+        /** 周期列名 */
+        private String periodField = "period_code";
+
+        /** 本系统指标编码 → UDS metric_code */
+        private Map<String, String> metrics = new LinkedHashMap<>();
+
+        /** 检测周期小时数 → period_code */
+        private Map<String, String> periodCodes = new LinkedHashMap<>();
+
+        /** 取回的值：p5 / p95 / min / max / minAt / maxAt / count（有效周期数）→ UDS 列名 */
+        private Map<String, String> columns = new LinkedHashMap<>();
+
+        private Map<String, Object> options = new LinkedHashMap<>();
+
+        public Distribution()
+        {
+            periodCodes.put("1", "H1");
+            periodCodes.put("4", "H4");
+            periodCodes.put("6", "H6");
+            periodCodes.put("12", "H12");
+            periodCodes.put("24", "DAY");
+            columns.put("p5", "p5");
+            columns.put("p95", "p95");
+            columns.put("min", "min");
+            columns.put("max", "max");
+            columns.put("minAt", "min_at");
+            columns.put("maxAt", "max_at");
+            columns.put("count", "valid_point_count");
+        }
+
+        public boolean isConfigured()
+        {
+            return name != null && !name.trim().isEmpty() && !metrics.isEmpty();
+        }
+
+        public String getName() { return name; }
+
+        public void setName(String name) { this.name = name; }
+
+        public String getTimeDimension() { return timeDimension; }
+
+        public void setTimeDimension(String timeDimension) { this.timeDimension = timeDimension; }
+
+        public String getMetricField() { return metricField; }
+
+        public void setMetricField(String metricField) { this.metricField = metricField; }
+
+        public String getPeriodField() { return periodField; }
+
+        public void setPeriodField(String periodField) { this.periodField = periodField; }
+
+        public Map<String, String> getMetrics() { return metrics; }
+
+        public void setMetrics(Map<String, String> metrics) { this.metrics = metrics == null ? new LinkedHashMap<>() : metrics; }
+
+        public Map<String, String> getPeriodCodes() { return periodCodes; }
+
+        /** 合并：yml 只写要覆盖的项 */
+        public void setPeriodCodes(Map<String, String> periodCodes) { if (periodCodes != null) { this.periodCodes.putAll(periodCodes); } }
+
+        public Map<String, String> getColumns() { return columns; }
+
+        /** 合并：yml 只写要覆盖或新增的项（如 count） */
+        public void setColumns(Map<String, String> columns) { if (columns != null) { this.columns.putAll(columns); } }
+
+        public Map<String, Object> getOptions() { return options; }
+
+        public void setOptions(Map<String, Object> options) { this.options = options == null ? new LinkedHashMap<>() : options; }
+    }
+
     public String getBatchPath()
     {
         return batchPath;
