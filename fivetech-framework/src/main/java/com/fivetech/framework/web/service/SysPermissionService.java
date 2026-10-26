@@ -10,7 +10,9 @@ import com.fivetech.common.constant.Constants;
 import com.fivetech.common.constant.UserConstants;
 import com.fivetech.common.core.domain.entity.SysRole;
 import com.fivetech.common.core.domain.entity.SysUser;
+import com.fivetech.common.utils.SiteContext;
 import com.fivetech.common.utils.StringUtils;
+import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.system.service.ISysMenuService;
 import com.fivetech.system.service.ISysRoleService;
 
@@ -27,6 +29,9 @@ public class SysPermissionService
 
     @Autowired
     private ISysMenuService menuService;
+
+    @Autowired
+    private DashboardProperties dashboardProperties;
 
     /**
      * 获取角色数据权限
@@ -85,5 +90,59 @@ public class SysPermissionService
             }
         }
         return perms;
+    }
+
+    // ===================== 多站点一期：角色带站点 =====================
+
+    /**
+     * 当前站点下的角色标识：当前站点的角色 + 通用角色（site_code 为空）。超级管理员返回 admin
+     */
+    public Set<String> getRolePermissionForSite(SysUser user)
+    {
+        Set<String> roles = new HashSet<String>();
+        if (user.isAdmin())
+        {
+            roles.add(Constants.SUPER_ADMIN);
+            return roles;
+        }
+        String site = SiteContext.code();
+        if (user.getRoles() != null)
+        {
+            for (SysRole role : user.getRoles())
+            {
+                if (StringUtils.equals(role.getStatus(), UserConstants.ROLE_NORMAL) && appliesTo(role, site)
+                    && StringUtils.isNotEmpty(role.getRoleKey()))
+                {
+                    roles.add(role.getRoleKey());
+                }
+            }
+        }
+        return roles;
+    }
+
+    /**
+     * 用户可以切换的站点（按配置顺序）：超级管理员 = 全部；其他用户 = 站点角色所属的站点，
+     * 有通用角色时再加上默认站点；一个都没有时只给默认站点（兼容未分配站点的老账号）
+     */
+    public List<String> accessibleSites(SysUser user)
+    {
+        List<String> roleSites = new java.util.ArrayList<>();
+        if (user != null && user.getRoles() != null)
+        {
+            for (SysRole role : user.getRoles())
+            {
+                if (StringUtils.equals(role.getStatus(), UserConstants.ROLE_NORMAL))
+                {
+                    roleSites.add(role.getSiteCode());
+                }
+            }
+        }
+        return dashboardProperties.accessibleSites(user == null || user.isAdmin(), roleSites);
+    }
+
+    private static boolean appliesTo(SysRole role, String site)
+    {
+        String roleSite = StringUtils.trim(role.getSiteCode());
+        return StringUtils.isEmpty(roleSite) || (site != null && roleSite.equalsIgnoreCase(site));
     }
 }

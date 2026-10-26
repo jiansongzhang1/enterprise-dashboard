@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="9f2a39d0-2e97-4a4f-b526-8e15773b2ced" name="Changes" comment="login fix">
+      <change beforePath="$PROJECT_DIR$/doc/dashboard-api.postman_collection.json" beforeDir="false" afterPath="$PROJECT_DIR$/doc/dashboard-api.postman_collection.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/doc/dashboard-uds-v2-acceptance.postman_collection.json" beforeDir="false" afterPath="$PROJECT_DIR$/doc/dashboard-uds-v2-acceptance.postman_collection.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/system/SysLoginController.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/system/SysLoginController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/system/SysRoleController.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/system/SysRoleController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-admin/src/main/resources/application.yml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-admin/src/main/resources/application.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-common/src/main/java/com/fivetech/common/core/domain/entity/SysRole.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-common/src/main/java/com/fivetech/common/core/domain/entity/SysRole.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-common/src/main/java/com/fivetech/common/core/domain/model/LoginUser.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-common/src/main/java/com/fivetech/common/core/domain/model/LoginUser.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/config/ResourcesConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/config/ResourcesConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/interceptor/AdminIpWhitelistInterceptor.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/interceptor/AdminIpWhitelistInterceptor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/notification/LarkNotificationService.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/notification/LarkNotificationService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/web/exception/GlobalExceptionHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/web/exception/GlobalExceptionHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/web/service/SysPermissionService.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-framework/src/main/java/com/fivetech/framework/web/service/SysPermissionService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/config/DashboardProperties.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/config/DashboardProperties.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/MetricCardConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/MetricCardConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/MetricDefinition.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/MetricDefinition.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/MetricAlertVO.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/MetricAlertVO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/MetricCardVO.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/MetricCardVO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/OverviewVO.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/OverviewVO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/overview/GameItemVO.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/domain/vo/overview/GameItemVO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/export/ExportTemplate.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/export/ExportTemplate.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/format/ValueFormat.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/format/ValueFormat.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/MetricDataGateway.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/MetricDataGateway.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsClient.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/MetricRegistry.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/MetricRegistry.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/DashboardExportServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/DashboardExportServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/MetricSummaryServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/MetricSummaryServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewSectionServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewSectionServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/RecordQueryServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/RecordQueryServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/system/mapper/SysMenuMapper.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/system/mapper/SysMenuMapper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/system/service/impl/SysMenuServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/system/service/impl/SysMenuServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/dashboard/DashboardConfigMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/dashboard/DashboardConfigMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysMenuMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysMenuMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysRoleMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysRoleMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysUserMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/fivetech-system/src/main/resources/mapper/system/SysUserMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sql/dashboard_metric_card_postgresql.sql" beforeDir="false" afterPath="$PROJECT_DIR$/sql/dashboard_metric_card_postgresql.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sql/fivetech_schema_postgresql.sql" beforeDir="false" afterPath="$PROJECT_DIR$/sql/fivetech_schema_postgresql.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sql/ry_20260819_postgresql.sql" beforeDir="false" afterPath="$PROJECT_DIR$/sql/ry_20260819_postgresql.sql" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="DatabaseLocalColorSettings">
+    <colors>
+      <entry key="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" value="" />
+    </colors>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="main" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;jiansongzhang1&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/jiansongzhang1/enterprise-dashboard.git&quot;,
+    &quot;accountId&quot;: &quot;3720a78d-2ca5-42d3-afb8-45d1702818bd&quot;
+  }
+}</component>
+  <component name="MavenRunner">
+    <option name="skipTests" value="true" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0" />
+      <entry key="M2" value="1.0" />
+      <entry key="M5" value="1.0" />
+      <entry key="M10" value="1.0" />
+      <entry key="M15" value="1.0" />
+      <entry key="M30" value="1.0" />
+      <entry key="H1" value="1.0000000017841344" />
+      <entry key="H2" value="1.0000427582552596" />
+      <entry key="H4" value="1.0079990054328354" />
+      <entry key="D1" value="2.8262621527635257" />
+      <entry key="W1" value="35.05225417179054" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="2.0961829769179824E-302" />
+      <entry key="M15" value="7.602436356882509E-202" />
+      <entry key="M30" value="2.7572515947737723E-101" />
+      <entry key="H1" value="5.250953813140792E-51" />
+      <entry key="H2" value="7.246346862238396E-26" />
+      <entry key="H4" value="2.692474358198698E-13" />
+      <entry key="D1" value="0.010056589406531057" />
+      <entry key="W1" value="2.1774847614697452" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="0.7845840978967508" />
+      <entry key="MS500" value="0.9526379980439373" />
+      <entry key="S2" value="0.987943197140516" />
+      <entry key="S5" value="0.9951597218200828" />
+      <entry key="S10" value="0.9975769252644544" />
+      <entry key="S30" value="0.9991916551761939" />
+      <entry key="S60" value="0.9995957458773991" />
+      <entry key="M2" value="0.9997978525068951" />
+      <entry key="M5" value="0.9999191360985962" />
+      <entry key="M10" value="0.9999595672318937" />
+      <entry key="M15" value="0.9999730446396138" />
+      <entry key="M30" value="0.9999865222289818" />
+      <entry key="H1" value="0.9999932628759122" />
+      <entry key="H2" value="1.0000393887149732" />
+      <entry key="H4" value="1.0079973070203516" />
+      <entry key="D1" value="2.836316600483744" />
+      <entry key="W1" value="37.22972754823751" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3I1Thux8OPP82KLKX13YYDs4mBW" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Maven.fivetech [clean].executor": "Run",
+    "Maven.fivetech [compile].executor": "Run",
+    "Maven.fivetech [package].executor": "Run",
+    "Maven.fivetech [verify].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RequestMappingsPanelOrder0": "0",
+    "RequestMappingsPanelOrder1": "1",
+    "RequestMappingsPanelWidth0": "75",
+    "RequestMappingsPanelWidth1": "75",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHELLCHECK.PATH": "/Users/jackson/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/Shell Script/shellcheck",
+    "Spring Boot.FiveTechApplication.executor": "Run",
+    "Spring Boot.RuoYiApplication.executor": "Run",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "prod",
+    "git.auto.fetch.suggestion.counter": "1",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/jackson/Documents/dashboard/dashboard-backend",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "MavenSettings"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "postgresql",
+      "oracle"
+    ]
+  }
+}]]></component>
+  <component name="RunManager" selected="Spring Boot.FiveTechApplication">
+    <configuration name="FiveTechApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+      <option name="FRAME_DEACTIVATION_UPDATE_POLICY" value="UpdateClassesAndResources" />
+      <module name="fivetech-admin" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="com.fivetech.FiveTechApplication" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="RuoYiApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" temporary="true" nameIsGenerated="true">
+      <option name="FRAME_DEACTIVATION_UPDATE_POLICY" value="UpdateClassesAndResources" />
+      <module name="ruoyi-admin" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="com.ruoyi.RuoYiApplication" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.ruoyi.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Spring Boot.RuoYiApplication" />
+        <item itemvalue="Spring Boot.RuoYiApplication" />
+        <item itemvalue="Spring Boot.RuoYiApplication" />
+        <item itemvalue="Spring Boot.RuoYiApplication" />
+        <item itemvalue="Spring Boot.RuoYiApplication" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-34e2839f716b-intellij.indexing.shared.core-IU-262.9437.185" />
+        <option value="bundled-js-predefined-d6986cc7102b-4abd2a77f808-JavaScript-IU-262.9437.185" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="9f2a39d0-2e97-4a4f-b526-8e15773b2ced" name="Changes" comment="" />
+      <created>1786931197450</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1786931197450</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="dependencySupport" implementationName="java:org.springframework:spring-core" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.security:spring-security-core" />
+    <option featureType="dependencySupport" implementationName="executable:docker" />
+    <option featureType="dependencySupport" implementationName="java:jakarta.validation:jakarta.validation-api" />
+    <option featureType="dependencySupport" implementationName="java:io.projectreactor:reactor-core" />
+    <option featureType="dependencySupport" implementationName="executable:kubectl" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.data:spring-data-commons" />
+    <option featureType="dependencySupport" implementationName="java:org.hibernate.validator:hibernate-validator" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework:spring-messaging" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.boot:spring-boot" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework:spring-webmvc" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="fix readme" />
+    <MESSAGE value="fix" />
+    <MESSAGE value="增加在线用户管理功能" />
+    <MESSAGE value="fix json Serializable" />
+    <MESSAGE value="config for expire" />
+    <MESSAGE value="add traceid and log" />
+    <MESSAGE value="add traceid and log and metics" />
+    <MESSAGE value="dashboard" />
+    <MESSAGE value="dashboard v2" />
+    <MESSAGE value="dashboard v3" />
+    <MESSAGE value="remove password" />
+    <MESSAGE value="new error code" />
+    <MESSAGE value="fix security issue" />
+    <MESSAGE value="login fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="login fix" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/ruoyi-framework/src/main/java/com/ruoyi/framework/web/service/SysLoginService.java</url>
+          <line>93</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/system/service/impl/SysRoleServiceImpl.java</url>
+          <line>308</line>
+          <option name="timeStamp" value="13" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/dashboard/MetricSummaryController.java</url>
+          <line>52</line>
+          <option name="timeStamp" value="17" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/MetricSummaryServiceImpl.java</url>
+          <line>72</line>
+          <option name="timeStamp" value="21" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/impl/StubMetricDataGateway.java</url>
+          <line>54</line>
+          <option name="timeStamp" value="22" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/MetricRegistry.java</url>
+          <line>127</line>
+          <option name="timeStamp" value="25" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java</url>
+          <line>1670</line>
+          <option name="timeStamp" value="31" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewServiceImpl.java</url>
+          <line>1119</line>
+          <option name="timeStamp" value="36" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java</url>
+          <line>1981</line>
+          <option name="timeStamp" value="37" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java</url>
+          <line>1954</line>
+          <option name="timeStamp" value="38" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/service/impl/OverviewSectionServiceImpl.java</url>
+          <line>304</line>
+          <option name="timeStamp" value="39" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsClient.java</url>
+          <line>125</line>
+          <option name="timeStamp" value="42" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsClient.java</url>
+          <line>141</line>
+          <option name="timeStamp" value="43" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-system/src/main/java/com/fivetech/dashboard/gateway/uds/UdsMetricDataGateway.java</url>
+          <line>252</line>
+          <option name="timeStamp" value="44" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/dashboard/OverviewController.java</url>
+          <line>94</line>
+          <option name="timeStamp" value="45" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/fivetech-admin/src/main/java/com/fivetech/web/controller/dashboard/OverviewController.java</url>
+          <line>89</line>
+          <option name="timeStamp" value="46" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>

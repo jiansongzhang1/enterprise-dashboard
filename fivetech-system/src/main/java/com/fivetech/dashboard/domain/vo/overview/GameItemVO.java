@@ -36,6 +36,9 @@ public class GameItemVO implements Serializable
     /** 投注金额（INR） */
     private BigDecimal betAmount;
 
+    /** GGR（INR，dashboard_game_ranking.ggr，平台视角：投注 − 派彩） */
+    private BigDecimal ggr;
+
     /** 盈利率 = GGR ÷ 投注金额，如 15.4% */
     private String profitRate;
 
@@ -128,6 +131,16 @@ public class GameItemVO implements Serializable
         this.betAmount = com.fivetech.dashboard.format.MoneyScale.of(betAmount);
     }
 
+    public BigDecimal getGgr()
+    {
+        return ggr;
+    }
+
+    public void setGgr(BigDecimal ggr)
+    {
+        this.ggr = com.fivetech.dashboard.format.MoneyScale.of(ggr);
+    }
+
     public String getProfitRate()
     {
         return profitRate;
@@ -168,10 +181,11 @@ public class GameItemVO implements Serializable
         this.betCount = betCount;
     }
 
-    /** 页面展示精度（导出不调用）：金额取整，盈利率、占比 1 位小数 */
+    /** 页面展示精度（导出不调用）：金额（投注额、GGR）取整，盈利率、占比 1 位小数 */
     public void applyViewScale()
     {
         this.betAmount = com.fivetech.dashboard.format.MoneyScale.integer(betAmount);
+        this.ggr = com.fivetech.dashboard.format.MoneyScale.integer(ggr);
         this.profitRate = com.fivetech.dashboard.format.MoneyScale.pct1Text(profitRate);
         this.rateForBetAmount = com.fivetech.dashboard.format.MoneyScale.pct1Text(rateForBetAmount);
     }

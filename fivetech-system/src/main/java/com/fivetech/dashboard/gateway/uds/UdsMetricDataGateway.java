@@ -105,6 +105,13 @@ public class UdsMetricDataGateway implements MetricDataGateway
     /** dataset -> 上游自报的水位（meta.freshness.watermark），只前进不后退 */
     private final Map<String, LocalDateTime> reportedWatermarks = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** 水位按「站点 + 数据集」分开记：不同站点（X-Uds-Site）的数据进度互不影响 */
+    private static String watermarkKey(String dataset)
+    {
+        String site = com.fivetech.common.utils.SiteContext.code();
+        return (site == null ? "" : site) + "|" + dataset;
+    }
+
     private void remember(String datasetName, UdsQueryResult result)
     {
         if (result != null && result.getWatermark() != null && freshnessDatasets().contains(datasetName))
@@ -142,7 +149,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         LocalDateTime reported = null;
         for (String name : freshnessDatasets())
         {
-            LocalDateTime w = reportedWatermarks.get(name);
+            LocalDateTime w = reportedWatermarks.get(watermarkKey(name));
             if (w != null && (reported == null || w.isBefore(reported)))
             {
                 reported = w;
@@ -301,6 +308,128 @@ public class UdsMetricDataGateway implements MetricDataGateway
             }
         }
         return result;
+    }
+
+    // ===================== 监控判定引擎 =====================
+
+    @Override
+    public com.fivetech.dashboard.gateway.HourlyFetch queryHourly(List<String> metricCodes,
+            Map<String, String> extraColumns, LocalDateTime from, LocalDateTime to)
+    {
+        int points = countPoints(from, to, Granularity.HOUR);
+        com.fivetech.dashboard.gateway.HourlyFetch out = new com.fivetech.dashboard.gateway.HourlyFetch(from, points);
+        if (points <= 0)
+        {
+            return out;
+        }
+        if (points > MAX_LIMIT)
+        {
+            throw new IllegalArgumentException("判定取数区间超过 " + MAX_LIMIT + " 小时：" + from + " ~ " + to);
+        }
+        String key = properties.getOverview().getHour();
+        UdsProperties.Dataset d = dataset(key);
+        if (d == null)
+        {
+            throw new IllegalStateException("未配置小时数据集 dashboard.gateway.uds.overview.hour");
+        }
+        String name = nameOf(key, d);
+        List<String> codes = mapped(key, expand(metricCodes));
+        Map<String, String> extras = extraColumns == null ? Map.of() : extraColumns;
+        if (codes.isEmpty() && extras.isEmpty())
+        {
+            return out;
+        }
+        Map<String, Object> sort = new LinkedHashMap<>();
+        sort.put("orderBy", List.of(order(d.getTimeDimension(), "ASC")));
+        Map<String, Object> body = baseBody(name, d, codes, from, to, Granularity.HOUR.name(),
+            List.of(d.getTimeDimension()), points, sort);
+        @SuppressWarnings("unchecked")
+        List<String> metrics = new ArrayList<>((List<String>) body.get("metrics"));
+        for (String column : extras.values())
+        {
+            if (StringUtils.isNotEmpty(column) && !metrics.contains(column))
+            {
+                metrics.add(column);
+            }
+        }
+        body.put("metrics", metrics);
+
+        UdsQueryResult result;
+        try
+        {
+            // 只发这一次：不退避、不逐格回退（判定引擎自己决定要不要下一轮再查）
+            result = client.queryWithMeta(body);
+        }
+        catch (UdsQueryException e)
+        {
+            if (e.isNotReady())
+            {
+                out.setNotReady(true);
+                return out;
+            }
+            throw e;
+        }
+        rememberReportedWatermark(name, result);
+        out.setWatermark(result.getWatermark());
+
+        Map<String, List<BigDecimal>> raw = new HashMap<>();
+        for (String code : codes)
+        {
+            raw.put(code, nulls(points));
+        }
+        Map<String, List<BigDecimal>> extraRaw = new LinkedHashMap<>();
+        for (String k : extras.keySet())
+        {
+            extraRaw.put(k, nulls(points));
+        }
+        for (UdsRow row : result.getRows())
+        {
+            int index = slotIndex(row.str(d.getTimeDimension()), from, to, Granularity.HOUR);
+            if (index < 0 || index >= points)
+            {
+                continue;
+            }
+            for (String code : codes)
+            {
+                raw.get(code).set(index, row.num(d.getMetrics().get(code)));
+            }
+            for (Map.Entry<String, String> e : extras.entrySet())
+            {
+                if (StringUtils.isNotEmpty(e.getValue()))
+                {
+                    extraRaw.get(e.getKey()).set(index, row.num(e.getValue()));
+                }
+            }
+        }
+        for (String code : metricCodes)
+        {
+            List<String> ops = composedOps(code);
+            if (ops != null)
+            {
+                List<BigDecimal> a = raw.get(ops.get(0));
+                List<BigDecimal> b = raw.get(ops.get(1));
+                List<BigDecimal> composed = nulls(points);
+                for (int i = 0; i < points; i++)
+                {
+                    composed.set(i, compose(code, a == null ? null : a.get(i), b == null ? null : b.get(i)));
+                }
+                out.put(code, composed);
+            }
+            else if (raw.containsKey(code))
+            {
+                out.put(code, raw.get(code));
+            }
+        }
+        // 操作数本身也放进去（派生指标按分子分母重算时要用）
+        for (Map.Entry<String, List<BigDecimal>> e : raw.entrySet())
+        {
+            if (!out.has(e.getKey()))
+            {
+                out.put(e.getKey(), e.getValue());
+            }
+        }
+        extraRaw.forEach(out::put);
+        return out;
     }
 
     private static List<BigDecimal> nulls(int size)
@@ -1850,7 +1979,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
                         end, datasetName, from, to, e.getMessage());
                     return null;
                 }
-                LocalDateTime reported = reportedWatermarks.get(datasetName);
+                LocalDateTime reported = reportedWatermarks.get(watermarkKey(datasetName));
                 LocalDateTime clamped = reported == null ? null : alignDown(from, reported, alignUnit);
                 if (clamped != null && clamped.isBefore(end))
                 {
@@ -1899,7 +2028,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             return;
         }
-        reportedWatermarks.merge(datasetName, result.getWatermark(),
+        reportedWatermarks.merge(watermarkKey(datasetName), result.getWatermark(),
             (old, now) -> now.isAfter(old) ? now : old);
     }
 

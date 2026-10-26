@@ -45,6 +45,12 @@ public class SysLoginController
     private SysPermissionService permissionService;
 
     @Autowired
+    private com.fivetech.framework.web.service.TokenService tokenService;
+
+    @Autowired
+    private com.fivetech.dashboard.config.DashboardProperties dashboardProperties;
+
+    @Autowired
     private ISysConfigService configService;
 
     /**
@@ -135,14 +141,26 @@ public class SysLoginController
     {
         LoginUser loginUser = SecurityUtils.getLoginUser();
         SysUser user = loginUser.getUser();
-        // 角色集合
-        Set<String> roles = permissionService.getRolePermission(user);
-        // 权限集合
-        Set<String> permissions = permissionService.getMenuPermission(user);
+        // 重新加载各角色的权限（角色授权变更后不用重新登录即可生效），并写回登录缓存
+        loginUser.setPermissions(permissionService.getMenuPermission(user));
+        tokenService.setLoginUser(loginUser);
+        // 多站点：角色与权限只取当前站点（请求头 X-Site-Code）的角色 + 通用角色。
+        // 前端切换站点后带新的 X-Site-Code 重新请求 getInfo / getRouters 即可拿到该站点的权限
+        Set<String> roles = permissionService.getRolePermissionForSite(user);
+        Set<String> permissions = loginUser.getPermissions();
         AjaxResult ajax = AjaxResult.success();
         ajax.put("user", user);
         ajax.put("roles", roles);
         ajax.put("permissions", permissions);
+        ajax.put("currentSite", dashboardProperties.currentSite());
+        java.util.List<java.util.Map<String, String>> sites = new java.util.ArrayList<>();
+        for (String code : permissionService.accessibleSites(user))
+        {
+            // timezone：站点时区（IANA 时区 ID，如 Asia/Kolkata），前端按它显示站点时间
+            sites.add(java.util.Map.of("code", code, "name", dashboardProperties.siteName(code),
+                    "timezone", dashboardProperties.siteTimezone(code)));
+        }
+        ajax.put("sites", sites);
         ajax.put("pwdChrtype", getSysAccountChrtype());
         ajax.put("isDefaultModifyPwd", initPasswordIsModify(user.getPwdUpdateDate()));
         ajax.put("isPasswordExpired", passwordIsExpiration(user.getPwdUpdateDate()));

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  监控模块共用的数据范围片段（没有对应的 Mapper 接口，只放 SQL 片段）。
+
+  所有监控 Mapper 的 select 必须引用它（MonitorMapperScopeTest 会检查）：
+    <include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+        <property name="alias" value="r"/>
+    </include>
+
+  2026-10-20 起只按站点过滤：站点内有页面权限的人看全部规则和事件，负责人只用于筛选。
+  以后要加别的数据范围，只改这里。参数名固定为 scope（MonitorScope）；${alias} 在解析 XML 时替换，不来自请求。
+-->
+<mapper namespace="com.fivetech.monitor.mapper.MonitorCommon">
+
+	<sql id="monitorScopeFilter">
+		and ${alias}.site_code = #{scope.siteCode}
+	</sql>
+
+</mapper>

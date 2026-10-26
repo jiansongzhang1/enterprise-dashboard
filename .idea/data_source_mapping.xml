@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourcePerFileMappings">
+    <file url="file://$PROJECT_DIR$/sql/add_email_permission_postgresql.sql" value="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" />
+    <file url="file://$PROJECT_DIR$/sql/add_multilingual_menu_postgresql.sql" value="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" />
+    <file url="file://$PROJECT_DIR$/sql/create_super_admin_postgresql.sql" value="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" />
+    <file url="file://$PROJECT_DIR$/sql/ry_20260819_ga_secret.sql" value="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" />
+    <file url="file://$PROJECT_DIR$/sql/ry_20260819_postgresql.sql" value="8c60d25d-5c5f-4ac1-8a2b-662cd4d1b033" />
+  </component>
+</project>

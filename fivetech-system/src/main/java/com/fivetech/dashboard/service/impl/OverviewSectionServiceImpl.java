@@ -305,6 +305,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             g.setGameTypeCode(r.dim("gameType"));
             g.setGameType(OrderDict.label(OrderDict.GAME_TYPE, r.dim("gameType")));
             g.setBetAmount(r.num("betAmount"));
+            // GGR：游戏榜数据集 dashboard_game_ranking.ggr（breakdowns.hot_games.metrics.ggr）
+            g.setGgr(r.num("ggr"));
             // 盈利率 = GGR ÷ 投注额（平台视角）
             g.setProfitRate(pctText(pct(r.num("ggr"), r.num("betAmount"), 2)));
             g.setRateForBetAmount(pctText(pct(r.num("betAmount"), totalBet, 2)));
@@ -782,7 +784,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
 
     private String site(OverviewSectionQuery query)
     {
-        return StringUtils.isEmpty(query.getSiteCode()) ? properties.getDefaultSite() : query.getSiteCode();
+        // 站点只认 X-Site-Code（SiteContext），请求体里的 siteCode 不采信
+        return properties.currentSite();
     }
 
     /** 百分比，分子或分母为空、分母为 0 时返回 null */

@@ -1,5 +1,7 @@
 package com.fivetech.framework.web.exception;
 
+import java.util.HashMap;
+import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +25,8 @@ import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.utils.html.EscapeUtil;
 import com.fivetech.common.utils.ip.IpUtils;
 import com.fivetech.dashboard.gateway.uds.UdsQueryException;
+import com.fivetech.monitor.exception.MonitorException;
+import com.fivetech.monitor.exception.MonitorFieldException;
 import com.fivetech.framework.alert.AlertContext;
 import com.fivetech.framework.alert.AlertLevel;
 import com.fivetech.framework.alert.ErrorAlertService;
@@ -62,6 +66,30 @@ public class GlobalExceptionHandler
         String requestURI = request.getRequestURI();
         log.error("请求地址'{}',不支持'{}'请求", requestURI, e.getMethod());
         return AjaxResult.error(e.getMessage());
+    }
+
+    /**
+     * 监控模块的字段级校验失败：code = 400，data.fields 列出每个字段的错误。
+     * 属于预期内的用户输入错误，只记一行 WARN。
+     */
+    @ExceptionHandler(MonitorFieldException.class)
+    public AjaxResult handleMonitorFieldException(MonitorFieldException e, HttpServletRequest request)
+    {
+        log.warn("请求地址'{}',参数校验失败: {}", request.getRequestURI(), e.getFields());
+        Map<String, Object> data = new HashMap<>();
+        data.put("fields", e.getFields());
+        return new AjaxResult(e.getCode(), e.getMessage(), data);
+    }
+
+    /**
+     * 监控模块的预期内业务错误（403 无站点权限、404 不在数据范围、48xx）：原样返回 code 和 msg，
+     * 只记一行 WARN，不打堆栈。
+     */
+    @ExceptionHandler(MonitorException.class)
+    public AjaxResult handleMonitorException(MonitorException e, HttpServletRequest request)
+    {
+        log.warn("请求地址'{}',监控业务错误 code={}: {}", request.getRequestURI(), e.getCode(), e.getMessage());
+        return AjaxResult.error(e.getCode(), e.getMessage());
     }
 
     /**

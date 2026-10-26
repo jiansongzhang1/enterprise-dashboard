@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/sql/add_dashboard_query_permission_postgresql.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/sql/add_email_permission_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/add_multilingual_menu_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/aws_rds_deploy_postgresql.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/sql/create_super_admin_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/dashboard_metric_card_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/fivetech_schema_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/fivetech_seed_postgresql.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/sql/monitor_schema_postgresql.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/ry_20260819_ga_secret.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/ry_20260819_postgresql.sql" dialect="PostgreSQL" />
+  </component>
+</project>

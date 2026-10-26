@@ -17,7 +17,9 @@ import com.fivetech.common.utils.TraceIdUtils;
 import com.fivetech.common.config.FiveTechConfig;
 import com.fivetech.common.constant.Constants;
 import com.fivetech.framework.interceptor.AdminIpWhitelistInterceptor;
+import com.fivetech.framework.interceptor.DashboardIpWhitelistInterceptor;
 import com.fivetech.framework.interceptor.RepeatSubmitInterceptor;
+import com.fivetech.framework.interceptor.SiteContextInterceptor;
 
 /**
  * 通用配置
@@ -31,11 +33,21 @@ public class ResourcesConfig implements WebMvcConfigurer
     private RepeatSubmitInterceptor repeatSubmitInterceptor;
 
     @Autowired
+    private SiteContextInterceptor siteContextInterceptor;
+
+    @Autowired
     private AdminIpWhitelistInterceptor adminIpWhitelistInterceptor;
+
+    @Autowired
+    private DashboardIpWhitelistInterceptor dashboardIpWhitelistInterceptor;
 
     /** 不受管理接口 IP 白名单限制的路径（Ant 风格，逗号分隔），见 security.admin-ip-whitelist.exclude-paths */
     @Value("${security.admin-ip-whitelist.exclude-paths:}")
     private String adminIpWhitelistExcludePaths;
+
+    /** 不受 Dashboard IP 白名单限制的路径（Ant 风格，逗号分隔），见 security.dashboard-ip-whitelist.exclude-paths */
+    @Value("${security.dashboard-ip-whitelist.exclude-paths:/error}")
+    private String dashboardIpWhitelistExcludePaths;
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry)
@@ -56,12 +68,22 @@ public class ResourcesConfig implements WebMvcConfigurer
     @Override
     public void addInterceptors(InterceptorRegistry registry)
     {
+        // Dashboard IP 白名单：拦全部（含登录），只放过它自己的 exclude-paths；放行 IP = Dashboard 名单 ∪ 管理名单。
+        // 开关 security.dashboard-ip-whitelist.enabled，关闭时直接放行。放在最前面，白名单外的请求不再往下走
+        registry.addInterceptor(dashboardIpWhitelistInterceptor).addPathPatterns("/**")
+            .excludePathPatterns(splitPaths(dashboardIpWhitelistExcludePaths));
         registry.addInterceptor(repeatSubmitInterceptor).addPathPatterns("/**");
-        // 内部管理接口 IP 白名单：拦全部，只放过 exclude-paths（仪表板、登录与账号自助等）。
+        // 多站点：解析 X-Site-Code，未知站点直接 403；放在 IP 白名单之后、业务之前
+        registry.addInterceptor(siteContextInterceptor).addPathPatterns("/**");
+        // 内部管理接口 IP 白名单：拦全部，只放过 exclude-paths（仪表板、监控管理的 Dashboard 接口、登录与账号自助等）。
         // 总开关 security.admin-ip-whitelist.enabled，关闭时拦截器直接放行
-        String[] excludes = Arrays.stream(adminIpWhitelistExcludePaths.split(","))
-            .map(String::trim).filter(s -> !s.isEmpty()).toArray(String[]::new);
-        registry.addInterceptor(adminIpWhitelistInterceptor).addPathPatterns("/**").excludePathPatterns(excludes);
+        registry.addInterceptor(adminIpWhitelistInterceptor).addPathPatterns("/**")
+            .excludePathPatterns(splitPaths(adminIpWhitelistExcludePaths));
+    }
+
+    private static String[] splitPaths(String paths)
+    {
+        return Arrays.stream(paths.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toArray(String[]::new);
     }
 
     /**

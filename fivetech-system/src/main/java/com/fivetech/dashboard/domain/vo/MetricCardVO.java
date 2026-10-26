@@ -71,10 +71,25 @@ public class MetricCardVO implements Serializable
 
     private List<BigDecimal> prevSeries = new ArrayList<>();
 
+    /**
+     * 今日小时基准线（近 4 周同星期同小时的中位数，UDS *_baseline 列）。
+     * 只在区间为「今日」且按小时出序列时返回，长度与 series 相同；其他情况为 null
+     */
+    private List<BigDecimal> baselineSeries;
+
+    /**
+     * 指标抽屉「逐时段明细」的监控列，与 series 等长、按下标对齐。
+     * 只在「今日 + 小时粒度」且卡片 alert 为注意或严重（规则启用）时返回，其余为 null（前端不画监控列）。
+     */
+    private List<MetricMonitorSlotVO> monitorSlots;
+
     /** 派生指标的计算构成；原子指标为 null */
     private MetricCompositionVO composition;
 
     private MetricAlertVO alert;
+
+    /** 卡片画什么图（GAUGE / LINE）；旧前端忽略即可，缺失时按旧逻辑显示 */
+    private MetricChartVO chart;
 
     /** 上游指标名。口径有分歧时能直接对上数据平台，省一轮来回 */
     private String udsMetric;
@@ -269,6 +284,26 @@ public class MetricCardVO implements Serializable
         this.prevSeries = prevSeries;
     }
 
+    public List<BigDecimal> getBaselineSeries()
+    {
+        return baselineSeries;
+    }
+
+    public void setBaselineSeries(List<BigDecimal> baselineSeries)
+    {
+        this.baselineSeries = baselineSeries;
+    }
+
+    public List<MetricMonitorSlotVO> getMonitorSlots()
+    {
+        return monitorSlots;
+    }
+
+    public void setMonitorSlots(List<MetricMonitorSlotVO> monitorSlots)
+    {
+        this.monitorSlots = monitorSlots;
+    }
+
     public MetricCompositionVO getComposition()
     {
         return composition;
@@ -277,6 +312,16 @@ public class MetricCardVO implements Serializable
     public void setComposition(MetricCompositionVO composition)
     {
         this.composition = composition;
+    }
+
+    public MetricChartVO getChart()
+    {
+        return chart;
+    }
+
+    public void setChart(MetricChartVO chart)
+    {
+        this.chart = chart;
     }
 
     public MetricAlertVO getAlert()

@@ -218,6 +218,8 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         record.put("submittedAt", submittedAt);
         // 创建 / 轮询 / 取消必须是同一个 X-Uds-Operator，否则 UDS 返回 4406
         record.put("operator", operator);
+        // 提交时的站点：轮询 / 取消时按它带 X-Uds-Site，任务查询不受之后切换站点影响
+        record.put("site", properties.currentSite());
         // 只存文件名主干，扩展名按平台实际生成的文件决定（见 fileNames）
         record.put("fileBase", label + "_" + LocalDateTime.now().format(STAMP));
         String key = taskKey(userId, job.getJobId());
@@ -244,7 +246,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         ExportTaskVO task;
         try
         {
-            task = toVO(record, gateway.getExportJob(jobId, operatorOf(record)));
+            task = toVO(record, withSiteOf(record, () -> gateway.getExportJob(jobId, operatorOf(record))));
         }
         catch (UdsQueryException e)
         {
@@ -276,7 +278,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         Map<String, String> record = ownRecord(jobId);
         try
         {
-            return toVO(record, gateway.cancelExportJob(jobId, operatorOf(record)));
+            return toVO(record, withSiteOf(record, () -> gateway.cancelExportJob(jobId, operatorOf(record))));
         }
         catch (UdsQueryException e)
         {
@@ -300,6 +302,13 @@ public class DashboardExportServiceImpl implements IDashboardExportService
     {
         String op = record.get("operator");
         return StringUtils.isNotEmpty(op) ? op : operator();
+    }
+
+    /** 按任务提交时的站点调用 UDS（旧记录没有 site 时用当前站点） */
+    private <T> T withSiteOf(Map<String, String> record, java.util.function.Supplier<T> action)
+    {
+        String site = StringUtils.isNotEmpty(record.get("site")) ? record.get("site") : properties.currentSite();
+        return com.fivetech.common.utils.SiteContext.callWith(site, properties.udsSite(site), action);
     }
 
     private Map<String, String> ownRecord(String jobId)
@@ -327,6 +336,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
             throw new ServiceException("导出功能未开启");
         }
 
+        // 多站点：权限已按当前站点的角色计算（LoginUser.getPermissions），这里照常校验
         if (export.isRequirePermission() && !SecurityUtils.hasPermi(export.getPermission()))
         {
             throw new ServiceException("没有导出权限，请联系管理员授权");

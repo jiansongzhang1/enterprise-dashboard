@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="fivetech-common" />
+        <module name="fivetech-system" />
+        <module name="fivetech-framework" />
+        <module name="fivetech-admin" />
+      </profile>
+    </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="ruoyi-admin" target="17" />
+      <module name="ruoyi-common" target="17" />
+      <module name="ruoyi-framework" target="17" />
+      <module name="ruoyi-generator" target="17" />
+      <module name="ruoyi-quartz" target="17" />
+      <module name="ruoyi-system" target="17" />
+    </bytecodeTargetLevel>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="fivetech" options="-parameters" />
+      <module name="fivetech-admin" options="-parameters" />
+      <module name="fivetech-common" options="-parameters" />
+      <module name="fivetech-framework" options="-parameters" />
+      <module name="fivetech-system" options="-parameters" />
+      <module name="ruoyi" options="-parameters" />
+      <module name="ruoyi-admin" options="-parameters" />
+      <module name="ruoyi-common" options="-parameters" />
+      <module name="ruoyi-framework" options="-parameters" />
+      <module name="ruoyi-generator" options="-parameters" />
+      <module name="ruoyi-quartz" options="-parameters" />
+      <module name="ruoyi-system" options="-parameters" />
+    </option>
+  </component>
+</project>

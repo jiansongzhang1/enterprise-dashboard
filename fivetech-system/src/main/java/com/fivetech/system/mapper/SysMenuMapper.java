@@ -63,7 +63,8 @@ public interface SysMenuMapper
      * @param userId 用户ID
      * @return 菜单列表
      */
-    public List<SysMenu> selectMenuTreeByUserId(@Param("userId") Long userId, @Param("locale") String locale);
+    public List<SysMenu> selectMenuTreeByUserId(@Param("userId") Long userId, @Param("locale") String locale,
+            @Param("siteCode") String siteCode);
 
     /**
      * 根据角色ID查询菜单树信息

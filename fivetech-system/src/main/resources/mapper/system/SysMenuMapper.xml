@@ -87,6 +87,10 @@
 			 left join sys_role ro on ur.role_id = ro.role_id
 			 left join sys_user u on ur.user_id = u.user_id
 		where u.user_id = #{userId} and m.menu_type in ('M', 'C') and m.status = '0'  AND ro.status = '0'
+		<!-- 多站点：只取当前站点的角色 + 通用角色（site_code 为空）的菜单 -->
+		<if test="siteCode != null and siteCode != ''">
+		  AND (ro.site_code is null or ro.site_code = '' or ro.site_code = #{siteCode})
+		</if>
 		order by m.parent_id, m.order_num
 	</select>
 	

@@ -205,4 +205,19 @@ public class MetricDefinition implements Serializable
     {
         this.singleDayOnly = singleDayOnly;
     }
+
+    /** dashboard_metric_card.chart_type（LINE / BAR / PIE / NUMBER）；总览卡片不再使用，chart 只返回 GAUGE / LINE */
+    private String chartType;
+
+    /** 门槛条刻度（展示单位）；两个都有值时卡片画 GAUGE */
+    private java.math.BigDecimal gaugeMin;
+
+    private java.math.BigDecimal gaugeMax;
+
+    public String getChartType() { return chartType; }
+    public void setChartType(String chartType) { this.chartType = chartType; }
+    public java.math.BigDecimal getGaugeMin() { return gaugeMin; }
+    public void setGaugeMin(java.math.BigDecimal gaugeMin) { this.gaugeMin = gaugeMin; }
+    public java.math.BigDecimal getGaugeMax() { return gaugeMax; }
+    public void setGaugeMax(java.math.BigDecimal gaugeMax) { this.gaugeMax = gaugeMax; }
 }

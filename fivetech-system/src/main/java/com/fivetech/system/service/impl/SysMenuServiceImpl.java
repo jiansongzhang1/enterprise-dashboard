@@ -151,7 +151,9 @@ public class SysMenuServiceImpl implements ISysMenuService
         }
         else
         {
-            menus = menuMapper.selectMenuTreeByUserId(userId, LocaleContextHolder.getLocale().toLanguageTag());
+            // 多站点：getRouters 只返回当前站点（X-Site-Code）角色 + 通用角色的菜单
+            menus = menuMapper.selectMenuTreeByUserId(userId, LocaleContextHolder.getLocale().toLanguageTag(),
+                com.fivetech.common.utils.SiteContext.code());
         }
         return getChildPerms(menus, MENU_ROOT_ID);
     }

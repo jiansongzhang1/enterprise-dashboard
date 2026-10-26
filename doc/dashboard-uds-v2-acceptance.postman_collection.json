@@ -2112,7 +2112,8 @@
                   "console.log('游戏名用 gameId 填充的行数：' + fill + ' / ' + pm.response.json().data.games.items.length);",
                   "pm.test('赠金最多 6 项', () => { const d = pm.response.json().data; pm.expect(d.bonus.items.length > 0 && d.bonus.items.length <= 6).to.be.true; });",
                   "pm.test('赠金占比合计 ≈ 100%', () => { const d = pm.response.json().data; pm.expect(Math.abs(d.bonus.items.reduce((s, i) => s + Number(i.share || 0), 0) - 100) < 0.6).to.be.true; });",
-                  "pm.test('赠金 total 为全量（≥ 各项之和）', () => { const d = pm.response.json().data; pm.expect(Number(d.bonus.total) >= d.bonus.items.reduce((s, i) => s + Number(i.amount), 0) - 0.01).to.be.true; });"
+                  "pm.test('赠金 total 为全量（≥ 各项之和）', () => { const d = pm.response.json().data; pm.expect(Number(d.bonus.total) >= d.bonus.items.reduce((s, i) => s + Number(i.amount), 0) - 0.01).to.be.true; });",
+                  "pm.test('每行有 ggr 字段（来自 dashboard_game_ranking.ggr，数字或 null）', () => { const d = pm.response.json().data; pm.expect(d.games.items.every(g => Object.prototype.hasOwnProperty.call(g, 'ggr') && (g.ggr === null || !isNaN(Number(g.ggr))))).to.be.true; });"
                 ]
               }
             }

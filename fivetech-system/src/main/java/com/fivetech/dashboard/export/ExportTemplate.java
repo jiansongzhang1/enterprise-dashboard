@@ -332,8 +332,8 @@ public final class ExportTemplate
         Map<String, String> m = new LinkedHashMap<>();
         m.put("導出時間", now(properties).format(HUMAN));
         m.put("導出人", currentUser());
-        String code = StringUtils.isEmpty(siteCode) ? properties.getDefaultSite() : siteCode;
-        String name = properties.getSiteName();
+        String code = StringUtils.isEmpty(siteCode) ? properties.currentSite() : siteCode;
+        String name = properties.siteName(code);
         m.put("站點", StringUtils.isEmpty(name) ? code : name + " · " + code);
         m.put("篩選條件", StringUtils.isEmpty(filter) ? "無" : filter);
         if (extra != null)

@@ -70,8 +70,8 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     @Override
     public MetricSummaryVO query(MetricSummaryQuery query)
     {
-        String siteCode = StringUtils.isEmpty(query.getSiteCode())
-            ? properties.getDefaultSite() : query.getSiteCode();
+        // 站点只认 X-Site-Code（SiteContext），请求体里的 siteCode 不采信
+        String siteCode = properties.currentSite();
 
         // 1. 指标列：只做白名单校验。一期不做指标维度权限，
         //    能进到这个方法就说明已通过页面维度的 @PreAuthorize

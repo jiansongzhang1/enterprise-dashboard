@@ -50,6 +50,9 @@ public class SysRole extends BaseEntity
     @Excel(name = "角色状态", readConverterExp = "0=正常,1=停用")
     private String status;
 
+    /** 所属站点（多站点一期）：为空 = 通用角色，在所有站点生效；有值 = 只在该站点生效 */
+    private String siteCode;
+
     /** 删除标志（0代表存在 2代表删除） */
     private String delFlag;
 
@@ -162,6 +165,16 @@ public class SysRole extends BaseEntity
     public void setDeptCheckStrictly(boolean deptCheckStrictly)
     {
         this.deptCheckStrictly = deptCheckStrictly;
+    }
+
+    public String getSiteCode()
+    {
+        return siteCode;
+    }
+
+    public void setSiteCode(String siteCode)
+    {
+        this.siteCode = siteCode;
     }
 
     public String getStatus()

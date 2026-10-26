@@ -90,6 +90,8 @@ CREATE TABLE sys_role (
   update_by           VARCHAR(64) DEFAULT '',
   update_time         TIMESTAMP,
   remark              VARCHAR(500) DEFAULT NULL,
+  -- 多站点一期：为空=通用角色；放在最后，seed 的 INSERT INTO sys_role VALUES (...) 按位置插入不受影响
+  site_code           VARCHAR(32) DEFAULT NULL,
   PRIMARY KEY (role_id)
 );
 COMMENT ON TABLE sys_role IS '角色信息表';

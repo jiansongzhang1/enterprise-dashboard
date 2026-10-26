@@ -1,6 +1,7 @@
 package com.fivetech.dashboard.service.impl;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -84,9 +85,23 @@ public class OverviewServiceImpl implements IOverviewService
 
     private final MetricValueNormalizer normalizer;
 
+    /** 基准列映射复用监控判定引擎的配置 monitor.engine.baseline-fields（指标编码 → 小时数据集里的 *_baseline 列） */
+    private final com.fivetech.monitor.config.MonitorProperties monitorProperties;
+
+    private final com.fivetech.monitor.service.MonitorOverviewService monitorOverviewService;
+
+    /** 指标抽屉逐时段明细的监控列 */
+    private final com.fivetech.monitor.service.MonitorSlotService monitorSlotService;
+
     public OverviewServiceImpl(DashboardProperties properties, MetricRegistry metricRegistry,
-            UdsProperties udsProperties, MetricDataGateway gateway, MetricValueNormalizer normalizer)
+            UdsProperties udsProperties, MetricDataGateway gateway, MetricValueNormalizer normalizer,
+            com.fivetech.monitor.config.MonitorProperties monitorProperties,
+            com.fivetech.monitor.service.MonitorOverviewService monitorOverviewService,
+            com.fivetech.monitor.service.MonitorSlotService monitorSlotService)
     {
+        this.monitorSlotService = monitorSlotService;
+        this.monitorProperties = monitorProperties;
+        this.monitorOverviewService = monitorOverviewService;
         this.properties = properties;
         this.metricRegistry = metricRegistry;
         this.udsProperties = udsProperties;
@@ -103,6 +118,7 @@ public class OverviewServiceImpl implements IOverviewService
         // ---------- 1. 时间：解析 + 粒度降级 ----------
         LocalDateTime from = parseSlot(query.getSlotFrom(), "slotFrom");
         LocalDateTime to = parseSlot(query.getSlotTo(), "slotTo");
+        LocalDateTime requestedTo = to;
         if (!to.isAfter(from))
         {
             throw new ServiceException("slotFrom 必须早于 slotTo（区间左闭右开）", 4001);
@@ -131,6 +147,12 @@ public class OverviewServiceImpl implements IOverviewService
                 "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時尚未結束）"));
         }
         Granularity effective = downgrade(from, to, granularity, notices);
+        // 「今日」：区间正好是站点时区的今天 00:00 ~ 明天 00:00（终点被截到当前整点也算），且按小时出序列。
+        // 这时额外返回每张卡片的小时基准线（近 4 周同星期同小时中位数，UDS 的 *_baseline 列）
+        LocalDate today = currentHour.toLocalDate();
+        // 区间是否完全等于今日（异常提醒条 anomalies.inScope 也用它）
+        boolean isToday = coversToday(from, requestedTo, to, granularity, currentHour);
+        boolean todayHourly = isToday && effective == Granularity.HOUR && query.isIncludeSeries();
 
         OverviewSlotVO slot = buildSlot(from, to, effective);
         vo.setSlot(slot);
@@ -143,9 +165,30 @@ public class OverviewServiceImpl implements IOverviewService
         vo.setCurrency(properties.getCurrency());
         vo.setTimezone(properties.getTimezone());
         OverviewMonitoringVO monitoring = new OverviewMonitoringVO();
-        // 监控管理未上线：没有任何启用规则，所以卡片的 alert 一律 NOT_CONFIGURED
-        monitoring.setConfigured(false);
+        // 卡片 alert：读监控模块的规则、运行状态和异常中事件；没有规则的指标为 NOT_CONFIGURED（绝不填 OK）。
+        // 读取失败时全部按 NOT_CONFIGURED 处理，指标照常
+        Map<String, MetricAlertVO> alerts = new LinkedHashMap<>();
+        try
+        {
+            alerts = monitorOverviewService.cardAlerts(site(query));
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[overview] 卡片告警状态读取失败：{}", e.getMessage(), e);
+            notices.add(OverviewNoticeVO.warn("ALERT_UNAVAILABLE", "告警狀態暫時無法取得", "指標數值不受影響"));
+        }
+        monitoring.setConfigured(alerts.values().stream().anyMatch(a -> a.getRule() != null && a.getRule().isEnabled()));
         vo.setMonitoring(monitoring);
+        // 异常提醒条：读监控模块的事件表，失败只少这一块，不影响指标
+        try
+        {
+            vo.setAnomalies(monitorOverviewService.anomalies(site(query), isToday, today));
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[overview] 异常提醒条读取失败：{}", e.getMessage(), e);
+            notices.add(OverviewNoticeVO.warn("ANOMALIES_UNAVAILABLE", "異常提醒暫時無法取得", "指標數值不受影響"));
+        }
 
         // 水位：上游没有独立接口，只能用上一次查询响应里的 meta.freshness.watermark。
         // 拿不到就保持 null——前端顶栏显示「暂无数据」，不编一个当前整点冒充
@@ -165,6 +208,12 @@ public class OverviewServiceImpl implements IOverviewService
         // 派生指标要展开成「分子 ÷ 分母」给前端看，所以取数时把操作数一并带上。
         // 它们不进 items，只是多取几列，成本远低于前端为了展开构成再打一次请求
         Fetched fetched = fetch(query, from, to, effective, withOperands(codes), vo, notices);
+        if (fetched != null && todayHourly)
+        {
+            fetched.baselines = fetchBaselines(codes, from, to, notices);
+            fetched.todayHourly = true;
+            fetched.monitorSlots = fetchMonitorSlots(query, alerts, codes, from, to, notices);
+        }
 
         // ---------- 6. 分块装配 ----------
         Set<OverviewBlock> blocks = resolveBlocks(query, notices);
@@ -178,11 +227,44 @@ public class OverviewServiceImpl implements IOverviewService
             else
             {
                 vo.getBlocks().put(OverviewBlock.METRICS.name(),
-                    buildMetrics(query, slot, allCodes, nullCodes, fetched));
+                    buildMetrics(query, slot, allCodes, nullCodes, fetched, alerts));
             }
         }
         vo.setEmpty(fetched == null || fetched.isEmpty());
         return vo;
+    }
+
+    /**
+     * 抽屉监控列（原型 monShow）：只给规则启用、判定为注意或严重的卡片；取数失败只少这一块，加 notice。
+     */
+    private Map<String, List<com.fivetech.dashboard.domain.vo.MetricMonitorSlotVO>> fetchMonitorSlots(OverviewQuery query,
+            Map<String, MetricAlertVO> alerts, List<String> codes, LocalDateTime from, LocalDateTime to,
+            List<OverviewNoticeVO> notices)
+    {
+        Set<String> shown = new LinkedHashSet<>();
+        for (String code : codes)
+        {
+            MetricAlertVO a = alerts.get(code);
+            if (a != null && a.getRule() != null && a.getRule().isEnabled()
+                && ("WARN".equals(a.getState()) || "CRIT".equals(a.getState())))
+            {
+                shown.add(code);
+            }
+        }
+        if (shown.isEmpty())
+        {
+            return new LinkedHashMap<>();
+        }
+        try
+        {
+            return monitorSlotService.slots(site(query), shown, from, to);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[overview] 抽屉监控列取数失败：{}", e.getMessage());
+            notices.add(OverviewNoticeVO.info("MONITOR_SLOTS_UNAVAILABLE", "逐時段監控暫時無法取得", "指標數值不受影響"));
+            return new LinkedHashMap<>();
+        }
     }
 
     // ===================== 取数 =====================
@@ -197,6 +279,15 @@ public class OverviewServiceImpl implements IOverviewService
         private Map<String, BigDecimal> totals = new LinkedHashMap<>();
 
         private Map<String, BigDecimal> prevTotals = new LinkedHashMap<>();
+
+        /** 今日小时基准线：指标编码 → 与 series 等长的基准值；非今日为空 */
+        private Map<String, List<BigDecimal>> baselines = new LinkedHashMap<>();
+
+        /** 今日 + 小时：注意 / 严重卡片的逐时段监控列（指标编码 → 每小时一格） */
+        private Map<String, List<com.fivetech.dashboard.domain.vo.MetricMonitorSlotVO>> monitorSlots = new LinkedHashMap<>();
+
+        /** 是否「今日 + 小时」：是才给卡片填 baselineSeries */
+        private boolean todayHourly;
 
         private boolean isEmpty()
         {
@@ -266,6 +357,50 @@ public class OverviewServiceImpl implements IOverviewService
         }
     }
 
+    /**
+     * 今日小时基准线：一次请求小时数据集 dashboard_overview_hour_v2 的 *_baseline 列（11 个指标，见 monitor.engine.baseline-fields）。
+     * 基准取不到（UDS 还没上线这些列、数据未就绪、请求失败）只少这条线，不影响指标本身：记 warn + 提示，返回空。
+     */
+    private Map<String, List<BigDecimal>> fetchBaselines(List<String> codes, LocalDateTime from, LocalDateTime to,
+            List<OverviewNoticeVO> notices)
+    {
+        Map<String, String> fields = monitorProperties.getEngine().getBaselineFields();
+        Map<String, String> extras = new LinkedHashMap<>();
+        for (String code : codes)
+        {
+            String column = fields == null ? null : fields.get(code);
+            if (StringUtils.isNotEmpty(column))
+            {
+                extras.put(code, column.trim());
+            }
+        }
+        if (extras.isEmpty())
+        {
+            return new LinkedHashMap<>();
+        }
+        try
+        {
+            com.fivetech.dashboard.gateway.HourlyFetch hourly = gateway.queryHourly(List.of(), extras, from, to);
+            if (hourly.isNotReady())
+            {
+                notices.add(OverviewNoticeVO.info("BASELINE_NOT_READY", "基準線暫未就緒", "資料平台尚未返回今日基準"));
+                return new LinkedHashMap<>();
+            }
+            Map<String, List<BigDecimal>> out = new LinkedHashMap<>();
+            for (String code : extras.keySet())
+            {
+                out.put(code, hourly.get(code));
+            }
+            return out;
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[overview] 今日基准线取数失败 {}~{} 列 {}：{}", from, to, extras.values(), e.getMessage());
+            notices.add(OverviewNoticeVO.warn("BASELINE_UNAVAILABLE", "基準線暫時無法取得", "指標數值不受影響"));
+            return new LinkedHashMap<>();
+        }
+    }
+
     private MetricSlotRequest slotRequest(String site, LocalDateTime from, LocalDateTime to,
             Granularity granularity, List<String> codes)
     {
@@ -280,7 +415,8 @@ public class OverviewServiceImpl implements IOverviewService
 
     private String site(OverviewQuery query)
     {
-        return StringUtils.isEmpty(query.getSiteCode()) ? properties.getDefaultSite() : query.getSiteCode();
+        // 站点只认 X-Site-Code（SiteContext），请求体里的 siteCode 不采信
+        return properties.currentSite();
     }
 
     private static String format(LocalDateTime value)
@@ -304,6 +440,33 @@ public class OverviewServiceImpl implements IOverviewService
         {
             throw new ServiceException(field + " 格式错误，应为 yyyy-MM-dd HH:mm，实际为：" + text, 4001);
         }
+    }
+
+    /**
+     * 所选区间是否「恰好是今天」：起点是今天 00:00，并且
+     * <ul>
+     *   <li>小时粒度：终点在今天之内（今天 00:00 之后、明天 00:00 及以前）。按前后端约定，小时粒度截止今天时
+     *       终点一律按当前整点处理，前端传 11:00（当前整点）、次日 00:00 都是「今天」；</li>
+     *   <li>其他粒度：终点是明天 00:00，或已覆盖到当前整点。</li>
+     * </ul>
+     *
+     * @param requestedTo 前端传的终点（截到当前整点之前）
+     * @param effectiveTo 截到当前整点之后的终点
+     */
+    static boolean coversToday(LocalDateTime from, LocalDateTime requestedTo, LocalDateTime effectiveTo,
+            Granularity granularity, LocalDateTime currentHour)
+    {
+        LocalDateTime todayStart = currentHour.toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        if (!from.equals(todayStart) || !requestedTo.isAfter(todayStart) || requestedTo.isAfter(tomorrowStart))
+        {
+            return false;
+        }
+        if (granularity == Granularity.HOUR)
+        {
+            return true;
+        }
+        return requestedTo.equals(tomorrowStart) || !effectiveTo.isBefore(currentHour);
     }
 
     /**
@@ -518,7 +681,7 @@ public class OverviewServiceImpl implements IOverviewService
      * @param nullCodes 本次不取数、数值一律返回 null 的指标（区间跨天时的「仅支持单日」指标）
      */
     private MetricsBlockVO buildMetrics(OverviewQuery query, OverviewSlotVO slot,
-            List<String> codes, Set<String> nullCodes, Fetched fetched)
+            List<String> codes, Set<String> nullCodes, Fetched fetched, Map<String, MetricAlertVO> alerts)
     {
         MetricsBlockVO block = new MetricsBlockVO();
         List<MetricCardVO> items = new ArrayList<>(codes.size());
@@ -548,9 +711,10 @@ public class OverviewServiceImpl implements IOverviewService
             card.setSortNo(metricRegistry.pageSortNo(DashboardPage.OVERVIEW, code));
             card.setUpdateFrequency(def.getUpdateFrequency());
             card.setDirection(def.getDirection());
-            // 监控管理未上线：一律 NOT_CONFIGURED，绝不填 OK。
-            // 「没配规则」和「查过了一切正常」是两件事，后者染绿是骗人
-            card.setAlert(MetricAlertVO.notConfigured());
+            // 没有规则的指标 NOT_CONFIGURED，绝不填 OK：「没配规则」和「查过了一切正常」是两件事，后者染绿是骗人
+            MetricAlertVO alert = alerts.get(code);
+            card.setAlert(alert != null ? alert : MetricAlertVO.notConfigured());
+            card.setChart(chartOf(def));
             card.setUdsMetric(udsMetricOf(code));
 
             // 换算量纲：UDS 的比率是 0~1、时长是秒，这里转成展示用的百分数与分钟
@@ -576,6 +740,28 @@ public class OverviewServiceImpl implements IOverviewService
                     slot.getPoints()));
                 card.setPrevSeries(fitSeries(
                     noValue ? null : normalizer.normalizeSeries(code, fetched.prevSeries.get(code)), slot.getPoints()));
+                // 今日 + 小时：有基准列的 11 个指标给基准线（与 series 等长，缺的小时为 null）；其他指标、其他区间为 null
+                if (fetched.todayHourly && fetched.baselines.containsKey(code))
+                {
+                    card.setBaselineSeries(fitSeries(
+                        normalizer.normalizeSeries(code, fetched.baselines.get(code)), slot.getPoints()));
+                }
+                // 今日 + 小时 + 卡片注意 / 严重：抽屉逐时段明细的监控列（与 series 等长，多出的截掉、不足的补 null）
+                List<com.fivetech.dashboard.domain.vo.MetricMonitorSlotVO> ms = fetched.todayHourly
+                    ? fetched.monitorSlots.get(code) : null;
+                if (ms != null)
+                {
+                    List<com.fivetech.dashboard.domain.vo.MetricMonitorSlotVO> fitted = new ArrayList<>(ms);
+                    while (fitted.size() > slot.getPoints())
+                    {
+                        fitted.remove(fitted.size() - 1);
+                    }
+                    while (fitted.size() < slot.getPoints())
+                    {
+                        fitted.add(null);
+                    }
+                    card.setMonitorSlots(fitted);
+                }
             }
             // 不取数的派生指标不给构成：否则会出现「分子有值、分母缺失」的半截算式
             card.setComposition(noValue ? null : buildComposition(def, fetched));
@@ -736,6 +922,24 @@ public class OverviewServiceImpl implements IOverviewService
      * 指标卡展示小数位（卡片数值头用）：按指标配置，金额 0 位（前端 M 表达）、ARPPU 类 1 位。
      * 返回的数值本身保留两位，供抽屉逐时段明细按两位显示
      */
+    /**
+     * 卡片画什么图，只有两种：配了刻度（gauge_min / gauge_max）→ GAUGE；其余一律 LINE。
+     * dashboard_metric_card.chart_type 里的 BAR / PIE / NUMBER 在卡片上都按 LINE（2026-10-23 去掉 BAR，与设计文档一致）。
+     * 刻度为字符串，按展示小数位格式化（百分比 2 位、分钟 1 位、倍数 2 位、金额和人数 0 位），不带单位
+     */
+    static com.fivetech.dashboard.domain.vo.MetricChartVO chartOf(MetricDefinition def)
+    {
+        if (def.getGaugeMin() != null && def.getGaugeMax() != null)
+        {
+            String fmt = def.getFormat();
+            return new com.fivetech.dashboard.domain.vo.MetricChartVO(com.fivetech.dashboard.domain.vo.MetricChartVO.GAUGE,
+                new com.fivetech.dashboard.domain.vo.MetricChartVO.Scale(
+                    com.fivetech.monitor.engine.MonitorMessageBuilder.thresholdText(fmt, null, def.getGaugeMin()),
+                    com.fivetech.monitor.engine.MonitorMessageBuilder.thresholdText(fmt, null, def.getGaugeMax())));
+        }
+        return new com.fivetech.dashboard.domain.vo.MetricChartVO(com.fivetech.dashboard.domain.vo.MetricChartVO.LINE, null);
+    }
+
     private static Integer decimalsOf(MetricDefinition def)
     {
         return def.getDecimals();

@@ -240,7 +240,7 @@ INSERT INTO sys_menu VALUES
 ('120',  'Telegram发送', '1', '10', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:telegram:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'Telegram通知接口权限'),
 ('121',  'WhatsApp发送', '1', '11', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:whatsapp:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'WhatsApp通知接口权限'),
 ('122',  '系统通知', '1', '9', 'notification', 'notification/index', '', '', 1, 0, 'C', '0', '0', 'notification:view', 'message', 'admin', CURRENT_TIMESTAMP, '', NULL, '系统通知页面'),
-('123',  'Lark发送', '122', '3', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:lark:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'Lark通知接口权限'),
+('123',  'Lark发送', '122', '3', '', '', '', '', 1, 0, 'F', '1', '0', 'notification:lark:send', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, 'Lark通知接口权限');
 
 -- 6. 菜单多语言表
 -- SysMenuMapper 会在查询菜单时关联本表；必须在应用启动前创建。

@@ -3286,7 +3286,9 @@
                       "pm.test('series 长度 = slot.points', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => (c.series || []).length === d.slot.points)).to.be.true; });",
                       "pm.test('PCT 指标有 deltaPt 就没有 deltaPct', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => !(c.deltaPt != null && c.deltaPct != null))).to.be.true; });",
                       "pm.test('监控未上线：alert 一律 NOT_CONFIGURED', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => (c.alert || {}).state === 'NOT_CONFIGURED')).to.be.true; });",
-                      "pm.test('有对比期', () => { const d = pm.response.json().data; pm.expect(!!d.compare).to.be.true; });"
+                      "pm.test('有对比期', () => { const d = pm.response.json().data; pm.expect(!!d.compare).to.be.true; });",
+                      "pm.test('alert 不再返回 reason 字段', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => !Object.prototype.hasOwnProperty.call(c.alert || {}, 'reason'))).to.be.true; });",
+                      "pm.test('卡片 chart.type 只有 GAUGE / LINE（没有 BAR）', () => { const d = pm.response.json().data; pm.expect(d.blocks.METRICS.items.every(c => !c.chart || ['GAUGE', 'LINE'].includes(c.chart.type))).to.be.true; });"
                     ]
                   }
                 }
@@ -3843,7 +3845,8 @@
                       "pm.test('赠金占比合计约 100%', () => { const d = pm.response.json().data; pm.expect(d.bonus.items.length === 0 || Math.abs(d.bonus.items.reduce((s, i) => s + Number(i.share || 0), 0) - 100) < 0.6).to.be.true; });",
                       "pm.test('游戏榜不超过 topN', () => { const d = pm.response.json().data; pm.expect(d.games.items.length <= 10).to.be.true; });",
                       "pm.test('游戏榜按投注额降序', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i, a) => i === 0 || Number(a[i-1].betAmount || 0) >= Number(g.betAmount || 0))).to.be.true; });",
-                      "pm.test('rank 从 1 连续', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i) => g.rank === i + 1)).to.be.true; });"
+                      "pm.test('rank 从 1 连续', () => { const d = pm.response.json().data; pm.expect(d.games.items.every((g, i) => g.rank === i + 1)).to.be.true; });",
+                      "pm.test('每个游戏有 ggr 字段（数字或 null）', () => { const d = pm.response.json().data; pm.expect(d.games.items.every(g => Object.prototype.hasOwnProperty.call(g, 'ggr') && (g.ggr === null || !isNaN(Number(g.ggr))))).to.be.true; });"
                     ]
                   }
                 }

@@ -276,8 +276,8 @@ public class RecordQueryServiceImpl implements IRecordQueryService
     {
         Context ctx = new Context();
         ctx.columns = columns;
-        ctx.siteCode = StringUtils.isEmpty(query.getSiteCode())
-            ? properties.getDefaultSite() : query.getSiteCode();
+        // 站点只认 X-Site-Code（SiteContext），请求体里的 siteCode 不采信
+        ctx.siteCode = properties.currentSite();
         ctx.freshness = timeResolver.resolveFreshness(ctx.siteCode);
         ctx.warnings = new ArrayList<>();
         // 会员表不走统一时间范围（见 memberContext），订单表按 from/to（或 slotFrom/slotTo）解析。

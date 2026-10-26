@@ -56,6 +56,21 @@ public interface MetricDataGateway
     Map<String, BigDecimal> queryTotals(MetricSlotRequest request);
 
     /**
+     * 监控判定引擎专用：一次请求取小时数据集（dashboard_overview_hour_v2）里的全部字段。
+     * <p>
+     * 和页面用的 {@link #querySeries} 不同：<b>不走水位退避</b>（页面遇到未就绪会截短区间，判定不能用截短的数据），
+     * 未就绪时直接返回 {@code notReady = true}；返回本次响应自报的水位，由调用方判断小时是否已落库。
+     * 调用方负责站点上下文（SiteContext）。
+     *
+     * @param metricCodes  指标编码（需要后端相加减的指标会自动带上操作数并组装）
+     * @param extraColumns 附加列：key → 数据集里的列名（如跌幅基准），原样取回放在同名 key 下
+     * @param from         区间开始（含，整点）
+     * @param to           区间结束（不含，整点），最多 1000 小时
+     */
+    HourlyFetch queryHourly(List<String> metricCodes, Map<String, String> extraColumns,
+            java.time.LocalDateTime from, java.time.LocalDateTime to);
+
+    /**
      * 查询会员明细分页
      */
     RecordPage<MemberRecordVO> queryMemberRecords(RecordPageRequest request);

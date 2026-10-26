@@ -146,7 +146,17 @@ dashboard:
   # 默认站点，一期单站点
   default-site: ${DASHBOARD_SITE:SITE-IN}
   # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
-  site-name: ${DASHBOARD_SITE_NAME:Uwin}
+  site-name: ${DASHBOARD_SITE_NAME:uWin}
+  # 默认站点之外的其他站点（多站点一期）。前端在请求头 X-Site-Code 里带站点编码，不带 = 默认站点；
+  # 未配置的站点、或用户在该站点没有角色时返回 403。站点权限在「角色管理」里给角色选站点（sys_role.site_code）。
+  # uds-site：调 UDS 时加请求头 X-Uds-Site（与 UDS 约定）；默认站点（老站点）不带这个头。租户 X-Uds-Tenant 各站点相同。
+  # 时区、币种、上线日一期与默认站点共用
+  sites:
+    - code: ${DASHBOARD_SITE_JITO_CODE:JITO}
+      name: ${DASHBOARD_SITE_JITO_NAME:jito}
+      uds-site: ${DASHBOARD_SITE_JITO_UDS_SITE:SITE-B}
+      # 站点时区（IANA 时区 ID），getInfo 的 sites[].timezone 返回它；留空用下面的 dashboard.timezone
+      timezone: ${DASHBOARD_SITE_JITO_TIMEZONE:}
   # 统计时区，日切与环比同比都依此时区
   timezone: ${DASHBOARD_TIMEZONE:Asia/Kolkata}
   # 币别，一期单币别不做汇率折算
@@ -633,6 +643,59 @@ alert:
   # 异步发送队列容量
   queue-capacity: ${ALERT_QUEUE_CAPACITY:200}
 
+# 监控管理（告警规则 / 判定引擎）
+monitor:
+  # 每个站点同时启用的规则上限（一期 40）。一个指标只能有一条规则由唯一索引保证；0 = 不限
+  max-enabled-rules-per-site: ${MONITOR_MAX_ENABLED_RULES:40}
+  # 监控告警用的 Lark 自建应用（一期一个应用服务所有站点）。凭证只放 /etc/fivetech.env，不进代码和 git；
+  # 不配 MONITOR_LARK_* 时沿用 notification.lark 的 LARK_APP_ID / LARK_APP_SECRET。
+  # 应用需开通 im:chat:readonly（拉群列表）和 im:message:send_as_bot（发告警），客户把机器人拉进群即可在规则里选到。
+  lark:
+    app-id: ${MONITOR_LARK_APP_ID:${LARK_APP_ID:}}
+    app-secret: ${MONITOR_LARK_APP_SECRET:${LARK_APP_SECRET:}}
+    # GET /monitor/lark/chats：同一站点多少秒内重复调用直接返回上次拉取结果（避免频繁请求 Lark）；0 = 每次实时拉取
+    chats-cache-seconds: ${MONITOR_LARK_CHATS_CACHE_SECONDS:30}
+    # 管理后台「手动触发测试告警」固定发到的 Lark 群 chat_id（oc_ 开头，机器人须在群里）；不配则该功能返回「未配置測試群」
+    test-chat-id: ${MONITOR_TEST_CHAT_ID:oc_e7fd7c5dc5ddb74cca008409d32ecfae}
+  engine:
+    # 判定引擎总开关，关闭时不注册定时任务。UDS 跌幅基准字段与水位确认前保持关闭
+    enabled: ${MONITOR_ENGINE_ENABLED:false}
+    # 每 10 分钟一轮（:00 / :10 / … / :50），时区取 dashboard.timezone
+    poll-cron: ${MONITOR_ENGINE_POLL_CRON:0 0/10 * * * *}
+    # 每个数据小时最后一次检查的分钟：此时值仍为空的指标本周期不判定（不告警、不记录、不通知）
+    last-check-minute: 50
+    # 事件起点最多回看的小时数
+    lookback-hours: 72
+    # 轮询锁 monitor:lock:poll 的有效期（秒），要短于轮询间隔
+    lock-seconds: 540
+    # 每个站点每轮最多请求 UDS 几次（1～2）：第 1 次一次取全部指标，只有失败才发第 2 次
+    uds-max-calls: 2
+    # 告警消息里「查看」的后台异常事件页地址，为空则不带
+    event-page-url: ${MONITOR_EVENT_PAGE_URL:}
+    # 发送任务：每分钟第 30 秒投递 monitor_notify_log 里到期的 pending 记录（错开判定轮询的整分）
+    notify-cron: ${MONITOR_NOTIFY_CRON:30 * * * * *}
+    # 每个站点每轮最多投递几条；每轮时间预算（秒），超过的留到下一轮；发送锁有效期（秒）要短于 1 分钟
+    notify-batch-size: 20
+    notify-budget-seconds: 40
+    notify-lock-seconds: 55
+    # 跌幅类 11 个指标的基准列：指标编码 → dashboard_overview_hour_v2 里的列名。
+    # 基准 = 近 4 周同星期、同一小时的值取中位数（4 个数取中间两个的平均），由 UDS 计算提供。
+    # 列名暂按「UDS 指标名_baseline」，UDS 上线后如有不同只改这里；UDS 还没有这些列时，判定任务第 2 次请求会去掉基准列，
+    # 跌幅类规则写 judge_error「UDS 未提供跌幅基準字段」，其他规则照常判定。
+    # 注意：不能写成 baseline-fields: {} —— 空的 {} 会被 Spring 当成空字符串，绑定 Map 失败，应用起不来。
+    baseline-fields:
+      reg: reg_baseline                    # 注册人数
+      ftd: ftd_baseline                    # 首存人数
+      ftdA: ftdA_baseline                  # 首存 ARPPU
+      dep: dep_baseline                    # 存款总额
+      wd: wd_baseline                      # 提款总额
+      arppu: arppu_hour_baseline           # ARPPU
+      active: active_hour_baseline         # 活跃人数（小时去重）
+      bet: bet_baseline                    # 投注总额
+      ggr: ggr_baseline                    # GGR
+      bonus: bonus_baseline                # 发放赠金总额
+      ngr: ngr_baseline                    # NGR（= GGR − 赠金，UDS 按每小时 NGR 取中位数）
+
 # token配置
 token:
   # 令牌自定义标识return userId != null && 1L == userId;
@@ -704,9 +767,19 @@ security:
     # 任何 IP 都可访问的路径（Ant 风格）。/logout 由 Spring Security 过滤器处理，不经过拦截器，无需列出
     exclude-paths: >-
       /dashboard/**,
+      /monitor/rules,/monitor/rules/**,/monitor/owners,/monitor/events,/monitor/events/**,/monitor/lark/**,
       /login,/login/**,/ga/bind/**,/account/activation/**,
       /getInfo,/getRouters,/unlockscreen,
       /system/user/profile,/system/user/profile/**,
       /monitor/online/heartbeat,
       /system/dict/data/type/**,/system/config/configKey/**,
       /profile/**,/error,/
+  # Dashboard IP 白名单（DashboardIpWhitelistInterceptor）：开启后整个系统（含登录、getInfo、Dashboard、监控管理）
+  # 只允许名单内的 IP 访问；放行 IP = 本名单 ∪ 上面 admin-ip-whitelist.allowed（公司内部 IP 不用重复填）。
+  # 客户端 IP 的取法沿用上面的 client-ip-header / trusted-proxy-hops。修改后需重启服务。
+  dashboard-ip-whitelist:
+    enabled: ${DASHBOARD_IP_WHITELIST_ENABLED:false}
+    # 逗号分隔，支持单个 IP 与 CIDR，如 1.2.3.4,203.0.113.0/24；一般只填客户的出口 IP
+    allowed: ${DASHBOARD_IP_WHITELIST:}
+    # 不受限制的路径（Ant 风格）。/logout 由 Spring Security 过滤器处理、健康检查走管理端口，都不经过拦截器
+    exclude-paths: ${DASHBOARD_IP_WHITELIST_EXCLUDE:/error}

@@ -24,10 +24,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="rightCode"       column="right_code"       />
 		<result property="aggType"         column="agg_type"         />
 		<result property="weightField"     column="weight_field"     />
-		<result property="alertEnabled"    column="alert_enabled"    />
-		<result property="alertMin"        column="alert_min"        />
-		<result property="alertMax"        column="alert_max"        />
-		<result property="tolerancePct"    column="tolerance_pct"    />
+		<result property="monitorable"      column="monitorable"        />
+		<result property="judgeType"        column="judge_type"         />
+		<result property="minSampleKey"     column="min_sample_key"     />
+		<result property="minSampleDefault" column="min_sample_default" />
+		<result property="allowNegative"    column="allow_negative"     />
+		<result property="gaugeMin"         column="gauge_min"          />
+		<result property="gaugeMax"         column="gauge_max"          />
 		<result property="status"          column="status"           />
 		<result property="remark"          column="remark"           />
 	</resultMap>
@@ -46,8 +49,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		select metric_code, metric_name, metric_name_en, group_code,
 		       source_table, source_field, update_frequency, single_day_only, chart_type, direction, value_format, value_decimals,
 		       show_as_card, sort_no, calc_type, left_code, right_code,
-		       agg_type, weight_field, alert_enabled, alert_min, alert_max,
-		       tolerance_pct, status, remark
+		       agg_type, weight_field, monitorable, judge_type, min_sample_key,
+		       min_sample_default, allow_negative, gauge_min, gauge_max, status, remark
 		  from dashboard_metric_card
 		 order by sort_no, metric_code
 	</select>

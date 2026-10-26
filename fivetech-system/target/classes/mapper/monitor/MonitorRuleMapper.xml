@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.monitor.mapper.MonitorRuleMapper">
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorRule" id="MonitorRuleResult">
+		<id     property="ruleId"          column="rule_id"          />
+		<result property="siteCode"        column="site_code"        />
+		<result property="ruleNo"          column="rule_no"          />
+		<result property="metricCode"      column="metric_code"      />
+		<result property="ownerUserId"     column="owner_user_id"    />
+		<result property="judgeType"       column="judge_type"       />
+		<result property="warnLow"         column="warn_low"         />
+		<result property="warnHigh"        column="warn_high"        />
+		<result property="critLow"         column="crit_low"         />
+		<result property="critHigh"        column="crit_high"        />
+		<result property="periodHours"     column="period_hours"     />
+		<result property="durationCount"   column="duration_count"   />
+		<result property="escalateHours"   column="escalate_hours"   />
+		<result property="muteHours"       column="mute_hours"       />
+		<result property="minSampleKey"    column="min_sample_key"   />
+		<result property="minSampleValue"  column="min_sample_value" />
+		<result property="notifyChatId"    column="notify_chat_id"   />
+		<result property="notifyChatName"  column="notify_chat_name" />
+		<result property="enabled"         column="enabled"          />
+		<result property="pausedAt"        column="paused_at"        />
+		<result property="lastNotifiedAt"  column="last_notified_at" />
+		<result property="lastJudgedAt"    column="last_judged_at"   />
+		<result property="judgeError"      column="judge_error"      />
+		<result property="delFlag"         column="del_flag"         />
+		<result property="createBy"        column="create_by"        />
+		<result property="createTime"      column="create_time"      />
+		<result property="updateBy"        column="update_by"        />
+		<result property="updateTime"      column="update_time"      />
+		<result property="metricName"      column="metric_name"      />
+		<result property="valueFormat"     column="value_format"     />
+		<result property="valueDecimals"   column="value_decimals"   />
+		<result property="minSampleLabel"  column="min_sample_label" />
+		<result property="ownerEmail"      column="owner_email"      />
+		<result property="ownerValid"      column="owner_valid"      />
+		<result property="chatName"        column="chat_name"        />
+		<result property="chatStatus"      column="chat_status"      />
+		<result property="createByEmail"   column="create_by_email"  />
+		<result property="updateByEmail"   column="update_by_email"  />
+		<result property="lastTriggerHour" column="last_trigger_hour"/>
+	</resultMap>
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorOccupiedMetric" id="OccupiedResult">
+		<result property="metricCode" column="metric_code" />
+		<result property="ruleNo"     column="rule_no"     />
+		<result property="ownerEmail" column="owner_email" />
+	</resultMap>
+
+	<!--
+	  规则 + 指标名称 + 样本量口径名称 + 负责人邮箱 + 通知群（缓存里的最新群名与状态）+ 创建 / 修改人邮箱
+	  + 最近触发小时（一条 GROUP BY，避免 N+1）。create_by / update_by 存的是登录名，按 user_name 关联出邮箱
+	-->
+	<sql id="selectRuleVo">
+		select r.rule_id, r.site_code, r.rule_no, r.metric_code, r.owner_user_id, r.judge_type,
+		       r.warn_low, r.warn_high, r.crit_low, r.crit_high, r.period_hours, r.duration_count,
+		       r.escalate_hours, r.mute_hours, r.min_sample_key, r.min_sample_value,
+		       r.notify_chat_id, r.notify_chat_name,
+		       r.enabled, r.paused_at, r.last_notified_at, r.last_judged_at, r.judge_error, r.del_flag,
+		       r.create_by, r.create_time, r.update_by, r.update_time,
+		       c.metric_name, c.value_format, c.value_decimals,
+		       case when r.min_sample_key = 'base' then '基准'
+		            else coalesce(sc.metric_name, r.min_sample_key) end as min_sample_label,
+		       u.email as owner_email,
+		       coalesce(u.del_flag = '0' and u.status = '0', false) as owner_valid,
+		       coalesce(ch.name, r.notify_chat_name) as chat_name,
+		       ch.status as chat_status,
+		       cu.email as create_by_email,
+		       mu.email as update_by_email,
+		       e.last_trigger_hour
+		  from monitor_rule r
+		  left join dashboard_metric_card c  on c.metric_code = r.metric_code
+		  left join dashboard_metric_card sc on sc.metric_code = r.min_sample_key
+		  left join sys_user u  on u.user_id = r.owner_user_id
+		  left join sys_user cu on cu.user_name = r.create_by and cu.del_flag = '0'
+		  left join sys_user mu on mu.user_name = r.update_by and mu.del_flag = '0'
+		  left join monitor_lark_chat ch on ch.site_code = r.site_code and ch.chat_id = r.notify_chat_id
+		  left join (select ev.rule_id, max(ev.trigger_hour) as last_trigger_hour
+		               from monitor_event ev
+		              where ev.site_code = #{scope.siteCode}
+		                and ev.event_type = 'alert'
+		              group by ev.rule_id) e on e.rule_id = r.rule_id
+	</sql>
+
+	<!-- 分页由 Service 里的 PageHelper.startPage 加在这条语句上 -->
+	<select id="selectRuleList" resultMap="MonitorRuleResult">
+		<include refid="selectRuleVo"/>
+		 where r.del_flag = '0'
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+		<if test="q != null and q.enabled != null">
+		   and r.enabled = #{q.enabled}
+		</if>
+		<if test="q != null and q.chatId != null and q.chatId != ''">
+		   and r.notify_chat_id = #{q.chatId}
+		</if>
+		<if test="q != null and q.metricCode != null and q.metricCode != ''">
+		   and r.metric_code = #{q.metricCode}
+		</if>
+		<!-- 负责人只是筛选，不是数据范围 -->
+		<if test="q != null and q.ownerId != null">
+		   and r.owner_user_id = #{q.ownerId}
+		</if>
+		 order by r.rule_no
+	</select>
+
+	<select id="selectRuleById" resultMap="MonitorRuleResult">
+		<include refid="selectRuleVo"/>
+		 where r.del_flag = '0'
+		   and r.rule_id = #{ruleId}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<!-- 本站未删除规则占用的指标：只给规则号和负责人邮箱，不给阈值 -->
+	<select id="selectOccupiedMetrics" resultMap="OccupiedResult">
+		select r.metric_code, r.rule_no, u.email as owner_email
+		  from monitor_rule r
+		  left join sys_user u on u.user_id = r.owner_user_id
+		 where r.del_flag = '0'
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<insert id="insertRule" parameterType="com.fivetech.monitor.domain.MonitorRule"
+	        useGeneratedKeys="true" keyProperty="ruleId" keyColumn="rule_id">
+		insert into monitor_rule (
+		    site_code, rule_no, metric_code, owner_user_id, judge_type,
+		    warn_low, warn_high, crit_low, crit_high,
+		    period_hours, duration_count, escalate_hours, mute_hours,
+		    min_sample_key, min_sample_value, notify_chat_id, notify_chat_name, enabled, paused_at, del_flag,
+		    create_by, create_time, update_by, update_time
+		) values (
+		    #{siteCode}, #{ruleNo}, #{metricCode}, #{ownerUserId}, #{judgeType},
+		    #{warnLow,jdbcType=NUMERIC}, #{warnHigh,jdbcType=NUMERIC}, #{critLow,jdbcType=NUMERIC}, #{critHigh,jdbcType=NUMERIC},
+		    #{periodHours}, #{durationCount}, #{escalateHours,jdbcType=SMALLINT}, #{muteHours},
+		    #{minSampleKey}, #{minSampleValue}, #{notifyChatId,jdbcType=VARCHAR}, #{notifyChatName,jdbcType=VARCHAR}, #{enabled},
+		    #{pausedAt,jdbcType=TIMESTAMP}, '0',
+		    #{createBy}, #{createTime}, #{createBy}, #{createTime}
+		)
+	</insert>
+
+	<update id="updateRule">
+		update monitor_rule
+		   set owner_user_id    = #{rule.ownerUserId},
+		       warn_low         = #{rule.warnLow,jdbcType=NUMERIC},
+		       warn_high        = #{rule.warnHigh,jdbcType=NUMERIC},
+		       crit_low         = #{rule.critLow,jdbcType=NUMERIC},
+		       crit_high        = #{rule.critHigh,jdbcType=NUMERIC},
+		       period_hours     = #{rule.periodHours},
+		       duration_count   = #{rule.durationCount},
+		       escalate_hours   = #{rule.escalateHours,jdbcType=SMALLINT},
+		       mute_hours       = #{rule.muteHours},
+		       min_sample_value = #{rule.minSampleValue},
+		       notify_chat_id   = #{rule.notifyChatId,jdbcType=VARCHAR},
+		       notify_chat_name = #{rule.notifyChatName,jdbcType=VARCHAR},
+		       update_by        = #{rule.updateBy},
+		       update_time      = #{rule.updateTime}
+		 where rule_id = #{rule.ruleId}
+		   and site_code = #{scope.siteCode}
+		   and del_flag = '0'
+	</update>
+
+	<update id="updateEnabled">
+		update monitor_rule
+		   set enabled     = #{enabled},
+		       <if test="!enabled">paused_at = #{pausedAt,jdbcType=TIMESTAMP},</if>
+		       update_by   = #{updateBy},
+		       update_time = #{updateTime}
+		 where rule_id = #{ruleId}
+		   and site_code = #{scope.siteCode}
+		   and del_flag = '0'
+	</update>
+
+	<update id="deleteRuleLogically">
+		update monitor_rule
+		   set del_flag    = '2',
+		       enabled     = false,
+		       update_by   = #{updateBy},
+		       update_time = #{updateTime}
+		 where rule_id = #{ruleId}
+		   and site_code = #{scope.siteCode}
+		   and del_flag = '0'
+	</update>
+
+	<update id="stopOpenEvents">
+		update monitor_event
+		   set status      = 'stopped',
+		       end_hour    = coalesce(last_period_end, #{endHour,jdbcType=TIMESTAMP}),
+		       stopped_at  = #{now},
+		       update_time = #{now}
+		 where rule_id = #{ruleId}
+		   and site_code = #{scope.siteCode}
+		   and event_type = 'alert'
+		   and status = 'open'
+	</update>
+
+	<delete id="deleteRuleState">
+		delete from monitor_rule_state
+		 where rule_id = #{ruleId}
+		   and site_code = #{scope.siteCode}
+	</delete>
+
+	<select id="countEnabledRules" resultType="java.lang.Integer">
+		select count(*)
+		  from monitor_rule r
+		 where r.del_flag = '0'
+		   and r.enabled = true
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<insert id="resetRuleState">
+		insert into monitor_rule_state (rule_id, site_code, run_start_hour, recent_levels, recent_periods,
+		                                open_event_id, last_period_end, last_data_hour, update_time)
+		values (#{ruleId}, #{scope.siteCode}, null, '[]'::jsonb, '[]'::jsonb,
+		        null, null, #{lastDataHour,jdbcType=TIMESTAMP}, #{now})
+		on conflict (rule_id) do update
+		   set run_start_hour  = null,
+		       recent_levels   = '[]'::jsonb,
+		       recent_periods  = '[]'::jsonb,
+		       last_period_end = null,
+		       last_data_hour  = excluded.last_data_hour,
+		       update_time     = excluded.update_time
+		 where monitor_rule_state.site_code = excluded.site_code
+	</insert>
+
+</mapper>

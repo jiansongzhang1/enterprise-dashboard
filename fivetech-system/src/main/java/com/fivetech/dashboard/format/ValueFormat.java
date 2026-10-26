@@ -7,7 +7,7 @@ package com.fivetech.dashboard.format;
  * 按渲染上下文决定。两者分开是因为同一个指标在卡片、表格、CSV 里必须长得不一样。</p>
  *
  * <p><b>量纲约定</b>：入库值即展示数值。PCT 存 15.82 而不是 0.1582，
- * 这样 dashboard_metric_card 的 alert_min / alert_max 才能和指标值直接比较，
+ * 这样 monitor_rule 的阈值才能和指标值直接比较，
  * 不需要任何一方做换算——换算迟早会有人忘。</p>
  */
 public enum ValueFormat

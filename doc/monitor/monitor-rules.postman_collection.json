@@ -1,0 +1,5202 @@
+{
+	"info": {
+		"_postman_id": "40770d94-472b-46e9-ad66-070d013bc8d3",
+		"name": "Fivetech Dashboard API · 监控管理 · 告警规则与 Lark 群（第一批 + 第二批）",
+		"description": "覆盖 GET /monitor/rules、/monitor/rules/{id}、/monitor/rules/metrics、/monitor/owners，\nPOST /monitor/rules、/{id}/update、/{id}/enabled、/{id}/delete 的正常流程、参数校验、站点与数据范围；第 8 组为第二批（判定引擎）带来的接口变化：每站启用规则上限 4807；第 9 组为 GET /monitor/lark/chats（实时拉取机器人所在的 Lark 群）。\n\n使用：\n1. 环境沿用 doc/ 下的 Fivetech-Dashboard-local / prod（baseUrl、username、password、totp、token）；\n2. 先执行 doc/monitor/monitor_batch1_test_data.sql 第 1 段（造两条 Lark 群缓存，chat_id 已预填在集合变量里）；当前账号要有邮箱；\n3. 按目录顺序整集运行（Runner）。前置请求会自动写入 ownerUserId、metricCode 等变量；\n4. 第 6 组需要普通用户 token（集合变量 userToken），不填自动跳过；数据范围只按站点，普通用户也能看、能改全部规则；\n5. 测完执行测试数据 SQL 第 2 段清理；\n6. 第 8 组：集合变量 maxEnabledRules 与服务端 MONITOR_MAX_ENABLED_RULES 保持一致（默认 40）；\n7. 第 9 组需要服务端配好 Lark 应用（MONITOR_LARK_APP_ID / MONITOR_LARK_APP_SECRET）并把机器人拉进群；它会把假群 oc_postman_ok 置为失效，所以放在最后，下次整集运行前重新执行测试数据 SQL 第 1 段。\n\n若依返回 HTTP 恒为 200，成败看响应体 code：200 成功 / 400 参数错误（data.fields）/ 401 / 403 / 404 / 4801 指标已有规则 / 4802 Lark 應用憑證無效 / 4805 通知群已失效 / 4807 本站启用中的规则已达上限。\n注意：会真实写库（建规则、占规则号），生产环境请在业务低峰执行并在测完后清理。",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// 若依统一返回：HTTP 恒为 200，成败看 code",
+					"pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "siteCode",
+			"value": "SITE-IN"
+		},
+		{
+			"key": "chatId",
+			"value": "oc_postman_ok"
+		},
+		{
+			"key": "deadChatId",
+			"value": "oc_postman_dead"
+		},
+		{
+			"key": "myUserId",
+			"value": ""
+		},
+		{
+			"key": "ownerEmail",
+			"value": ""
+		},
+		{
+			"key": "userToken",
+			"value": ""
+		},
+		{
+			"key": "ownerUserId",
+			"value": ""
+		},
+		{
+			"key": "metricCode",
+			"value": ""
+		},
+		{
+			"key": "dropMetricCode",
+			"value": ""
+		},
+		{
+			"key": "bandMetricCode",
+			"value": ""
+		},
+		{
+			"key": "ruleId",
+			"value": ""
+		},
+		{
+			"key": "ruleNo",
+			"value": ""
+		},
+		{
+			"key": "ruleCode",
+			"value": ""
+		},
+		{
+			"key": "ruleId2",
+			"value": ""
+		},
+		{
+			"key": "maxEnabledRules",
+			"value": "40",
+			"description": "与服务端 monitor.max-enabled-rules-per-site（MONITOR_MAX_ENABLED_RULES）一致"
+		},
+		{
+			"key": "enabledCount",
+			"value": "",
+			"description": "8.1 写入：本站启用中的规则数"
+		},
+		{
+			"key": "ruleId3",
+			"value": "",
+			"description": "8.2 建的规则"
+		},
+		{
+			"key": "ruleId4",
+			"value": "",
+			"description": "8.3 建的规则"
+		},
+		{
+			"key": "ruleId4Enabled",
+			"value": "",
+			"description": "8.4 写入：8.3 的规则是否启用成功"
+		},
+		{
+			"key": "larkChatsCacheSeconds",
+			"value": "30"
+		},
+		{
+			"key": "larkReady",
+			"value": ""
+		},
+		{
+			"key": "larkChatId",
+			"value": ""
+		},
+		{
+			"key": "larkFetchedAt",
+			"value": ""
+		},
+		{
+			"key": "eventId",
+			"value": ""
+		},
+		{
+			"key": "eventHandle",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "0. 准备",
+			"item": [
+				{
+					"name": "0.1 登录（获取 token）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "code 为 Google Authenticator 6 位动态码，执行前在环境变量 totp 填好。已有 token 可直接填环境变量 token 并跳过本请求。",
+						"auth": {
+							"type": "noauth"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('拿到 token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+									"if (j.token) pm.environment.set('token', j.token);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "0.2 未登录访问 → 401",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"auth": {
+							"type": "noauth"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 401', () => pm.expect(j.code).to.eql(401));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "0.3 当前用户 GET /getInfo",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/getInfo",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"getInfo"
+							]
+						},
+						"description": "取当前登录用户的 userId，写入集合变量 myUserId（测「我负责的」筛选）。"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.collectionVariables.set('myUserId', j.user.userId);",
+									"pm.test('拿到 userId', () => pm.expect(j.user.userId).to.be.a('number'));",
+									"pm.test('sites 每项有 code / name / timezone', () => pm.expect((j.sites || []).every(s => !!s.code && !!s.name && !!s.timezone)).to.be.true);",
+									"pm.test('timezone 是 IANA 时区 ID（如 Asia/Kolkata）', () => (j.sites || []).forEach(s => pm.expect(s.timezone).to.match(/^[A-Za-z_]+(\\/[A-Za-z_+\\-0-9]+)+$|^UTC$/)));",
+									"pm.test('currentSite 在 sites 里', () => pm.expect((j.sites || []).some(s => s.code === j.currentSite)).to.be.true);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "0.4 可选负责人 GET /monitor/owners",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/owners",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"owners"
+							]
+						},
+						"description": "当前用户作为测试规则的负责人（写入 ownerUserId）。当前用户没有邮箱时不在候选里，测试会失败：先给账号填邮箱。"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('data 是非空数组', () => pm.expect(j.data).to.be.an('array').that.is.not.empty);",
+									"pm.test('只有 userId / email', () => pm.expect(Object.keys(j.data[0]).sort()).to.eql(['email', 'userId']));",
+									"pm.test('都有邮箱', () => j.data.forEach(u => pm.expect(u.email).to.include('@')));",
+									"const me = j.data.find(u => u.userId == pm.variables.get('myUserId'));",
+									"pm.test('当前用户在候选里（需要有邮箱）', () => pm.expect(me).to.be.an('object'));",
+									"if (me) { pm.collectionVariables.set('ownerUserId', me.userId); pm.collectionVariables.set('ownerEmail', me.email); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "0.5 可新建的指标 GET /monitor/rules/metrics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/metrics",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"metrics"
+							]
+						},
+						"description": "挑出未被占用的下限类、跌幅类、区间类指标各一个，写入集合变量 metricCode / dropMetricCode / bandMetricCode。"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('可监控指标 20 个', () => pm.expect(j.data.length).to.eql(20));",
+									"pm.test('字段齐全', () => pm.expect(j.data[0]).to.include.all.keys('metricCode','metricName','unit','judgeType','minSample','allowNegative','occupied','occupiedBy'));",
+									"pm.test('minSample 有 key / label / defaultValue', () => j.data.forEach(m => pm.expect(m.minSample).to.include.all.keys('key','label','defaultValue')));",
+									"pm.test('只有存提差允许负数', () => pm.expect(j.data.filter(m => m.allowNegative).map(m => m.metricCode)).to.eql(['net']));",
+									"pm.test('登录人数不可监控', () => pm.expect(j.data.map(m => m.metricCode)).to.not.include('login'));",
+									"const u = c => (j.data.find(m => m.metricCode === c) || {}).unit;",
+									"pm.test('单位：成功率 % / 流水倍数 x / 到帐时间 min / 存款 ₹ / 注册人数空', () => pm.expect([u('dOkR'), u('turnX'), u('dT'), u('dep'), u('reg')]).to.eql(['%', 'x', 'min', '₹', '']));",
+									"const pick = (type, prefer) => { const free = j.data.filter(m => m.judgeType === type && !m.occupied);",
+									"  return (free.find(m => m.metricCode === prefer) || free[0] || {}).metricCode || ''; };",
+									"pm.collectionVariables.set('metricCode', pick('lo', 'dOkR'));",
+									"pm.collectionVariables.set('dropMetricCode', pick('drop', 'reg'));",
+									"pm.collectionVariables.set('bandMetricCode', pick('band', 'killR'));",
+									"pm.test('找到未占用的下限类指标', () => pm.expect(pm.variables.get('metricCode')).to.not.be.empty);",
+									"pm.test('找到未占用的跌幅类指标', () => pm.expect(pm.variables.get('dropMetricCode')).to.not.be.empty);"
+								]
+							}
+						}
+					]
+				}
+			],
+			"description": "先执行 doc/monitor/monitor_batch1_test_data.sql 第 1 段（造两条 Lark 群缓存：oc_postman_ok / oc_postman_dead，集合变量 chatId / deadChatId 已预填）。当前账号要有邮箱。"
+		},
+		{
+			"name": "1. 新增与查询",
+			"item": [
+				{
+					"name": "1.1 新增规则（下限类）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('返回 ruleId / ruleNo / ruleCode', () => pm.expect(j.data).to.include.all.keys('ruleId','ruleNo','ruleCode'));",
+									"pm.test('ruleCode 为 R-xxx', () => pm.expect(j.data.ruleCode).to.match(/^R-\\d{3,}$/));",
+									"pm.test('ruleCode 与 ruleNo 一致', () => pm.expect(Number(j.data.ruleCode.slice(2))).to.eql(j.data.ruleNo));",
+									"pm.collectionVariables.set('ruleId', j.data.ruleId);",
+									"pm.collectionVariables.set('ruleNo', j.data.ruleNo);",
+									"pm.collectionVariables.set('ruleCode', j.data.ruleCode);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.2 同一指标再建 → 4801",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 4801', () => pm.expect(j.code).to.eql(4801));",
+									"pm.test('msg 带已有规则号', () => pm.expect(j.msg).to.include(pm.variables.get('ruleCode')));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.3 可新建的指标：该指标标为已占用",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/metrics",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"metrics"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const m = j.data.find(x => x.metricCode === pm.variables.get('metricCode'));",
+									"pm.test('occupied = true', () => pm.expect(m.occupied).to.eql(true));",
+									"pm.test('occupiedBy.ruleCode 正确', () => pm.expect(m.occupiedBy.ruleCode).to.eql(pm.variables.get('ruleCode')));",
+									"pm.test('occupiedBy.ownerEmail', () => pm.expect(m.occupiedBy.ownerEmail).to.eql(pm.variables.get('ownerEmail')));",
+									"pm.test('不返回阈值', () => pm.expect(m).to.not.have.any.keys('warn','crit'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.4 规则列表（分页）",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?pageNum=1&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "pageNum",
+									"value": "1"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('分页结构', () => { pm.expect(j.data).to.include.all.keys('rows','total','pageNum','pageSize'); pm.expect(j.data.pageSize).to.eql(100); });",
+									"const r = j.data.rows.find(x => x.ruleId == pm.variables.get('ruleId'));",
+									"pm.test('列表里有新规则', () => pm.expect(r).to.be.an('object'));",
+									"pm.test('按 ruleNo 升序', () => { const n = j.data.rows.map(x => x.ruleNo); pm.expect(n).to.eql([...n].sort((a, b) => a - b)); });",
+									"pm.test('阈值 warn.low=95 / crit.low=90，high 为 null', () => { pm.expect(r.warn).to.eql({low: 95, high: null}); pm.expect(r.crit).to.eql({low: 90, high: null}); });",
+									"pm.test('judgeType = lo', () => pm.expect(r.judgeType).to.eql('lo'));",
+									"pm.test('周期参数', () => pm.expect([r.periodHours, r.durationCount, r.escalateHours, r.muteHours]).to.eql([1, 2, 3, 2]));",
+									"pm.test('负责人：邮箱、有效', () => { pm.expect(r.owner.userId).to.eql(Number(pm.variables.get('ownerUserId'))); pm.expect(r.owner.email).to.eql(pm.variables.get('ownerEmail')); pm.expect(r.owner.valid).to.eql(true); });",
+									"pm.test('通知群', () => pm.expect(r.notifyChat).to.eql({chatId: pm.variables.get('chatId'), name: 'Postman 聯調群', status: 'ok'}));",
+									"pm.test('enabled', () => pm.expect(r.enabled).to.eql(true));",
+									"pm.test('还没触发、还没判定', () => { pm.expect(r.lastTriggerHour).to.eql(null); pm.expect(r.lastJudgedAt).to.eql(null); pm.expect(r.judgeError).to.eql(null); });",
+									"pm.test('最近修改：有人、有时间', () => { pm.expect(r.updateBy).to.be.a('string').and.not.empty; pm.expect(r.updateTime).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/); });",
+									"pm.test('不再返回 editable', () => pm.expect(r).to.not.have.property('editable'));",
+									"pm.test('unit 为显示单位', () => pm.expect(['%', 'x', 'min', '₹', '']).to.include(r.unit));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.5 列表筛选 enabled=false：不含新规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?enabled=false&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "enabled",
+									"value": "false"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('不含新规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.not.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.6 列表筛选 chatId：含新规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?chatId={{chatId}}&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "chatId",
+									"value": "{{chatId}}"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含新规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));",
+									"pm.test('全部是该群', () => j.data.rows.forEach(x => pm.expect(x.notifyChat.chatId).to.eql(pm.variables.get('chatId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.6b 列表筛选 owner=me：含新规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?owner=me&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "owner",
+									"value": "me"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含新规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));",
+									"pm.test('全部是我负责的', () => j.data.rows.forEach(x => pm.expect(x.owner.userId).to.eql(Number(pm.variables.get('myUserId')))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.6c 列表筛选 metricCode",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?metricCode={{metricCode}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "metricCode",
+									"value": "{{metricCode}}"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('只有 1 条且是新规则', () => { pm.expect(j.data.total).to.eql(1); pm.expect(j.data.rows[0].ruleId).to.eql(Number(pm.variables.get('ruleId'))); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.6d 非法 pageSize 回到 20",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?pageSize=7",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "pageSize",
+									"value": "7"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('pageSize = 20', () => pm.expect(j.data.pageSize).to.eql(20));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.7 规则详情",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('ruleId 一致', () => pm.expect(j.data.ruleId).to.eql(Number(pm.variables.get('ruleId'))));",
+									"pm.test('minSample 有 key / label / value=30', () => { pm.expect(j.data.minSample.key).to.be.a('string'); pm.expect(j.data.minSample.label).to.be.a('string'); pm.expect(j.data.minSample.value).to.eql(30); });",
+									"pm.test('审计字段', () => pm.expect(j.data).to.include.all.keys('createBy','createTime','updateBy','updateTime'));",
+									"pm.test('createBy 优先显示邮箱', () => pm.expect(j.data.createBy).to.be.a('string').and.not.empty);",
+									"pm.test('时间格式 yyyy-MM-dd HH:mm', () => pm.expect(j.data.createTime).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "1.8 不存在的规则 → 404",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/999999999",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"999999999"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "2. 参数校验（400 + data.fields）",
+			"item": [
+				{
+					"name": "2.1 未选指标",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 metricCode', () => pm.expect(((j.data || {}).fields || {})).to.have.property('metricCode'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.2 不可监控的指标（login）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"login\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 metricCode', () => pm.expect(((j.data || {}).fields || {})).to.have.property('metricCode'));",
+									"pm.test('metricCode 提示含「不能設定告警」', () => pm.expect(((j.data || {}).fields || {})['metricCode'] || '').to.include('不能設定告警'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.3 严重阈值为空",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": null,\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit'));",
+									"pm.test('crit 提示含「嚴重閾值不能為空」', () => pm.expect(((j.data || {}).fields || {})['crit'] || '').to.include('嚴重閾值不能為空'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.4 跌幅：严重不比注意严",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 40\n  },\n  \"crit\": {\n    \"low\": 20\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit'));",
+									"pm.test('crit 提示含「更嚴」', () => pm.expect(((j.data || {}).fields || {})['crit'] || '').to.include('更嚴'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.5 跌幅超过 100",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 140\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit.low', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit.low'));",
+									"pm.test('crit.low 提示：跌幅需大於 0 且不超過 100', () => pm.expect(((j.data || {}).fields || {})['crit.low'] || '').to.eql('跌幅需大於 0 且不超過 100'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.5b 跌幅为 0",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": null,\n  \"crit\": {\n    \"low\": 0\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit.low', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit.low'));",
+									"pm.test('crit.low 提示含「大於 0」', () => pm.expect(((j.data || {}).fields || {})['crit.low'] || '').to.include('大於 0'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.6 跌幅为负数",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": null,\n  \"crit\": {\n    \"low\": -5\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit.low', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit.low'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.7 区间：严重与注意完全相同",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{bandMetricCode}}\",\n  \"warn\": {\n    \"low\": 3,\n    \"high\": 6\n  },\n  \"crit\": {\n    \"low\": 3,\n    \"high\": 6\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('bandMetricCode')) { console.log('跳过：没有未占用的区间类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit'));",
+									"pm.test('crit 提示含「更嚴」', () => pm.expect(((j.data || {}).fields || {})['crit'] || '').to.include('更嚴'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.8 区间：下限不小于上限",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{bandMetricCode}}\",\n  \"warn\": {\n    \"low\": 6,\n    \"high\": 3\n  },\n  \"crit\": {\n    \"low\": 2,\n    \"high\": 8\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('bandMetricCode')) { console.log('跳过：没有未占用的区间类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 warn', () => pm.expect(((j.data || {}).fields || {})).to.have.property('warn'));",
+									"pm.test('warn 提示含「下限需小於上限」', () => pm.expect(((j.data || {}).fields || {})['warn'] || '').to.include('下限需小於上限'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.9 区间：严重只填一侧",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{bandMetricCode}}\",\n  \"warn\": {\n    \"low\": 3,\n    \"high\": 6\n  },\n  \"crit\": {\n    \"low\": 2\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('bandMetricCode')) { console.log('跳过：没有未占用的区间类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 crit', () => pm.expect(((j.data || {}).fields || {})).to.have.property('crit'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.10 检测周期不合法（3 小时）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 3,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 periodHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('periodHours'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.11 持续次数超上限（每小时最多 4）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 5,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 durationCount', () => pm.expect(((j.data || {}).fields || {})).to.have.property('durationCount'));",
+									"pm.test('durationCount 提示含「最多 4 次」', () => pm.expect(((j.data || {}).fields || {})['durationCount'] || '').to.include('最多 4 次'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.12 持续次数超上限（每 12 小时最多 2）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 12,\n  \"durationCount\": 3,\n  \"escalateHours\": 12,\n  \"muteHours\": 12,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 durationCount', () => pm.expect(((j.data || {}).fields || {})).to.have.property('durationCount'));",
+									"pm.test('durationCount 提示含「最多 2 次」', () => pm.expect(((j.data || {}).fields || {})['durationCount'] || '').to.include('最多 2 次'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.13 未设注意阈值却设升级",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": null,\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 escalateHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('escalateHours'));",
+									"pm.test('escalateHours 提示含「未設注意閾值」', () => pm.expect(((j.data || {}).fields || {})['escalateHours'] || '').to.include('未設注意閾值'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.14 升级小时不在可选值（每小时选 4）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 4,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 escalateHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('escalateHours'));",
+									"pm.test('escalateHours 提示含「2/3/6/12」', () => pm.expect(((j.data || {}).fields || {})['escalateHours'] || '').to.include('2/3/6/12'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.15 静默期不在可选值（每 4 小时选 2）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 4,\n  \"durationCount\": 1,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 muteHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('muteHours'));",
+									"pm.test('muteHours 提示含「4/8/12/24」', () => pm.expect(((j.data || {}).fields || {})['muteHours'] || '').to.include('4/8/12/24'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.16 静默期为空",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 muteHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('muteHours'));",
+									"pm.test('muteHours 提示含「請選擇靜默期」', () => pm.expect(((j.data || {}).fields || {})['muteHours'] || '').to.include('請選擇靜默期'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.17 最小样本量为负",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": -1,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 minSampleValue', () => pm.expect(((j.data || {}).fields || {})).to.have.property('minSampleValue'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.18 未选通知群",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 notifyChatId', () => pm.expect(((j.data || {}).fields || {})).to.have.property('notifyChatId'));",
+									"pm.test('notifyChatId 提示含「請選擇通知群」', () => pm.expect(((j.data || {}).fields || {})['notifyChatId'] || '').to.include('請選擇通知群'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.19 通知群不存在（不在群列表缓存里）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"oc_not_exist_postman\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 notifyChatId', () => pm.expect(((j.data || {}).fields || {})).to.have.property('notifyChatId'));",
+									"pm.test('notifyChatId 提示含「通知群不存在」', () => pm.expect(((j.data || {}).fields || {})['notifyChatId'] || '').to.include('通知群不存在'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.20 未选负责人",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 ownerUserId', () => pm.expect(((j.data || {}).fields || {})).to.have.property('ownerUserId'));",
+									"pm.test('ownerUserId 提示含「請選擇負責人」', () => pm.expect(((j.data || {}).fields || {})['ownerUserId'] || '').to.include('請選擇負責人'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.21 负责人不在可选范围",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": 999999999,\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 ownerUserId', () => pm.expect(((j.data || {}).fields || {})).to.have.property('ownerUserId'));",
+									"pm.test('ownerUserId 提示含「可選範圍」', () => pm.expect(((j.data || {}).fields || {})['ownerUserId'] || '').to.include('可選範圍'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.22 多个字段同时出错：一次全部返回",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": null,\n  \"periodHours\": 3,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": -1,\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('至少 5 个字段错误', () => pm.expect(Object.keys(j.data.fields).length).to.be.at.least(5));",
+									"pm.test('msg 为第一条错误', () => pm.expect(Object.values(j.data.fields)).to.include(j.msg));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.23 选失效的通知群 → 4805",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 20\n  },\n  \"crit\": {\n    \"low\": 40\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{deadChatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 4805', () => pm.expect(j.code).to.eql(4805));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "2.24 校验失败不占规则号：跌幅类指标仍未占用",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/metrics",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"metrics"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const m = j.data.find(x => x.metricCode === pm.variables.get('dropMetricCode'));",
+									"pm.test('跌幅类指标 occupied = false', () => pm.expect(m.occupied).to.eql(false));"
+								]
+							}
+						}
+					]
+				}
+			],
+			"description": "全部应返回 code=400（4805 除外），data.fields 列出字段级错误，不写库。跌幅 / 区间类用例需要有未被占用的对应指标，没有时自动跳过。"
+		},
+		{
+			"name": "3. 修改",
+			"item": [
+				{
+					"name": "3.1 修改阈值与周期",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/update",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"update"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 96.5\n  },\n  \"crit\": {\n    \"low\": 91\n  },\n  \"periodHours\": 4,\n  \"durationCount\": 3,\n  \"escalateHours\": 8,\n  \"muteHours\": 8,\n  \"minSampleValue\": 50,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "3.2 详情反映修改",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('阈值已更新', () => { pm.expect(j.data.warn.low).to.eql(96.5); pm.expect(j.data.crit.low).to.eql(91); });",
+									"pm.test('周期参数已更新', () => pm.expect([j.data.periodHours, j.data.durationCount, j.data.escalateHours, j.data.muteHours]).to.eql([4, 3, 8, 8]));",
+									"pm.test('样本量已更新', () => pm.expect(j.data.minSample.value).to.eql(50));",
+									"pm.test('enabled 不传则不变', () => pm.expect(j.data.enabled).to.eql(true));",
+									"pm.test('ruleNo 不变', () => pm.expect(j.data.ruleNo).to.eql(Number(pm.variables.get('ruleNo'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "3.3 修改时换指标 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/update",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"update"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('dropMetricCode')) { console.log('跳过：没有未占用的跌幅类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 metricCode', () => pm.expect(((j.data || {}).fields || {})).to.have.property('metricCode'));",
+									"pm.test('metricCode 提示含「不能修改指標」', () => pm.expect(((j.data || {}).fields || {})['metricCode'] || '').to.include('不能修改指標'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "3.4 修改时参数不合法 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/update",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"update"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 4,\n  \"durationCount\": 1,\n  \"escalateHours\": null,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 muteHours', () => pm.expect(((j.data || {}).fields || {})).to.have.property('muteHours'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "3.5 修改不存在的规则 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/999999999/update",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"999999999",
+								"update"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "3.6 改回初始参数",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/update",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"update"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "4. 启用 / 暂停",
+			"item": [
+				{
+					"name": "4.1 暂停",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.2 重复暂停 → 仍成功",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.3 列表 enabled=false 含该规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?enabled=false&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "enabled",
+									"value": "false"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含该规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.4 详情 enabled = false",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('enabled = false', () => pm.expect(j.data.enabled).to.eql(false));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.5 启用",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.6 详情 enabled = true",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('enabled = true', () => pm.expect(j.data.enabled).to.eql(true));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.7 缺 enabled → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 enabled', () => pm.expect(((j.data || {}).fields || {})).to.have.property('enabled'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "4.8 不存在的规则 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/999999999/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"999999999",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "5. 站点",
+			"item": [
+				{
+					"name": "5.1 X-Site-Code 为其他站点 → 403",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "SITE-XX"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 403', () => pm.expect(j.code).to.eql(403));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "5.2 X-Site-Code 小写也认 → 200",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "site-in"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "5.3 不带 X-Site-Code → 默认站点 200",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含测试规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				}
+			],
+			"description": "多站点基础设施未上线前，只认默认站点 SITE-IN（忽略大小写）。"
+		},
+		{
+			"name": "6. 数据范围：普通用户也能看、能改（可选）",
+			"item": [
+				{
+					"name": "6.1 普通用户看得到别人负责的规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含管理员负责的测试规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.2 普通用户取别人的规则详情 → 200",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.3 普通用户 owner=me：不含别人的规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?owner=me&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "owner",
+									"value": "me"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('不含管理员负责的规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.not.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.4 普通用户按 ownerId 筛选别人 → 含该规则",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?ownerId={{ownerUserId}}&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "ownerId",
+									"value": "{{ownerUserId}}"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('含该规则', () => pm.expect(j.data.rows.map(x => x.ruleId)).to.include(Number(pm.variables.get('ruleId'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.5 普通用户暂停别人的规则 → 200",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.6 普通用户再启用 → 200",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "6.7 普通用户建同一指标 → 4801",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userToken}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('userToken')) { console.log('跳过：未填 userToken（普通用户 token）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 4801', () => pm.expect(j.code).to.eql(4801));"
+								]
+							}
+						}
+					]
+				}
+			],
+			"description": "一期不按负责人限制数据范围（2026-10-20 按原型调整）。需要一个普通账号：拥有「监控管理」161–167 菜单权限、不是超级管理员。先用它登录拿 token 填进集合变量 userToken；不填则本组自动跳过。"
+		},
+		{
+			"name": "7. 删除与规则号",
+			"item": [
+				{
+					"name": "7.1 删除规则",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/delete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"delete"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.2 删除后详情 → 404",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.3 重复删除 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/delete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId}}",
+								"delete"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.4 指标恢复为未占用",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/metrics",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"metrics"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const m = j.data.find(x => x.metricCode === pm.variables.get('metricCode'));",
+									"pm.test('occupied = false', () => pm.expect(m.occupied).to.eql(false));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.5 同一指标重新建（暂停状态）：规则号不复用",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('ruleNo 大于已删除的规则号', () => pm.expect(j.data.ruleNo).to.be.above(Number(pm.variables.get('ruleNo'))));",
+									"pm.collectionVariables.set('ruleId2', j.data.ruleId);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.6 新规则为暂停状态",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId2}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId2}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('enabled = false', () => pm.expect(j.data.enabled).to.eql(false));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "7.7 清理：删除重建的规则",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId2}}/delete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId2}}",
+								"delete"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				}
+			],
+			"description": "测完会留下两条逻辑删除的规则（del_flag='2'）并消耗两个规则号；需要彻底清理时执行 monitor_batch1_test_data.sql 第 2 段。"
+		},
+		{
+			"name": "8. 第二批 · 启用规则上限（4807）",
+			"description": "第二批（判定引擎）没有新增 HTTP 接口，判定本身由后台定时任务完成，验证用 SQL（见「监控管理-第二批-判定引擎-部署与验证.md」）。接口层的变化是：每个站点同时启用的规则最多 monitor.max-enabled-rules-per-site 条（默认 40），新建（启用状态）或启用时超过返回 4807；暂停的规则不占名额。集合变量 maxEnabledRules 要与服务端配置一致。默认 40 时可监控指标只有 20 个，到不了上限，只验证「未到上限 → 200」；要验证 4807，用 MONITOR_MAX_ENABLED_RULES=1 启动测试环境，并把 maxEnabledRules 设为 1。本组建的规则在 8.7 / 8.8 删除。",
+			"item": [
+				{
+					"name": "8.1 本站启用中的规则数",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules?enabled=true&pageSize=100",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							],
+							"query": [
+								{
+									"key": "enabled",
+									"value": "true"
+								},
+								{
+									"key": "pageSize",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.collectionVariables.set('enabledCount', j.data.total);",
+									"console.log('本站启用中的规则 ' + j.data.total + ' 条，上限（集合变量 maxEnabledRules）' + pm.variables.get('maxEnabledRules'));",
+									"pm.test('启用中的规则不超过上限', () => pm.expect(j.data.total).to.be.at.most(Number(pm.variables.get('maxEnabledRules') || 40)));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.2 新建启用规则：未到上限 → 200，已到上限 → 4807",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": {\n    \"low\": 95\n  },\n  \"crit\": {\n    \"low\": 90\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"muteHours\": 2,\n  \"minSampleValue\": 30,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"const max = Number(pm.variables.get('maxEnabledRules') || 40), cnt = Number(pm.variables.get('enabledCount') || 0), full = max > 0 && cnt >= max;",
+									"pm.collectionVariables.set('ruleId3', '');",
+									"if (full) {",
+									"  pm.test('已到上限 → 4807', () => pm.expect(j.code).to.eql(4807));",
+									"  pm.test('提示带上限条数', () => pm.expect(j.msg).to.include(String(max)));",
+									"} else {",
+									"  pm.test('未到上限 → 200', () => pm.expect(j.code).to.eql(200));",
+									"  pm.collectionVariables.set('ruleId3', j.data.ruleId);",
+									"  pm.collectionVariables.set('enabledCount', cnt + 1);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.3 新建暂停的规则：不受上限限制 → 200",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{dropMetricCode}}\",\n  \"warn\": {\n    \"low\": 10\n  },\n  \"crit\": {\n    \"low\": 30\n  },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"muteHours\": 2,\n  \"minSampleValue\": 0,\n  \"notifyChatId\": \"{{chatId}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.collectionVariables.set('ruleId4', j.data ? j.data.ruleId : '');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.4 启用该规则：未到上限 → 200，已到上限 → 4807",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId4}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId4}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId4')) { console.log('跳过：8.3 没建成'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"const max = Number(pm.variables.get('maxEnabledRules') || 40), cnt = Number(pm.variables.get('enabledCount') || 0), full = max > 0 && cnt >= max;",
+									"pm.collectionVariables.set('ruleId4Enabled', String(!full && j.code === 200));",
+									"if (full) {",
+									"  pm.test('已到上限 → 4807', () => pm.expect(j.code).to.eql(4807));",
+									"} else {",
+									"  pm.test('未到上限 → 200', () => pm.expect(j.code).to.eql(200));",
+									"  pm.collectionVariables.set('enabledCount', cnt + 1);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.5 详情：启用状态与判定字段",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId4}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId4}}"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId4')) { pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('有 lastJudgedAt / judgeError 字段', () => pm.expect(j.data).to.include.all.keys('lastJudgedAt', 'judgeError'));",
+									"pm.test('还没有判定失败（judgeError 为空）', () => pm.expect(j.data.judgeError).to.be.null);",
+									"pm.test('上限内启用成功；到上限时保持暂停', () => pm.expect(j.data.enabled).to.eql(pm.variables.get('ruleId4Enabled') === 'true'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.6 暂停：暂停的规则不占名额",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId4}}/enabled",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId4}}",
+								"enabled"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"enabled\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId4')) { pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"if (pm.variables.get('ruleId4Enabled') === 'true') pm.collectionVariables.set('enabledCount', Number(pm.variables.get('enabledCount')) - 1);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.7 清理：删除 8.2 建的规则",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId3}}/delete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId3}}",
+								"delete"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId3')) { console.log('跳过：8.2 没建成（已到上限）'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "8.8 清理：删除 8.3 建的规则",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId4}}/delete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules",
+								"{{ruleId4}}",
+								"delete"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId4')) { pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "9. Lark 群（实时拉取 GET /monitor/lark/chats）",
+			"description": "机器人在哪个群，规则就能选哪个群：后端实时调 Lark GET /open-apis/im/v1/chats（翻完所有页），刷新本站 monitor_lark_chat。\n前提：服务端配置 MONITOR_LARK_APP_ID / MONITOR_LARK_APP_SECRET（不配时沿用 LARK_APP_ID / LARK_APP_SECRET），应用已开通 im:chat:readonly，机器人已被拉进至少一个群。没配时 9.1 断言 4802，其余跳过。\n注意：拉取成功后机器人不在的假群 oc_postman_ok 会被置为 dead，再跑第 1～8 组前重新执行测试数据 SQL 第 1 段。\n集合变量 larkChatsCacheSeconds 与服务端 MONITOR_LARK_CHATS_CACHE_SECONDS 保持一致（默认 30）。",
+			"item": [
+				{
+					"name": "9.1 机器人所在的群（实时拉取）",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/lark/chats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"lark",
+								"chats"
+							]
+						},
+						"description": "返回 { fetched, fetchedAt, chats: [{ chatId, name, status, refCount }] }。ok 的群全部返回；dead 的群只在被规则（含暂停的）引用时返回。凭证无效 4802。"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.code === 4802) {",
+									"  pm.collectionVariables.set('larkReady', '');",
+									"  pm.test('Lark 凭证未配置或无效 → 4802「Lark 應用憑證無效」（配好 MONITOR_LARK_APP_ID / MONITOR_LARK_APP_SECRET 后重测）', () => pm.expect(j.msg).to.eql('Lark 應用憑證無效'));",
+									"} else {",
+									"  pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"  const d = j.data;",
+									"  pm.test('返回 fetched / fetchedAt / chats', () => pm.expect(d).to.have.all.keys('fetched', 'fetchedAt', 'chats'));",
+									"  pm.test('本次从 Lark 拉取成功（fetched = false 表示超时/限流，返回的是上次结果，可重试）', () => pm.expect(d.fetched).to.eql(true));",
+									"  pm.test('fetchedAt 为 yyyy-MM-dd HH:mm', () => pm.expect(d.fetchedAt).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/));",
+									"  pm.test('每个群只有 chatId / name / status / refCount', () => d.chats.forEach(c => pm.expect(Object.keys(c).sort()).to.eql(['chatId', 'name', 'refCount', 'status'])));",
+									"  pm.test('chatId 以 oc_ 开头且不重复', () => { d.chats.forEach(c => pm.expect(c.chatId).to.match(/^oc_/)); pm.expect(new Set(d.chats.map(c => c.chatId)).size).to.eql(d.chats.length); });",
+									"  pm.test('status 只有 ok / dead；refCount 为非负整数', () => d.chats.forEach(c => { pm.expect(['ok', 'dead']).to.include(c.status); pm.expect(Number.isInteger(c.refCount) && c.refCount >= 0).to.be.true; }));",
+									"  pm.test('失效的群只在被规则引用时返回（refCount > 0）', () => d.chats.filter(c => c.status === 'dead').forEach(c => pm.expect(c.refCount).to.be.above(0)));",
+									"  pm.test('群名非空', () => d.chats.forEach(c => pm.expect(c.name).to.be.a('string').and.not.empty));",
+									"  const natCmp = (a, b) => {",
+									"    const x = a || '', y = b || ''; let i = 0, k = 0;",
+									"    const dig = c => c >= '0' && c <= '9';",
+									"    while (i < x.length && k < y.length) {",
+									"      if (dig(x[i]) && dig(y[k])) {",
+									"        let si = i, sk = k; while (i < x.length && dig(x[i])) i++; while (k < y.length && dig(y[k])) k++;",
+									"        const nx = x.slice(si, i).replace(/^0+(?=\\d)/, ''), ny = y.slice(sk, k).replace(/^0+(?=\\d)/, '');",
+									"        if (nx.length !== ny.length) return nx.length - ny.length;",
+									"        if (nx !== ny) return nx < ny ? -1 : 1;",
+									"        continue;",
+									"      }",
+									"      const cx = x[i].toLowerCase(), cy = y[k].toLowerCase();",
+									"      if (cx !== cy) return cx.charCodeAt(0) - cy.charCodeAt(0);",
+									"      i++; k++;",
+									"    }",
+									"    return (x.length - i) - (y.length - k);",
+									"  };",
+									"  pm.test('按群名自然排序（2 群在 10 群前）', () => d.chats.forEach((c, i, a) => { if (i > 0) pm.expect(natCmp(a[i - 1].name, c.name)).to.be.at.most(0); }));",
+									"  const real = d.chats.find(c => c.status === 'ok' && !c.chatId.startsWith('oc_postman_'));",
+									"  pm.collectionVariables.set('larkReady', d.fetched ? '1' : '');",
+									"  pm.collectionVariables.set('larkFetchedAt', d.fetchedAt || '');",
+									"  pm.collectionVariables.set('larkChatId', real ? real.chatId : '');",
+									"  console.log('机器人所在的群 ' + d.chats.filter(c => c.status === 'ok').length + ' 个：' + d.chats.map(c => c.name + '(' + c.status + ',' + c.refCount + ')').join('、'));",
+									"  if (!real) console.log('没有真实的群：先把机器人拉进一个 Lark 群再测');",
+									"  const fake = d.chats.find(c => c.chatId === pm.variables.get('chatId'));",
+									"  pm.test('测试数据的假群 oc_postman_ok 拉取后不再是 ok（机器人不在该群）', () => pm.expect(!fake || fake.status === 'dead').to.be.true);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "9.2 30 秒内再打开下拉 → 直接返回上次结果",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/lark/chats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"lark",
+								"chats"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('larkReady')) { console.log('Lark 未配置或 9.1 未通过，跳过'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('fetched = true', () => pm.expect(j.data.fetched).to.eql(true));",
+									"if (Number(pm.variables.get('larkChatsCacheSeconds') || 0) > 0) {",
+									"  pm.test('缓存期内不再请求 Lark：fetchedAt 与 9.1 相同', () => pm.expect(j.data.fetchedAt).to.eql(pm.variables.get('larkFetchedAt')));",
+									"}",
+									"pm.test('与 9.1 的群一致', () => pm.expect(j.data.chats.some(c => c.chatId === pm.variables.get('larkChatId')) || !pm.variables.get('larkChatId')).to.be.true);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "9.3 用拉到的群新建规则 → notifyChatId 校验通过",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"rules"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"notifyChatId\": \"{{larkChatId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "只带 notifyChatId，其他必填字段故意不传：返回 400，data.fields 里不应该有 notifyChatId，证明拉取结果已写入群缓存。不会真的建规则。"
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('larkReady')) { console.log('Lark 未配置或 9.1 未通过，跳过'); pm.execution.skipRequest(); }",
+									"if (!pm.variables.get('larkChatId')) { console.log('没有真实的群，跳过'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('拉到的群可以直接用于新建规则：notifyChatId 校验通过（不报「通知群不存在」）', () => {",
+									"  const f = (j.data && j.data.fields) || {};",
+									"  pm.expect(f.notifyChatId).to.be.undefined;",
+									"});",
+									"pm.test('因故意缺少其他必填字段返回 400，不会真的建规则', () => pm.expect(j.code).to.eql(400));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "9.4 [边界] 没有权限的站点 → 403",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "NO-SUCH-SITE"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/lark/chats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"lark",
+								"chats"
+							]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 403（没有该站点的权限）', () => pm.expect(j.code).to.eql(403));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "9.5 [边界] 未登录 → 401",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/lark/chats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"monitor",
+								"lark",
+								"chats"
+							]
+						},
+						"auth": {
+							"type": "noauth"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 401', () => pm.expect(j.code).to.eql(401));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "10. 异常事件（GET /monitor/events、handle、unhandle）",
+			"item": [
+				{
+					"name": "10.1 事件列表（全部）",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events?handle=all&range=all&pageSize=100"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('分页 + asOf + pendingTotal', () => { pm.expect(j.data).to.include.all.keys('rows','total','pageNum','pageSize','pendingTotal','asOf'); pm.expect(j.data.pageSize).to.eql(100); });",
+									"const rows = j.data.rows;",
+									"pm.test('异常中排在最前', () => { const firstNotOpen = rows.findIndex(r => r.status !== 'open'); if (firstNotOpen >= 0) pm.expect(rows.slice(firstNotOpen).every(r => r.status !== 'open')).to.eql(true); });",
+									"if (rows.length) {",
+									"  const r = rows[0];",
+									"  pm.test('行字段齐全', () => pm.expect(r).to.include.all.keys('eventId','ruleCode','metricName','unit','level','escalated','status','judgeType','periodHours','threshold','judgeBasis','startHour','triggerHour','durationHours','durationTip','notify','handle'));",
+									"  pm.test('judgeBasis 是字符串数组', () => pm.expect(r.judgeBasis).to.be.an('array'));",
+									"  pm.collectionVariables.set('eventId', r.eventId);",
+									"  pm.collectionVariables.set('eventHandle', r.handle.status);",
+									"} else { pm.collectionVariables.set('eventId', ''); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.2 默认只看未处理",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events?pageSize=100"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('全部是 pending', () => j.data.rows.forEach(r => pm.expect(r.handle.status).to.eql('pending')));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.3 range=today：非异常中的事件触发时间都是今天",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events?handle=all&range=today&pageSize=100"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const day = (j.data.asOf || '').slice(0, 10);",
+									"pm.test('已结束 / 已停止的事件触发时间都在今天', () => j.data.rows.filter(r => r.status !== 'open').forEach(r => { if (day) pm.expect(r.triggerHour.slice(0, 10) >= day || r.triggerHour.slice(0,10) === day).to.eql(true); }));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.4 非法 pageSize 回到 20",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events?pageSize=7"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('pageSize = 20', () => pm.expect(j.data.pageSize).to.eql(20));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.5 标记已处理",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/handle"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"eventIds\": [{{eventId}}], \"note\": \"Postman 聯調：已確認\" }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"pm.test('updated = 1', () => pm.expect(j.data.updated).to.eql(1));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.6 列表里显示已处理",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events?handle=done&pageSize=100"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"const r = j.data.rows.find(x => x.eventId == pm.variables.get('eventId'));",
+									"pm.test('有这条事件', () => pm.expect(r).to.be.an('object'));",
+									"pm.test('处理说明、处理人、时间', () => { pm.expect(r.handle.note).to.eql('Postman 聯調：已確認'); pm.expect(r.handle.by).to.be.a('string').and.not.empty; pm.expect(r.handle.at).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.7 [校验] 说明为空 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/handle"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"eventIds\": [{{eventId}}], \"note\": \"   \" }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 note', () => pm.expect((j.data || {}).fields || {}).to.have.property('note'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.8 [校验] 含不存在的事件 → 404，不做部分成功",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/handle"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"eventIds\": [{{eventId}}, 999999999], \"note\": \"x\" }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.9 撤销处理",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/{{eventId}}/unhandle"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.10 重复撤销 → 仍成功",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/{{eventId}}/unhandle"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('eventId')) { console.log('跳过：本站还没有告警事件'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.11 撤销不存在的事件 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events/999999999/unhandle"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "10.12 [边界] 其他站点 → 403",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "SITE-XX"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/events"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 403', () => pm.expect(j.code).to.eql(403));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "11. 回测预览（POST /monitor/rules/preview）",
+			"item": [
+				{
+					"name": "11.1 回测预览（下限类）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/preview"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"metricCode\": \"{{metricCode}}\",\n  \"warn\": { \"low\": 95 },\n  \"crit\": { \"low\": 90 },\n  \"periodHours\": 1,\n  \"durationCount\": 2,\n  \"escalateHours\": 3,\n  \"minSampleValue\": 30\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('metricCode')) { console.log('跳过：先跑 0.5 取可监控的下限类指标'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const d = j.data;",
+									"pm.test('结构', () => pm.expect(d).to.include.all.keys('window','periodHours','unit','usual','preview','tooFewData'));",
+									"pm.test('窗口从 00:00 开始', () => pm.expect(d.window.from).to.match(/ 00:00$/));",
+									"pm.test('usual：p5 / p95 / min / max（不再有 p95Side）', () => { pm.expect(d.usual).to.include.all.keys('sampleHours','skippedHours','median','p5','p95','min','max','extreme'); pm.expect(d.usual).to.not.have.property('p95Side'); if (d.usual.min) pm.expect(d.usual.min).to.include.all.keys('value','hour','inOpenEvent'); });",
+									"pm.test('triggers.total = crit + warn', () => pm.expect(d.preview.triggers.total).to.eql(d.preview.triggers.crit + d.preview.triggers.warn));",
+									"pm.test('events 按 startHour 倒序、最多 50', () => { const s = d.preview.events.map(e => e.startHour); pm.expect(s).to.eql([...s].sort().reverse()); pm.expect(s.length).to.be.at.most(50); });",
+									"pm.test('durationCount 回传', () => pm.expect(d.durationCount).to.eql(2));",
+									"pm.test('p5 ≤ median ≤ p95', () => { if (d.usual.p5 !== null) { pm.expect(d.usual.p5).to.be.at.most(d.usual.median); pm.expect(d.usual.median).to.be.at.most(d.usual.p95); } });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "11.2 阈值没填完也能预览",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/preview"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"metricCode\": \"{{metricCode}}\", \"periodHours\": 4, \"durationCount\": 2 }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('metricCode')) { pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "11.3 [校验] 检测周期不合法 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/preview"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"metricCode\": \"{{metricCode}}\", \"periodHours\": 3 }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('metricCode')) { pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('data.fields 含 periodHours', () => pm.expect((j.data || {}).fields || {}).to.have.property('periodHours'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "11.4 [校验] 未选指标 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/preview"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"periodHours\": 1 }",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "12. 手动触发测试告警（POST /monitor/rules/{ruleId}/test-alert）",
+			"description": "用最近一个已结束周期的真实数据 + 线上模板（ALERT_NEW）发一条带「【測試】」前缀的告警到测试群。\n测试群由后端环境变量 MONITOR_TEST_CHAT_ID 指定（oc_ 开头），请求里不能指定群。\n不写 monitor_event / monitor_notify，不受静默期影响，规则暂停也能触发。权限 monitor:rule:test。\n未配置 MONITOR_TEST_CHAT_ID 时返回 400；Lark 发送失败不报错，返回 success=false + error。",
+			"item": [
+				{
+					"name": "12.1 触发一条测试告警",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/test-alert"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId')) { console.log('跳过：先跑 1.x 新增规则'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.code === 400 && /MONITOR_TEST_CHAT_ID/.test(j.msg || '')) { pm.test('后端未配置测试群（跳过其余断言）', () => true); return; }",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const d = j.data;",
+									"pm.test('结构', () => pm.expect(d).to.include.all.keys('success','messageId','error','chatId','ruleId','ruleCode','metricCode','periodFrom','periodTo','value','baseline','level','dataError','content','templateId','templateVersion'));",
+									"pm.test('发到测试群（oc_ 开头）', () => pm.expect(d.chatId).to.match(/^oc_/));",
+									"pm.test('ruleId 回传', () => pm.expect(String(d.ruleId)).to.eql(String(pm.variables.get('ruleId'))));",
+									"pm.test('内容带【測試】前缀', () => pm.expect(d.content.startsWith('【測試】')).to.be.true);",
+									"pm.test('level 取值', () => pm.expect(['OK','WARN','CRIT','SKIP']).to.include(d.level));",
+									"pm.test('周期整点、from < to', () => { pm.expect(d.periodFrom).to.match(/:00$/); pm.expect(d.periodTo).to.match(/:00$/); pm.expect(d.periodFrom < d.periodTo).to.be.true; });",
+									"pm.test('数据有问题时 level = SKIP', () => { if (d.dataError) pm.expect(d.level).to.eql('SKIP'); });",
+									"pm.test('success ⇔ 有 messageId、无 error', () => { if (d.success) { pm.expect(d.messageId).to.be.a('string'); pm.expect(d.error).to.be.null; } else pm.expect(d.error).to.be.a('string'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "12.2 规则不存在 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/999999999/test-alert"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.code === 400 && /MONITOR_TEST_CHAT_ID/.test(j.msg || '')) { pm.test('后端未配置测试群（先于规则检查返回 400）', () => true); return; }",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "12.3 ruleId 非数字 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/abc/test-alert"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('非 200', () => pm.expect(j.code).to.not.eql(200));"
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+}

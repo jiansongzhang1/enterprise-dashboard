@@ -23,6 +23,13 @@
             <artifactId>fivetech-common</artifactId>
         </dependency>
 
+        <!-- 单元测试（版本由 spring-boot-dependencies 管理）：目前只有 MonitorMapperScopeTest -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>

@@ -1,0 +1,2256 @@
+{
+  "info": {
+    "_postman_id": "b2ff74f7-e1af-43cf-ab49-35c41653af4d",
+    "name": "Fivetech Dashboard API · 监控管理 · 新接口补测（群连接测试 / 通知送达 / 站点管理 / 通知模板 / monitorSlots）",
+    "description": "补测 monitor-rules 集合还没覆盖的新接口（2026-10-23 代码）：\n1. POST /monitor/lark/chats/{chatId}/test 群连接测试（FY-30 R17 ②，卡片消息）；\n2. GET /monitor/events 的 notify.status（含 paused / muted）、error、pausedReason、muted；\n3. 系统管理 · 站点管理 GET /system/site/list、/packageNetworks，PUT /system/site；\n4. 系统管理 · 通知模板 /system/notify-templates（列表、占位符、预览、新增、修改、删除、测试发送）；\n5. POST /dashboard/metrics/overview 今日按小时的 monitorSlots。\n\n使用：\n1. 环境沿用 doc/ 下的 Fivetech-Dashboard-local / prod（baseUrl、username、password、totp、token）；\n2. 先执行 doc/monitor/monitor_batch1_test_data.sql 第 1 段（oc_postman_dead 等群缓存）；已执行 sql/add_system_site_menu、add_monitor_notify_template、alter_monitor_event_mute、alter_monitor_event_notify_paused；\n3. 按目录顺序整集运行。0.3 会实时拉 Lark 群并挑一个机器人所在的真实群：1.1、1.2、4.18、4.19 会真的往该群发消息，请把机器人拉进测试群；Lark 未配置时这些用例自动跳过；\n4. 会写库：第 3 组改测试站点包网（3.9 恢复），第 4 组新建并删除测试站点的专用模板；全站默认模板不改；\n5. 跑完人工到 Lark 群确认卡片样式（见 1.1 说明）。\n\n命令行：./run-monitor-api-test.sh -c monitor-new-apis.postman_collection.json\n若依返回 HTTP 恒为 200，成败看 code：200 / 400（data.fields）/ 401 / 403 / 404 / 4802 Lark 應用憑證無效 / 4805 通知群已失效 / 4808 測試消息發送失敗。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 若依统一返回：HTTP 恒为 200，成败看 code",
+          "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "siteCode",
+      "value": "SITE-IN",
+      "description": "测试站点"
+    },
+    {
+      "key": "chatId",
+      "value": "oc_postman_ok",
+      "description": "测试数据 SQL 造的假群（机器人不在里面）"
+    },
+    {
+      "key": "deadChatId",
+      "value": "oc_postman_dead",
+      "description": "测试数据 SQL 造的失效群"
+    },
+    {
+      "key": "myEmail",
+      "value": "",
+      "description": "0.2 写入"
+    },
+    {
+      "key": "myUserName",
+      "value": "",
+      "description": "0.2 写入"
+    },
+    {
+      "key": "larkReady",
+      "value": "",
+      "description": "0.3 写入：Lark 可用且找到真实群为 1"
+    },
+    {
+      "key": "larkChatId",
+      "value": "",
+      "description": "0.3 写入：真实群"
+    },
+    {
+      "key": "larkChatName",
+      "value": "",
+      "description": "0.3 写入"
+    },
+    {
+      "key": "siteCodeCanonical",
+      "value": "",
+      "description": "3.1 写入：配置里的站点代码"
+    },
+    {
+      "key": "origPackageNetwork",
+      "value": "",
+      "description": "3.1 写入：测试站点原包网，3.9 恢复用"
+    },
+    {
+      "key": "longName",
+      "value": "",
+      "description": "3.7 写入"
+    },
+    {
+      "key": "defaultTplId",
+      "value": "",
+      "description": "4.2 写入：全站默认 ALERT_NEW"
+    },
+    {
+      "key": "defaultTplContent",
+      "value": "",
+      "description": "4.2 写入"
+    },
+    {
+      "key": "siteTplPreexisting",
+      "value": "",
+      "description": "4.2 写入：站点原有的 ALERT_NEW 专用模板"
+    },
+    {
+      "key": "siteTplId",
+      "value": "",
+      "description": "4.6 写入：新建的站点专用模板"
+    },
+    {
+      "key": "todayStart",
+      "value": "",
+      "description": "5.x 写入"
+    },
+    {
+      "key": "tomorrowStart",
+      "value": "",
+      "description": "5.1 写入"
+    },
+    {
+      "key": "ystStart",
+      "value": "",
+      "description": "5.2 写入"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 准备",
+      "item": [
+        {
+          "name": "0.1 登录（获取 token）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "code 为 GA 6 位动态码。已有 token 可直接填环境变量 token 并跳过本请求。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('拿到 token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "if (j.token) pm.environment.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 当前用户邮箱（发送人）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/getInfo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "getInfo"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const u = j.user || {};",
+                  "pm.collectionVariables.set('myEmail', u.email || '');",
+                  "pm.collectionVariables.set('myUserName', u.userName || '');",
+                  "pm.test('有登录名', () => pm.expect(u.userName).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 拉取机器人所在的群（取一个真实群）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats"
+              ]
+            },
+            "description": "真实群用于第 1 组群连接测试和第 4 组模板测试发送：消息会真的发到这个群，请用测试群。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.code === 4802) {",
+                  "  pm.collectionVariables.set('larkReady', '');",
+                  "  pm.test('Lark 凭证未配置或无效 → 4802（第 1 组真实发送、第 4 组模板测试发送会跳过）', () => pm.expect(j.msg).to.eql('Lark 應用憑證無效'));",
+                  "} else {",
+                  "  pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "  const real = (j.data.chats || []).find(c => c.status === 'ok' && !c.chatId.startsWith('oc_postman_'));",
+                  "  pm.collectionVariables.set('larkReady', j.data.fetched && real ? '1' : '');",
+                  "  pm.collectionVariables.set('larkChatId', real ? real.chatId : '');",
+                  "  pm.collectionVariables.set('larkChatName', real ? real.name : '');",
+                  "  pm.test('找到一个机器人所在的真实群（没有则真实发送用例跳过：把机器人拉进一个测试群）', () => pm.expect(!!real).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 群连接测试（POST /monitor/lark/chats/{chatId}/test）",
+      "item": [
+        {
+          "name": "1.1 真实群 → 200，提示「測試訊息已發送到「{群名}」，請到群組確認」",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{larkChatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{larkChatId}}",
+                "test"
+              ]
+            },
+            "description": "会真的发一条卡片到该群。人工核对卡片：灰色表头「【測試】Yata 群連接測試」，没有站点前缀；正文 4 行「機器人：{机器人名}」「群：{群名}」「發送人：{当前账号邮箱，没有邮箱为登录名}」「時間：yyyy-MM-dd HH:mm（IST）」，行名加粗；没有按钮。"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('larkReady')) {",
+                  "  console.log('跳过：Lark 未配置或机器人不在任何真实群');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const name = pm.collectionVariables.get('larkChatName');",
+                  "pm.test('msg = 測試訊息已發送到「{群名}」，請到群組確認', () => pm.expect(j.msg).to.eql('測試訊息已發送到「' + name + '」，請到群組確認'));",
+                  "pm.test('data 只有 chatId / name / messageId', () => pm.expect(Object.keys(j.data).sort()).to.eql(['chatId', 'messageId', 'name']));",
+                  "pm.test('chatId、name 与群列表一致', () => { pm.expect(j.data.chatId).to.eql(pm.collectionVariables.get('larkChatId')); pm.expect(j.data.name).to.eql(name); });",
+                  "pm.test('messageId 以 om_ 开头', () => pm.expect(j.data.messageId).to.match(/^om_/));",
+                  "console.log('请到 Lark 群「' + name + '」人工确认卡片：灰色表头「【測試】Yata 群連接測試」；行 機器人 / 群 / 發送人（' + (pm.collectionVariables.get('myEmail') || pm.collectionVariables.get('myUserName')) + '）/ 時間（yyyy-MM-dd HH:mm（IST））；行名加粗；没有按钮');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 同一群再测一次 → 仍成功（测试不去重、不计静默）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{larkChatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{larkChatId}}",
+                "test"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('larkReady')) {",
+                  "  console.log('跳过：Lark 未配置或机器人不在任何真实群');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('messageId 与上一次不同', () => pm.expect(j.data.messageId).to.match(/^om_/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 [边界] 不在群列表里的群 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/oc_postman_not_exist/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "oc_postman_not_exist",
+                "test"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code).to.eql(404));",
+                  "pm.test('msg = 群不存在，請重新拉取群列表', () => pm.expect(j.msg).to.eql('群不存在，請重新拉取群列表'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 [边界] 已失效的群 → 4805，不调 Lark",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{deadChatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{deadChatId}}",
+                "test"
+              ]
+            },
+            "description": "deadChatId 来自 monitor_batch1_test_data.sql 第 1 段（oc_postman_dead，status = dead）。没执行第 1 段会得到 404。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 4805', () => pm.expect(j.code).to.eql(4805));",
+                  "pm.test('msg 提示群已失效', () => pm.expect(j.msg).to.eql('通知群已失效（機器人已不在群裡或群已解散）'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 [边界] 假群 oc_postman_ok → 4805 / 404（机器人不在该群）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{chatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{chatId}}",
+                "test"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('larkReady')) {",
+                  "  console.log('跳过：Lark 未配置：拉取不到群列表时假群仍是 ok，这里会真的去调 Lark');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code 为 4805（0.3 拉取后被置为失效，或发送时 Lark 返回机器人不在群里）或 404（没造测试数据）', () => pm.expect([4805, 404]).to.include(j.code));",
+                  "if (j.code === 4805) pm.test('msg 提示失效', () => pm.expect(j.msg).to.match(/^(通知群已失效|測試消息發送失敗：機器人已不在群裡或群已解散)/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 [边界] 没有权限的站点 → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "SITE-NO-PERMISSION"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{larkChatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{larkChatId}}",
+                "test"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 403', () => pm.expect(j.code).to.eql(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 [边界] 未登录 → 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/lark/chats/{{chatId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "lark",
+                "chats",
+                "{{chatId}}",
+                "test"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 401', () => pm.expect(j.code).to.eql(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "FY-30 R17 ② 群连接测试：不关联事件、不计入静默、不改通知送达、不写 monitor_notify_log。"
+    },
+    {
+      "name": "2. 异常事件 · 通知送达字段（notify.status / error / pausedReason / muted）",
+      "item": [
+        {
+          "name": "2.1 事件列表：notify 字段按状态出现",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?handle=all&range=all&pageSize=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "range",
+                  "value": "all"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "只校验字段规则，不造事件。要看到 paused：把 MONITOR_LARK_APP_SECRET 改错重启、等一条严重触发（或用 monitor_inspect.sql 找一条 pending 的事件），再跑本请求。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const rows = j.data.rows || [];",
+                  "pm.test('notify.status 只有 none / pending / sent / failed / unset / muted / paused', () => rows.forEach(r => pm.expect(['none', 'pending', 'sent', 'failed', 'unset', 'muted', 'paused']).to.include(r.notify.status)));",
+                  "pm.test('notify 含 error / pausedReason / muted 三个键', () => rows.forEach(r => pm.expect(r.notify).to.include.all.keys('status', 'error', 'pausedReason', 'muted')));",
+                  "pm.test('error 只在 failed 时有值（繁体原因）', () => rows.forEach(r => { if (r.notify.status === 'failed') pm.expect(r.notify.error).to.be.a('string').and.not.empty; else pm.expect(r.notify.error).to.eql(null); }));",
+                  "pm.test('pausedReason 只在 paused 时有值 =「Lark 機器人憑證失效，未發送」', () => rows.forEach(r => { if (r.notify.status === 'paused') pm.expect(r.notify.pausedReason).to.eql('Lark 機器人憑證失效，未發送'); else pm.expect(r.notify.pausedReason).to.eql(null); }));",
+                  "pm.test('muted 只在 muted 时有值 { lastSentAt: yyyy-MM-dd HH:mm, muteHours > 0 }', () => rows.forEach(r => { if (r.notify.status === 'muted') { pm.expect(r.notify.muted.lastSentAt).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/); pm.expect(r.notify.muted.muteHours).to.be.above(0); } else pm.expect(r.notify.muted).to.eql(null); }));",
+                  "pm.test('注意事件不发送：level = WARN 且未升级时 status = none', () => rows.filter(r => r.level === 'WARN' && !r.escalated).forEach(r => pm.expect(r.notify.status).to.eql('none')));",
+                  "const cnt = {}; rows.forEach(r => cnt[r.notify.status] = (cnt[r.notify.status] || 0) + 1);",
+                  "console.log('notify.status 分布：' + JSON.stringify(cnt) + '（paused 需凭证失效时触发严重才会出现，见集合说明）');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 系统管理 · 站点管理（/system/site）",
+      "item": [
+        {
+          "name": "3.1 站点列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "list"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const list = j.data || [];",
+                  "pm.test('是数组且非空', () => pm.expect(list).to.be.an('array').that.is.not.empty);",
+                  "pm.test('字段齐全', () => list.forEach(s => pm.expect(Object.keys(s).sort()).to.eql(['configured', 'defaultSite', 'nextRuleNo', 'packageNetwork', 'siteCode', 'siteName', 'udsSite', 'updateBy', 'updateTime'])));",
+                  "pm.test('第一个是默认站点，只有一个默认站点', () => { pm.expect(list[0].defaultSite).to.eql(true); pm.expect(list.filter(s => s.defaultSite).length).to.eql(1); });",
+                  "pm.test('已配置的排在未配置的前面', () => { const i = list.findIndex(s => !s.configured); if (i >= 0) pm.expect(list.slice(i).every(s => !s.configured)).to.eql(true); });",
+                  "const me = list.find(s => s.siteCode.toUpperCase() === pm.collectionVariables.get('siteCode').toUpperCase());",
+                  "pm.test('含测试站点 {{siteCode}}', () => pm.expect(!!me).to.be.true);",
+                  "pm.collectionVariables.set('origPackageNetwork', me && me.packageNetwork ? me.packageNetwork : '');",
+                  "pm.collectionVariables.set('siteCodeCanonical', me ? me.siteCode : pm.collectionVariables.get('siteCode'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 已用过的包网名称",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/packageNetworks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "packageNetworks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('字符串数组、不重复、无空值', () => { pm.expect(j.data).to.be.an('array'); j.data.forEach(n => pm.expect(n).to.be.a('string').and.not.empty); pm.expect(new Set(j.data).size).to.eql(j.data.length); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 设置包网（首尾和连续空白会被规整）",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/site",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"packageNetwork\": \"  Postman   測試包網  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 按包网筛选：只返回该站点，包网已规整",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/list?packageNetwork=Postman 測試包網",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "packageNetwork",
+                  "value": "Postman 測試包網"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('都属于「Postman 測試包網」', () => j.data.forEach(s => pm.expect(s.packageNetwork).to.eql('Postman 測試包網')));",
+                  "const me = j.data.find(s => s.siteCode === pm.collectionVariables.get('siteCodeCanonical'));",
+                  "pm.test('含测试站点，updateBy / updateTime 已写', () => { pm.expect(!!me).to.be.true; pm.expect(me.updateBy).to.be.a('string').and.not.empty; pm.expect(me.updateTime).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}/); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 包网候选里出现新名称",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/packageNetworks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "packageNetworks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('含「Postman 測試包網」', () => pm.expect(j.data).to.include('Postman 測試包網'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 筛选「-」：只看未设置包网的站点，不含测试站点",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/list?packageNetwork=-",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "packageNetwork",
+                  "value": "-"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('packageNetwork 都为空', () => j.data.forEach(s => pm.expect(s.packageNetwork || '').to.eql('')));",
+                  "pm.test('不含测试站点', () => pm.expect(j.data.map(s => s.siteCode)).to.not.include(pm.collectionVariables.get('siteCodeCanonical')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 [校验] 包网超过 64 字 → 报错",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/site",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"packageNetwork\": \"{{longName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('longName', '包'.repeat(65));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ≠ 200', () => pm.expect(j.code).to.not.eql(200));",
+                  "pm.test('msg = 包網名稱不能超過 64 個字', () => pm.expect(j.msg).to.eql('包網名稱不能超過 64 個字'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.8 [校验] 站点不存在 → 报错",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/site",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"SITE-NOT-EXIST\",\n  \"packageNetwork\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ≠ 200', () => pm.expect(j.code).to.not.eql(200));",
+                  "pm.test('msg = 站點不存在或未配置：SITE-NOT-EXIST', () => pm.expect(j.msg).to.eql('站點不存在或未配置：SITE-NOT-EXIST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.9 清理：恢复原包网（原来为空则清除）",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/site",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"packageNetwork\": \"{{origPackageNetwork}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.10 恢复后与 3.1 一致",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "list"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const me = j.data.find(s => s.siteCode === pm.collectionVariables.get('siteCodeCanonical'));",
+                  "pm.test('包网已恢复', () => pm.expect(me.packageNetwork || '').to.eql(pm.collectionVariables.get('origPackageNetwork')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.11 [边界] 未登录 → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/site/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "site",
+                "list"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 401', () => pm.expect(j.code).to.eql(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "需要菜单权限 system:site:list / system:site:edit（admin 自带）。3.3 会改测试站点的包网，3.9 恢复。"
+    },
+    {
+      "name": "4. 系统管理 · 通知模板（/system/notify-templates）",
+      "item": [
+        {
+          "name": "4.1 占位符",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/placeholders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "placeholders"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('每项只有 name / token / description / sample', () => j.data.forEach(p => pm.expect(Object.keys(p).sort()).to.eql(['description', 'name', 'sample', 'token'])));",
+                  "pm.test('token = {{name}}', () => j.data.forEach(p => pm.expect(p.token).to.eql('{{' + p.name + '}}')));",
+                  "pm.test('含 site / metric / judgeText / ruleCode / triggerTime / owner', () => ['site', 'metric', 'judgeText', 'ruleCode', 'triggerTime', 'owner'].forEach(n => pm.expect(j.data.map(p => p.name)).to.include(n)));",
+                  "pm.test('不再有 detailUrl（深链接一期不做）', () => pm.expect(j.data.map(p => p.name)).to.not.include('detailUrl'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 模板列表 + 各站点实际生效的模板",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data;",
+                  "pm.test('返回 rows / effective', () => pm.expect(d).to.have.all.keys('rows', 'effective'));",
+                  "pm.test('notifyType 只有 ALERT_NEW / ALERT_ESCALATED', () => d.rows.forEach(r => pm.expect(['ALERT_NEW', 'ALERT_ESCALATED']).to.include(r.notifyType)));",
+                  "pm.test('启动时已写入两份全站默认（启用）', () => ['ALERT_NEW', 'ALERT_ESCALATED'].forEach(t => pm.expect(d.rows.some(r => r.isDefault && r.notifyType === t && r.enabled)).to.be.true));",
+                  "pm.test('effective 每个站点两种类型各一行，source ∈ SITE / DEFAULT / BUILTIN', () => { d.effective.forEach(e => pm.expect(['SITE', 'DEFAULT', 'BUILTIN']).to.include(e.source)); const sites = new Set(d.effective.map(e => e.siteCode)); pm.expect(d.effective.length).to.eql(sites.size * 2); });",
+                  "const def = d.rows.find(r => r.isDefault && r.notifyType === 'ALERT_NEW');",
+                  "pm.collectionVariables.set('defaultTplId', def ? def.templateId : '');",
+                  "pm.collectionVariables.set('defaultTplContent', def ? JSON.stringify(def.content).slice(1, -1) : '');",
+                  "const site = pm.collectionVariables.get('siteCodeCanonical') || pm.collectionVariables.get('siteCode');",
+                  "const own = d.rows.find(r => !r.isDefault && r.siteCode && r.siteCode.toUpperCase() === site.toUpperCase() && r.notifyType === 'ALERT_NEW');",
+                  "pm.collectionVariables.set('siteTplPreexisting', own ? String(own.templateId) : '');",
+                  "pm.collectionVariables.set('siteTplId', '');",
+                  "if (own) console.log('站点 ' + site + ' 已有 ALERT_NEW 专用模板（id=' + own.templateId + '），4.6 将验证重复新增 → 400，不会删除它');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 预览：合法内容 → 渲染示例值",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"【{{site}}】{{metric}} 嚴重\\n判定：{{judgeText}} · {{ruleCode}}\\n{{#warnLine}}注意線：{{warnLine}}\\n{{/warnLine}}負責人：{{owner}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('errors 为空', () => pm.expect(j.data.errors).to.eql([]));",
+                  "pm.test('content 已渲染，不含 {{', () => { pm.expect(j.data.content).to.be.a('string').and.not.empty; pm.expect(j.data.content).to.not.include('{{'); });",
+                  "pm.test('保留换行', () => pm.expect(j.data.content.split('\\n').length).to.be.at.least(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 预览：未知占位符 → errors，content = null",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{site}} {{noSuchField}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('errors 非空', () => pm.expect(j.data.errors).to.be.an('array').that.is.not.empty);",
+                  "pm.test('content = null', () => pm.expect(j.data.content).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 预览：区块没闭合 → errors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{#warnLine}}注意線：{{warnLine}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('errors 非空', () => pm.expect(j.data.errors).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 新增站点专用模板（ALERT_NEW）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"notifyType\": \"ALERT_NEW\",\n  \"content\": \"【{{site}}】{{metric}} 嚴重\\n判定：{{judgeText}} · {{ruleCode}}\\n{{#warnLine}}注意線：{{warnLine}}\\n{{/warnLine}}負責人：{{owner}}\",\n  \"enabled\": true,\n  \"remark\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.collectionVariables.get('siteTplPreexisting')) {",
+                  "  pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "  pm.test('已有同类型模板 → data.fields.notifyType', () => pm.expect(j.data.fields).to.have.property('notifyType'));",
+                  "} else {",
+                  "  pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "  pm.test('返回 templateId', () => pm.expect(j.data.templateId).to.be.a('number'));",
+                  "  pm.collectionVariables.set('siteTplId', j.data.templateId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.7 [校验] 同站点同类型再建 → 400 notifyType",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"notifyType\": \"ALERT_NEW\",\n  \"content\": \"{{site}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.notifyType', () => pm.expect(j.data.fields).to.have.property('notifyType'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.8 [校验] 通知类型不合法（ALERT_REPEAT 已去掉）→ 400 notifyType",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"notifyType\": \"ALERT_REPEAT\",\n  \"content\": \"{{site}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.notifyType', () => pm.expect(j.data.fields).to.have.property('notifyType'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.9 [校验] 站点不存在 → 400 siteCode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"SITE-NOT-EXIST\",\n  \"notifyType\": \"ALERT_ESCALATED\",\n  \"content\": \"{{site}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.siteCode', () => pm.expect(j.data.fields).to.have.property('siteCode'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.10 [校验] 内容含未知占位符 → 400 content",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCode\": \"{{siteCodeCanonical}}\",\n  \"notifyType\": \"ALERT_ESCALATED\",\n  \"content\": \"{{noSuchField}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.content', () => pm.expect(j.data.fields).to.have.property('content'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.11 生效模板：站点 ALERT_NEW 改用专用模板",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('siteTplId')) {",
+                  "  console.log('跳过：4.6 没有新建模板（站点已有专用模板）');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const site = pm.collectionVariables.get('siteCodeCanonical');",
+                  "const e = j.data.effective.find(x => x.siteCode === site && x.notifyType === 'ALERT_NEW');",
+                  "pm.test('source = SITE，templateId = 4.6 新建的', () => { pm.expect(e.source).to.eql('SITE'); pm.expect(String(e.templateId)).to.eql(String(pm.collectionVariables.get('siteTplId'))); });",
+                  "const row = j.data.rows.find(r => String(r.templateId) === String(pm.collectionVariables.get('siteTplId')));",
+                  "pm.test('platform = lark，msgFormat = text，version = 1', () => { pm.expect(row.platform).to.eql('lark'); pm.expect(row.msgFormat).to.eql('text'); pm.expect(row.version).to.eql(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.12 停用站点专用模板",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{siteTplId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{siteTplId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"【{{site}}】{{metric}} 嚴重\\n判定：{{judgeText}} · {{ruleCode}}\\n{{#warnLine}}注意線：{{warnLine}}\\n{{/warnLine}}負責人：{{owner}}\",\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('siteTplId')) {",
+                  "  console.log('跳过：4.6 没有新建模板');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.13 停用后该站点回落到全站默认",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('siteTplId')) {",
+                  "  console.log('跳过：4.6 没有新建模板');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const site = pm.collectionVariables.get('siteCodeCanonical');",
+                  "const e = j.data.effective.find(x => x.siteCode === site && x.notifyType === 'ALERT_NEW');",
+                  "pm.test('source = DEFAULT', () => pm.expect(e.source).to.eql('DEFAULT'));",
+                  "const row = j.data.rows.find(r => String(r.templateId) === String(pm.collectionVariables.get('siteTplId')));",
+                  "pm.test('enabled = false，version 递增为 2', () => { pm.expect(row.enabled).to.eql(false); pm.expect(row.version).to.eql(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.14 [校验] 停用全站默认 → 400 enabled",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{defaultTplContent}}\",\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.enabled', () => pm.expect(j.data.fields).to.have.property('enabled'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.15 [校验] 修改内容不合法 → 400 content，原内容不变",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{#warnLine}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.content', () => pm.expect(j.data.fields).to.have.property('content'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.16 [校验] 删除全站默认 → 报错",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ≠ 200', () => pm.expect(j.code).to.not.eql(200));",
+                  "pm.test('msg = 全站預設模板不能刪除，可以直接修改內容', () => pm.expect(j.msg).to.eql('全站預設模板不能刪除，可以直接修改內容'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.17 [校验] 测试发送未选群 → 400 chatId",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "test"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \" \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('data.fields.chatId', () => pm.expect(j.data.fields).to.have.property('chatId'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.18 测试发送全站默认到真实群",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "test"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \"{{larkChatId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('larkReady')) {",
+                  "  console.log('跳过：Lark 未配置或机器人不在任何真实群');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('success = true，messageId 以 om_ 开头，error = null', () => { pm.expect(j.data.success).to.eql(true); pm.expect(j.data.messageId).to.match(/^om_/); pm.expect(j.data.error).to.eql(null); });",
+                  "console.log('请到 Lark 群「' + pm.collectionVariables.get('larkChatName') + '」确认：以「【測試】」开头，占位符都已替换为示例值');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.19 测试发送：用未保存的内容",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{defaultTplId}}/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{defaultTplId}}",
+                "test"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \"{{larkChatId}}\",\n  \"content\": \"【{{site}}】{{metric}} 嚴重\\n判定：{{judgeText}} · {{ruleCode}}\\n{{#warnLine}}注意線：{{warnLine}}\\n{{/warnLine}}負責人：{{owner}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('larkReady')) {",
+                  "  console.log('跳过：Lark 未配置或机器人不在任何真实群');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('success = true', () => pm.expect(j.data.success).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.20 [边界] 测试发送不存在的模板 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/999999999/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "999999999",
+                "test"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \"{{chatId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code).to.eql(404));",
+                  "pm.test('msg = 模板不存在', () => pm.expect(j.msg).to.eql('模板不存在'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.21 清理：删除站点专用模板",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{siteTplId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{siteTplId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('siteTplId')) {",
+                  "  console.log('跳过：4.6 没有新建模板');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.22 重复删除 → 404",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates/{{siteTplId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates",
+                "{{siteTplId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('siteTplId')) {",
+                  "  console.log('跳过：4.6 没有新建模板');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code).to.eql(404));",
+                  "pm.test('msg = 模板不存在', () => pm.expect(j.msg).to.eql('模板不存在'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.23 [边界] 未登录 → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/system/notify-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "notify-templates"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 401', () => pm.expect(j.code).to.eql(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "需要菜单权限 system:notifyTpl:list / system:notifyTpl:edit（admin 自带）。只新建 / 删除测试站点的专用模板，不改全站默认（4.14、4.15 是校验失败用例，不会写库）。"
+    },
+    {
+      "name": "5. 运营总览 · 指标卡 monitorSlots（今日 + 小时）",
+      "item": [
+        {
+          "name": "5.1 今日按小时：注意 / 严重的卡片带 monitorSlots",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"{{todayStart}}\",\n  \"slotTo\": \"{{tomorrowStart}}\",\n  \"blocks\": [\"METRICS\"],\n  \"includeSeries\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "站点只认 X-Site-Code。只有区间正好是今日、粒度为小时、includeSeries = true 时才返回 monitorSlots。"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const IST = 330 * 60 * 1000;",
+                  "const now = new Date(Date.now() + IST);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const day = o => { const d = new Date(now.getTime() + o * 86400000); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };",
+                  "pm.collectionVariables.set('todayStart', day(0) + ' 00:00');",
+                  "pm.collectionVariables.set('tomorrowStart', day(1) + ' 00:00');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data; const items = d.blocks.METRICS.items; const points = d.slot.points;",
+                  "const shown = items.filter(c => c.alert && ['WARN', 'CRIT'].includes(c.alert.state) && c.alert.rule && c.alert.rule.enabled);",
+                  "pm.test('只有启用规则、注意 / 严重的卡片有 monitorSlots', () => items.forEach(c => { if (!shown.includes(c)) pm.expect(c.monitorSlots == null).to.be.true; }));",
+                  "pm.test('monitorSlots 与 series 等长（= slot.points）', () => shown.forEach(c => { if (c.monitorSlots) pm.expect(c.monitorSlots.length).to.eql(points); }));",
+                  "const slots = shown.flatMap(c => (c.monitorSlots || []).filter(s => s));",
+                  "pm.test('level ∈ OK / WARN / CRIT / SKIP / PENDING', () => slots.forEach(s => pm.expect(['OK', 'WARN', 'CRIT', 'SKIP', 'PENDING']).to.include(s.level)));",
+                  "pm.test('reason 只在 SKIP 时为 SAMPLE / MISSING', () => slots.forEach(s => { if (s.level === 'SKIP') pm.expect(['SAMPLE', 'MISSING']).to.include(s.reason); else pm.expect(s.reason).to.eql(null); }));",
+                  "pm.test('escalated 只出现在 CRIT', () => slots.filter(s => s.escalated).forEach(s => pm.expect(s.level).to.eql('CRIT')));",
+                  "pm.test('against 只在 WARN / CRIT 时有值', () => slots.forEach(s => { if (['WARN', 'CRIT'].includes(s.level)) pm.expect(['WARN', 'CRIT']).to.include(s.against); else if (s.level !== 'OK') pm.expect(s.against).to.eql(null); }));",
+                  "pm.test('periodFrom < periodTo（yyyy-MM-dd HH:mm）', () => slots.forEach(s => { pm.expect(s.periodFrom).to.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/); pm.expect(s.periodFrom < s.periodTo).to.be.true; }));",
+                  "pm.test('PENDING 没有 value', () => slots.filter(s => s.level === 'PENDING').forEach(s => pm.expect(s.value).to.eql(null)));",
+                  "console.log('带 monitorSlots 的卡片：' + (shown.map(c => c.code + '=' + c.alert.state).join(', ') || '无（当前没有注意 / 严重，字段规则用例自动通过）'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 昨日按小时：不返回 monitorSlots",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"{{ystStart}}\",\n  \"slotTo\": \"{{todayStart}}\",\n  \"blocks\": [\"METRICS\"],\n  \"includeSeries\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const IST = 330 * 60 * 1000;",
+                  "const now = new Date(Date.now() + IST);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const day = o => { const d = new Date(now.getTime() + o * 86400000); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };",
+                  "pm.collectionVariables.set('ystStart', day(-1) + ' 00:00');",
+                  "pm.collectionVariables.set('todayStart', day(0) + ' 00:00');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('所有卡片 monitorSlots 为空', () => j.data.blocks.METRICS.items.forEach(c => pm.expect(c.monitorSlots == null).to.be.true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

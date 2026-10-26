@@ -641,6 +641,8 @@ public class UdsClient
         // 经 8443 mTLS 网关时身份由客户端证书决定，网关会忽略这些头，带上也无害。配置为空的不发
         header(builder, "X-Uds-Principal", properties.getPrincipal());
         header(builder, "X-Uds-Tenant", properties.getTenant());
+        // 多站点（与 UDS 约定）：新站点加 X-Uds-Site（如 SITE-B）；已上线的老站点不带这个头，行为与原来完全一致
+        header(builder, "X-Uds-Site", com.fivetech.common.utils.SiteContext.udsSite());
         header(builder, "X-Uds-Roles", properties.getRoles());
         header(builder, "X-Uds-Merchant-Codes", properties.getMerchantCodes());
         // X-Request-Id 每次调用唯一（联调手册第 3 节）：一个页面请求会打出多次 UDS 调用，

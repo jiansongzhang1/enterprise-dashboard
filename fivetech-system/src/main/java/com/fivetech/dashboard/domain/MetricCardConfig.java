@@ -62,13 +62,29 @@ public class MetricCardConfig implements Serializable
 
     private String weightField;
 
-    private boolean alertEnabled;
+    /**
+     * 能否在监控管理中建告警规则。告警规则本身（阈值、周期、负责人）按站点存在 monitor_rule，
+     * 这里只放指标自带、不随站点变化的属性，新建规则时带出并复制到规则上
+     */
+    private boolean monitorable;
 
-    private BigDecimal alertMin;
+    /** 判定类型：lo 下限 / hi 上限 / band 区间 / drop 跌幅 */
+    private String judgeType;
 
-    private BigDecimal alertMax;
+    /** 最小样本量看哪个值：base = 跌幅类的基准；其余为分母指标的 metric_code */
+    private String minSampleKey;
 
-    private BigDecimal tolerancePct;
+    /** 新建规则时的默认最小样本量 */
+    private BigDecimal minSampleDefault;
+
+    /** 阈值能否为负（仅存提差） */
+    private boolean allowNegative;
+
+    /** 卡片门槛条刻度下限（展示单位）；与 gaugeMax 都有值时卡片画门槛条 */
+    private BigDecimal gaugeMin;
+
+    /** 卡片门槛条刻度上限（展示单位） */
+    private BigDecimal gaugeMax;
 
     /** '0' 正常 / '1' 停用 */
     private String status;
@@ -265,44 +281,80 @@ public class MetricCardConfig implements Serializable
         this.weightField = weightField;
     }
 
-    public boolean isAlertEnabled()
+    public boolean isMonitorable()
     {
-        return alertEnabled;
+        return monitorable;
     }
 
-    public void setAlertEnabled(boolean alertEnabled)
+    public void setMonitorable(boolean monitorable)
     {
-        this.alertEnabled = alertEnabled;
+        this.monitorable = monitorable;
     }
 
-    public BigDecimal getAlertMin()
+    public String getJudgeType()
     {
-        return alertMin;
+        return judgeType;
     }
 
-    public void setAlertMin(BigDecimal alertMin)
+    public void setJudgeType(String judgeType)
     {
-        this.alertMin = alertMin;
+        this.judgeType = judgeType;
     }
 
-    public BigDecimal getAlertMax()
+    public String getMinSampleKey()
     {
-        return alertMax;
+        return minSampleKey;
     }
 
-    public void setAlertMax(BigDecimal alertMax)
+    public void setMinSampleKey(String minSampleKey)
     {
-        this.alertMax = alertMax;
+        this.minSampleKey = minSampleKey;
     }
 
-    public BigDecimal getTolerancePct()
+    public BigDecimal getMinSampleDefault()
     {
-        return tolerancePct;
+        return minSampleDefault;
     }
 
-    public void setTolerancePct(BigDecimal tolerancePct)
+    public void setMinSampleDefault(BigDecimal minSampleDefault)
     {
-        this.tolerancePct = tolerancePct;
+        this.minSampleDefault = minSampleDefault;
+    }
+
+    public boolean isAllowNegative()
+    {
+        return allowNegative;
+    }
+
+    public void setAllowNegative(boolean allowNegative)
+    {
+        this.allowNegative = allowNegative;
+    }
+
+    /** 卡片是否画门槛条 */
+    public boolean hasGauge()
+    {
+        return gaugeMin != null && gaugeMax != null;
+    }
+
+    public BigDecimal getGaugeMin()
+    {
+        return gaugeMin;
+    }
+
+    public void setGaugeMin(BigDecimal gaugeMin)
+    {
+        this.gaugeMin = gaugeMin;
+    }
+
+    public BigDecimal getGaugeMax()
+    {
+        return gaugeMax;
+    }
+
+    public void setGaugeMax(BigDecimal gaugeMax)
+    {
+        this.gaugeMax = gaugeMax;
     }
 
     public String getStatus()

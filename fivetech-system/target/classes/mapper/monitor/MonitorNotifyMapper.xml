@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.monitor.mapper.MonitorNotifyMapper">
+
+	<resultMap type="com.fivetech.monitor.engine.domain.MonitorPendingNotify" id="PendingNotifyResult">
+		<id     property="id"          column="id"           />
+		<result property="siteCode"    column="site_code"    />
+		<result property="msgType"     column="msg_type"     />
+		<result property="eventId"     column="event_id"     />
+		<result property="chatId"      column="chat_id"      />
+		<result property="content"     column="content"      />
+		<result property="retryCount"  column="retry_count"  />
+		<result property="ruleId"      column="rule_id"      />
+		<result property="eventStatus" column="event_status" />
+	</resultMap>
+
+	<!-- 发送任务入口：跨站点找出有到期记录的站点（MonitorMapperScopeTest 白名单），之后每个站点的查询都带 scope -->
+	<select id="selectNotifySites" resultType="java.lang.String">
+		select distinct n.site_code
+		  from monitor_notify_log n
+		 where n.status = 'pending'
+		   and (n.next_retry_at is null or n.next_retry_at &lt;= #{now})
+		 order by n.site_code
+	</select>
+
+	<select id="selectDueNotify" resultMap="PendingNotifyResult">
+		select n.id, n.site_code, n.msg_type, n.event_id, n.chat_id, n.content, n.retry_count,
+		       e.rule_id, e.status as event_status
+		  from monitor_notify_log n
+		  left join monitor_event e on e.event_id = n.event_id and e.site_code = n.site_code
+		 where n.status = 'pending'
+		   and (n.next_retry_at is null or n.next_retry_at &lt;= #{now})
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="n"/>
+		</include>
+		 order by coalesce(n.next_retry_at, n.create_time), n.id
+		 limit #{limit}
+	</select>
+
+	<update id="markSent">
+		update monitor_notify_log
+		   set status = 'sent', success = true, sent_at = #{now}, error_msg = null, next_retry_at = null
+		 where id = #{id}
+		   and site_code = #{scope.siteCode}
+		   and status = 'pending'
+	</update>
+
+	<update id="markRetry">
+		update monitor_notify_log
+		   set retry_count = #{retryCount}, next_retry_at = #{nextRetryAt}, success = false,
+		       error_msg = #{error,jdbcType=VARCHAR}
+		 where id = #{id}
+		   and site_code = #{scope.siteCode}
+		   and status = 'pending'
+	</update>
+
+	<update id="markFailed">
+		update monitor_notify_log
+		   set status = 'failed', success = false, sent_at = #{now}, next_retry_at = null,
+		       error_msg = #{error,jdbcType=VARCHAR}
+		 where id = #{id}
+		   and site_code = #{scope.siteCode}
+		   and status = 'pending'
+	</update>
+
+	<update id="updateEventSent">
+		update monitor_event
+		   set notify_status = 'sent', notified_at = #{now}, notify_count = notify_count + 1, update_time = #{now}
+		 where event_id = #{eventId}
+		   and site_code = #{scope.siteCode}
+	</update>
+
+	<update id="updateEventNotifyStatus">
+		update monitor_event
+		   set notify_status = #{status}, update_time = #{now}
+		 where event_id = #{eventId}
+		   and site_code = #{scope.siteCode}
+	</update>
+
+	<!-- 不改 update_time / update_by：它们是「最近修改」，发送不算修改规则 -->
+	<update id="updateRuleNotified">
+		update monitor_rule
+		   set last_notified_at = #{now}
+		 where rule_id = #{ruleId}
+		   and site_code = #{scope.siteCode}
+	</update>
+
+</mapper>

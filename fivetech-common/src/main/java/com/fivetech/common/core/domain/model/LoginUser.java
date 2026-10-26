@@ -243,7 +243,53 @@ public class LoginUser implements UserDetails, Serializable
         this.expireTime = expireTime;
     }
 
+    /**
+     * 当前站点下的权限（多站点一期）。
+     *
+     * <p>角色带站点：通用角色（site_code 为空）在所有站点生效，站点角色只在本站点生效。
+     * 这里按 {@link com.fivetech.common.utils.SiteContext} 的当前站点，从各角色的权限里现算：
+     * 当前站点角色 ∪ 通用角色。所有权限判断（@ss.hasPermi、SecurityUtils.hasPermi、getInfo）都走这里，
+     * 切换站点后不用重新登录。超级管理员、全部是通用角色的老账号，与原来完全一致。</p>
+     */
     public Set<String> getPermissions()
+    {
+        if (permissions == null || permissions.contains("*:*:*") || user == null
+            || user.getRoles() == null || user.getRoles().isEmpty())
+        {
+            return permissions;
+        }
+        boolean anySiteRole = false;
+        for (com.fivetech.common.core.domain.entity.SysRole role : user.getRoles())
+        {
+            if (role.getSiteCode() != null && !role.getSiteCode().trim().isEmpty())
+            {
+                anySiteRole = true;
+                break;
+            }
+        }
+        if (!anySiteRole)
+        {
+            return permissions;
+        }
+        String site = com.fivetech.common.utils.SiteContext.code();
+        Set<String> result = new java.util.HashSet<>();
+        for (com.fivetech.common.core.domain.entity.SysRole role : user.getRoles())
+        {
+            if (role.getPermissions() == null)
+            {
+                continue;
+            }
+            String roleSite = role.getSiteCode() == null ? "" : role.getSiteCode().trim();
+            if (roleSite.isEmpty() || (site != null && roleSite.equalsIgnoreCase(site)))
+            {
+                result.addAll(role.getPermissions());
+            }
+        }
+        return result;
+    }
+
+    /** 全部站点权限的并集（原始值，仅供刷新与兼容使用） */
+    public Set<String> getAllSitePermissions()
     {
         return permissions;
     }

@@ -43,6 +43,9 @@ public class OverviewVO implements Serializable
 
     private OverviewMonitoringVO monitoring;
 
+    /** 核心指标下方的异常提醒条；本站没有任何启用规则时为 null（见 MonitorOverviewService） */
+    private com.fivetech.monitor.domain.vo.MonitorAnomaliesVO anomalies;
+
     /** 上游数据版本，口径有争议时唯一能对齐的凭证 */
     private String dataVersion;
 
@@ -115,6 +118,16 @@ public class OverviewVO implements Serializable
     public void setTimezone(String timezone)
     {
         this.timezone = timezone;
+    }
+
+    public com.fivetech.monitor.domain.vo.MonitorAnomaliesVO getAnomalies()
+    {
+        return anomalies;
+    }
+
+    public void setAnomalies(com.fivetech.monitor.domain.vo.MonitorAnomaliesVO anomalies)
+    {
+        this.anomalies = anomalies;
     }
 
     public OverviewMonitoringVO getMonitoring()

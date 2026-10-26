@@ -45,6 +45,9 @@ public class SysRoleController extends BaseController
     @Autowired
     private ISysDeptService deptService;
 
+    @Autowired
+    private com.fivetech.dashboard.config.DashboardProperties dashboardProperties;
+
     @PreAuthorize("@ss.hasPermi('system:role:list')")
     @GetMapping("/list")
     public TableDataInfo list(SysRole role)
@@ -91,6 +94,11 @@ public class SysRoleController extends BaseController
         {
             return error("新增角色'" + role.getRoleName() + "'失败，角色权限已存在");
         }
+        String siteError = normalizeSite(role);
+        if (siteError != null)
+        {
+            return error("新增角色'" + role.getRoleName() + "'失败，" + siteError);
+        }
         role.setCreateBy(getUsername());
         return toAjax(roleService.insertRole(role));
 
@@ -113,6 +121,11 @@ public class SysRoleController extends BaseController
         else if (!roleService.checkRoleKeyUnique(role))
         {
             return error("修改角色'" + role.getRoleName() + "'失败，角色权限已存在");
+        }
+        String siteError = normalizeSite(role);
+        if (siteError != null)
+        {
+            return error("修改角色'" + role.getRoleName() + "'失败，" + siteError);
         }
         role.setUpdateBy(getUsername());
         
@@ -159,6 +172,45 @@ public class SysRoleController extends BaseController
     public AjaxResult remove(@PathVariable Long[] roleIds)
     {
         return toAjax(roleService.deleteRoleByIds(roleIds));
+    }
+
+    /**
+     * 角色可选的站点（多站点一期）：默认站点 + dashboard.sites。角色不选站点 = 通用角色，所有站点生效
+     */
+    @PreAuthorize("@ss.hasPermi('system:role:list')")
+    @GetMapping("/siteOptions")
+    public AjaxResult siteOptions()
+    {
+        java.util.List<java.util.Map<String, String>> list = new java.util.ArrayList<>();
+        list.add(java.util.Map.of("code", dashboardProperties.getDefaultSite(),
+            "name", dashboardProperties.siteName(dashboardProperties.getDefaultSite())));
+        for (com.fivetech.dashboard.config.DashboardProperties.Site site : dashboardProperties.getSites())
+        {
+            list.add(java.util.Map.of("code", site.getCode(), "name", dashboardProperties.siteName(site.getCode())));
+        }
+        return success(list);
+    }
+
+    /** 站点规范化：空 = 通用角色（存 NULL）；有值必须是已配置的站点 */
+    private String normalizeSite(SysRole role)
+    {
+        if (role.getSiteCode() == null)
+        {
+            return null;
+        }
+        String code = role.getSiteCode().trim();
+        if (code.isEmpty())
+        {
+            role.setSiteCode("");
+            return null;
+        }
+        String canonical = dashboardProperties.canonical(code);
+        if (canonical == null)
+        {
+            return "站点 " + code + " 未配置";
+        }
+        role.setSiteCode(canonical);
+        return null;
     }
 
     /**

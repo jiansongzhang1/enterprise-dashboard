@@ -1,0 +1,485 @@
+{
+	"info": {
+		"_postman_id": "4f84b879-9f2c-49cb-aed5-827a5d8ab754",
+		"name": "Fivetech Dashboard API · 系统管理 · 指标管理（口径与取数方式）",
+		"description": "覆盖 GET /system/metrics、/system/metrics/{code}，POST /system/metrics、/{code}/update、/{code}/delete。\n前提：已执行 sql/alter_metric_card_dictionary_postgresql.sql、sql/add_metric_manage_menu_postgresql.sql，token 账号有 system:metric:*。\n第 10～14 步登记一个临时指标再删除，不会留下数据；第 5 步把投注总额的口径改回原值。",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// 若依统一返回：HTTP 恒为 200，成败看 code",
+					"pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+				]
+			}
+		}
+	],
+	"item": [
+		{
+			"name": "1. 列表（全部）",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+							"const d = j.data;",
+							"pm.test('结构', () => pm.expect(d).to.include.all.keys('rows','total','groups','datasets'));",
+							"pm.test('datasets 指向三个 v2 数据集', () => { pm.expect(d.datasets.udsHourField).to.eql('dashboard_overview_hour_v2'); pm.expect(d.datasets.udsDayField).to.eql('dashboard_overview_day_v2'); pm.expect(d.datasets.udsAmountField).to.eql('dashboard_overview_amount_v2'); });",
+							"const live = d.rows.filter(r => r.status === '0');",
+							"pm.test('已接入 28 个指标（执行字典 SQL 后）', () => pm.expect(live.length).to.eql(28));",
+							"pm.test('口径都已填写（口径：开头）', () => live.forEach(r => pm.expect(r.remark || '', r.metricCode).to.match(/^口径：/)));",
+							"pm.test('表与线上配置一致（configMismatch 为空）', () => live.forEach(r => pm.expect(r.configMismatch, r.metricCode).to.eql([])));",
+							"const by = c => d.rows.find(r => r.metricCode === c);",
+							"pm.test('活跃人数：小时 active_hour、日 active_day、基准 active_hour_baseline', () => { const a = by('active'); pm.expect(a.udsHourField).to.eql('active_hour'); pm.expect(a.udsDayField).to.eql('active_day'); pm.expect(a.udsBaselineField).to.eql('active_hour_baseline'); });",
+							"pm.test('存提差、NGR、派彩由后端组装', () => { pm.expect(by('net').config.assemble).to.eql('dep − wd'); pm.expect(by('ngr').config.assemble).to.eql('ggr − bonus'); pm.expect(by('pay').config.assemble).to.eql('bet + winLoss'); });",
+							"pm.test('引用：dep 被 net 等引用、页面含 OVERVIEW', () => { pm.expect(by('dep').usedBy).to.include('net'); pm.expect(by('dep').pages).to.include('OVERVIEW'); });",
+							"pm.test('已接入的都不能删', () => live.forEach(r => pm.expect(r.deletable, r.metricCode).to.eql(false)));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "2. 列表（筛选：关键字 + 仅登记）",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics?keyword=ARPPU&status=0"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+							"pm.test('只返回含 ARPPU 的已接入指标', () => { pm.expect(j.data.rows.length).to.be.at.least(2); j.data.rows.forEach(r => pm.expect(r.status).to.eql('0')); });"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "3. 详情 dT",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/dT"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+							"pm.test('UDS 字段为秒，口径写明单位换算', () => { pm.expect(j.data.udsHourField).to.eql('dT_seconds'); pm.expect(j.data.remark).to.include('÷60'); });",
+							"pm.test('计算与监控属性只读返回', () => { pm.expect(j.data.aggType).to.eql('AVG_WEIGHTED'); pm.expect(j.data.judgeType).to.eql('hi'); });"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "4. 详情：不存在 → 404",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/notExist"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "5. 已接入指标：改口径（保存原值，只验证接口）",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/bet/update"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"remark\": \"口径：所有投注金额加总。\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "6. 已接入指标：改名称 → 400",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/bet/update"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"metricName\": \"投注额（改名）\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+							"pm.test('data.fields.metricName', () => pm.expect(j.data.fields).to.have.property('metricName'));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "7. 已接入指标：删除 → 400",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/bet/delete"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "8. 登记：字段校验 → 400",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"metricCode\": \"1bad\",\n  \"metricName\": \"x\",\n  \"udsHourField\": \"drop table\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+							"pm.test('编码、字段名非法', () => { pm.expect(j.data.fields).to.have.property('metricCode'); pm.expect(j.data.fields).to.have.property('udsHourField'); });"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "9. 登记：编码重复（不区分大小写）→ 400",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"metricCode\": \"REG\",\n  \"metricName\": \"重复\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+							"pm.test('data.fields.metricCode', () => pm.expect(j.data.fields).to.have.property('metricCode'));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "10. 登记新指标 pmTest",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"metricCode\": \"{{newCode}}\",\n  \"metricName\": \"Postman 测试指标\",\n  \"groupCode\": \"eg4\",\n  \"remark\": \"口径：仅用于接口测试，跑完第 13 步会删除\",\n  \"udsHourField\": \"pm_test_hour\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.variables.set('newCode', 'pmTest' + Date.now().toString(36));"
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+							"pm.test('返回编码', () => pm.expect(j.data.metricCode).to.eql(pm.variables.get('newCode')));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "11. 详情：新指标是仅登记、不上卡、不可监控、可删除",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/{{newCode}}"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+							"const d = j.data;",
+							"pm.test('仅登记', () => { pm.expect(d.status).to.eql('1'); pm.expect(d.showAsCard).to.eql(false); pm.expect(d.monitorable).to.eql(false); pm.expect(d.chartType).to.eql('NUMBER'); });",
+							"pm.test('默认格式 INT、方向 up、每小时', () => { pm.expect(d.valueFormat).to.eql('INT'); pm.expect(d.direction).to.eql('up'); pm.expect(d.updateFrequency).to.eql('hour'); });",
+							"pm.test('没有引用，可以删', () => pm.expect(d.deletable).to.eql(true));",
+							"pm.test('线上配置没有这个指标 → 与配置不一致', () => pm.expect(d.configMismatch).to.include('小時數據集字段'));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "12. 仅登记指标：可改名称与取数字段",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/{{newCode}}/update"
+				},
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"metricName\": \"Postman 测试指标（改名）\",\n  \"valueFormat\": \"MONEY\",\n  \"udsHourField\": \"\",\n  \"udsAmountField\": \"pm_test_amount\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "12b. 详情：改动生效，空串清空字段",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/{{newCode}}"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('改名、格式、字段', () => { pm.expect(j.data.metricName).to.eql('Postman 测试指标（改名）'); pm.expect(j.data.valueFormat).to.eql('MONEY'); pm.expect(j.data.udsHourField).to.eql(null); pm.expect(j.data.udsAmountField).to.eql('pm_test_amount'); });"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "13. 删除新指标",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/{{newCode}}/delete"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "14. 删除后详情 → 404",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/system/metrics/{{newCode}}"
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const j = pm.response.json();",
+							"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+						]
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "newCode",
+			"value": ""
+		}
+	]
+}
