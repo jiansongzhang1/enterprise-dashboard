@@ -5198,6 +5198,270 @@
 					]
 				}
 			]
+		},
+		{
+			"name": "13. 判定试运行（POST /monitor/rules/{ruleId}/dry-run）",
+			"description": "开发自测规则判定逻辑：指定检测周期（如 2026-10-19 18:00），按线上引擎重放 30 天、按线上发送规则判断这一周期会不会发；会发且 send = true 才发到测试群（MONITOR_TEST_CHAT_ID，带【測試】）。不写任何表。",
+			"item": [
+				{
+					"name": "13.1 只看判定（send = false，不发）",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"period\": \"{{dryRunPeriod}}\",\n  \"send\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/dry-run"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId')) { console.log('跳过：先跑 1.x 新增规则'); pm.execution.skipRequest(); }",
+									"// 检测周期：可在环境里设 dryRunPeriod（如 2026-10-19 18:00），没设就用昨天 18:00",
+									"if (!pm.variables.get('dryRunPeriod')) { const d = new Date(Date.now() - 86400000); const z = n => String(n).padStart(2, '0');",
+									"  pm.variables.set('dryRunPeriod', `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} 18:00`); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const d = j.data, n = d.notify;",
+									"pm.test('结构', () => pm.expect(d).to.include.all.keys('ruleId','metricCode','periodHours','durationCount','periodFrom','periodTo','window','value','baseline','sample','level','dataError','event','notify','recentPeriods','sent','chatId','content'));",
+									"pm.test('level 取值', () => pm.expect(['OK','WARN','CRIT','SKIP']).to.include(d.level));",
+									"pm.test('decision 取值', () => pm.expect(['SEND','KEEP','MUTED']).to.include(n.decision));",
+									"pm.test('有原因说明', () => pm.expect(n.reason).to.be.a('string').and.not.empty);",
+									"pm.test('周期按检测周期对齐、包含输入时间', () => { const t = pm.variables.get('dryRunPeriod').slice(0, 16); pm.expect(d.periodFrom <= t && t < d.periodTo).to.be.true; });",
+									"pm.test('SEND 才有内容且带【測試】', () => { if (n.decision === 'SEND') pm.expect(d.content.startsWith('【測試】')).to.be.true; else pm.expect(d.content).to.be.null; });",
+									"pm.test('SEND 时类型为 ALERT_NEW / ALERT_ESCALATED', () => { if (n.decision === 'SEND') pm.expect(['ALERT_NEW','ALERT_ESCALATED']).to.include(n.type); });",
+									"pm.test('recentPeriods 不超过持续次数', () => pm.expect(d.recentPeriods.length).to.be.at.most(d.durationCount));",
+									"console.log(`判定：${d.level} → ${n.decision}（${n.reason}）`);",
+									"pm.test('不发送', () => { pm.expect(d.sent).to.be.false; pm.expect(d.chatId).to.be.null; });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "13.2 按线上规则判定，会发才发到测试群",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"period\": \"{{dryRunPeriod}}\",\n  \"send\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/dry-run"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId')) { console.log('跳过：先跑 1.x 新增规则'); pm.execution.skipRequest(); }",
+									"// 检测周期：可在环境里设 dryRunPeriod（如 2026-10-19 18:00），没设就用昨天 18:00",
+									"if (!pm.variables.get('dryRunPeriod')) { const d = new Date(Date.now() - 86400000); const z = n => String(n).padStart(2, '0');",
+									"  pm.variables.set('dryRunPeriod', `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} 18:00`); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j0 = pm.response.json();",
+									"if (j0.code === 400 && /MONITOR_TEST_CHAT_ID/.test(j0.msg || '')) { pm.test('后端未配置测试群（跳过其余断言）', () => true); return; }",
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const d = j.data, n = d.notify;",
+									"pm.test('结构', () => pm.expect(d).to.include.all.keys('ruleId','metricCode','periodHours','durationCount','periodFrom','periodTo','window','value','baseline','sample','level','dataError','event','notify','recentPeriods','sent','chatId','content'));",
+									"pm.test('level 取值', () => pm.expect(['OK','WARN','CRIT','SKIP']).to.include(d.level));",
+									"pm.test('decision 取值', () => pm.expect(['SEND','KEEP','MUTED']).to.include(n.decision));",
+									"pm.test('有原因说明', () => pm.expect(n.reason).to.be.a('string').and.not.empty);",
+									"pm.test('周期按检测周期对齐、包含输入时间', () => { const t = pm.variables.get('dryRunPeriod').slice(0, 16); pm.expect(d.periodFrom <= t && t < d.periodTo).to.be.true; });",
+									"pm.test('SEND 才有内容且带【測試】', () => { if (n.decision === 'SEND') pm.expect(d.content.startsWith('【測試】')).to.be.true; else pm.expect(d.content).to.be.null; });",
+									"pm.test('SEND 时类型为 ALERT_NEW / ALERT_ESCALATED', () => { if (n.decision === 'SEND') pm.expect(['ALERT_NEW','ALERT_ESCALATED']).to.include(n.type); });",
+									"pm.test('recentPeriods 不超过持续次数', () => pm.expect(d.recentPeriods.length).to.be.at.most(d.durationCount));",
+									"console.log(`判定：${d.level} → ${n.decision}（${n.reason}）`);",
+									"pm.test('只有 SEND 才发', () => { if (n.decision !== 'SEND') pm.expect(d.sent).to.be.false; });",
+									"pm.test('发到测试群（oc_ 开头）', () => pm.expect(d.chatId).to.match(/^oc_/));",
+									"pm.test('发了 ⇔ success 且有 messageId', () => { if (d.sent) { pm.expect(d.success).to.be.true; pm.expect(d.messageId).to.be.a('string'); } });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "13.3 [校验] period 格式不对 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"period\": \"2026/10/19 18:00\",\n  \"send\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/dry-run"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId')) { console.log('跳过：先跑 1.x 新增规则'); pm.execution.skipRequest(); }",
+									"// 检测周期：可在环境里设 dryRunPeriod（如 2026-10-19 18:00），没设就用昨天 18:00",
+									"if (!pm.variables.get('dryRunPeriod')) { const d = new Date(Date.now() - 86400000); const z = n => String(n).padStart(2, '0');",
+									"  pm.variables.set('dryRunPeriod', `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} 18:00`); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('提示格式', () => pm.expect(j.msg).to.include('yyyy-MM-dd HH:mm'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "13.4 [校验] 周期还没结束 → 400",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"period\": \"2099-01-01 00:00\",\n  \"send\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/{{ruleId}}/dry-run"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.variables.get('ruleId')) { console.log('跳过：先跑 1.x 新增规则'); pm.execution.skipRequest(); }",
+									"// 检测周期：可在环境里设 dryRunPeriod（如 2026-10-19 18:00），没设就用昨天 18:00",
+									"if (!pm.variables.get('dryRunPeriod')) { const d = new Date(Date.now() - 86400000); const z = n => String(n).padStart(2, '0');",
+									"  pm.variables.set('dryRunPeriod', `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} 18:00`); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+									"pm.test('提示未结束', () => pm.expect(j.msg).to.include('還沒結束'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "13.5 规则不存在 → 404",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{siteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"period\": \"2026-10-19 18:00\",\n  \"send\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/monitor/rules/999999999/dry-run"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": []
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+								]
+							}
+						}
+					]
+				}
+			]
 		}
 	]
 }

@@ -783,8 +783,8 @@ xss:
   # 过滤开关
   enabled: true
   # 排除链接（多个用逗号分隔）
-  excludes:
-  # 排除链接（多个用逗号分隔）
+  # /monitor/events/handle：处理说明是自由文本，前端按纯文本显示、不进 Lark；过滤器按标签整段删除会吞掉「成功率<5%，持續>3次」这类内容
+  excludes: /monitor/events/handle
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
 
