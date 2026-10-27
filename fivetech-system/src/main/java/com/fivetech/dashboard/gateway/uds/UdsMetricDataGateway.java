@@ -810,6 +810,149 @@ public class UdsMetricDataGateway implements MetricDataGateway
     // ===================== 拆解（运营总览板块） =====================
 
     /**
+     * 回测预览「平时水平」：metric_distribution 数据集按指标 + 周期取 p5 / p95 / min / max / min_at / max_at / valid_point_count。
+     * <p>单指标查询：不带 dimensions，在 filters.and 里同时以 EQ 固定 metric_code 和 period_code（UDS 要求，
+     * 漏掉会 4001）。只发一次，未就绪（4403）返回 notReady，不退避。没有有效周期时 UDS 不返回行 → empty，不补 0。</p>
+     */
+    @Override
+    public com.fivetech.dashboard.gateway.MetricDistribution queryDistribution(String metricCode, int periodHours,
+            LocalDateTime firstStart, LocalDateTime lastStart)
+    {
+        UdsProperties.Distribution cfg = properties.getDistribution();
+        String udsMetric = cfg == null ? null : cfg.getMetrics().get(metricCode);
+        String periodCode = cfg == null ? null : cfg.getPeriodCodes().get(String.valueOf(periodHours));
+        if (cfg == null || !cfg.isConfigured() || StringUtils.isEmpty(udsMetric) || StringUtils.isEmpty(periodCode))
+        {
+            return com.fivetech.dashboard.gateway.MetricDistribution.notConfigured();
+        }
+        Map<String, Object> body = distributionBody(cfg, udsMetric, periodCode, firstStart, lastStart);
+        com.fivetech.dashboard.gateway.MetricDistribution out = new com.fivetech.dashboard.gateway.MetricDistribution();
+        out.setConfigured(true);
+        UdsQueryResult result;
+        try
+        {
+            result = client.queryWithMeta(body);
+        }
+        catch (UdsQueryException e)
+        {
+            if (e.isNotReady())
+            {
+                out.setNotReady(true);
+                return out;
+            }
+            throw e;
+        }
+        out.setWatermark(result.getWatermark());
+        out.setStale(result.isStale());
+        fillDistribution(cfg, result.getRows().isEmpty() ? null : result.getRows().get(0), out);
+        return out;
+    }
+
+    /** 请求体（联调文档第 2 节单指标写法）；包内可见供测试 */
+    static Map<String, Object> distributionBody(UdsProperties.Distribution cfg, String udsMetric, String periodCode,
+            LocalDateTime firstStart, LocalDateTime lastStart)
+    {
+        List<String> metrics = new ArrayList<>();
+        for (String column : cfg.getColumns().values())
+        {
+            if (StringUtils.isNotEmpty(column) && !metrics.contains(column))
+            {
+                metrics.add(column);
+            }
+        }
+        Map<String, Object> time = new LinkedHashMap<>();
+        time.put("dimension", cfg.getTimeDimension());
+        time.put("granularity", Granularity.HOUR.name());
+        time.put("from", firstStart.format(DATETIME));
+        time.put("to", (lastStart.isBefore(firstStart) ? firstStart : lastStart).format(DATETIME));
+        List<Map<String, Object>> and = new ArrayList<>();
+        and.add(eq(cfg.getMetricField(), udsMetric));
+        and.add(eq(cfg.getPeriodField(), periodCode));
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("and", and);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("dataset", cfg.getName());
+        body.put("dimensions", new ArrayList<>());
+        body.put("metrics", metrics);
+        body.put("time", time);
+        body.put("filters", filters);
+        body.put("orderBy", new ArrayList<>());
+        body.put("limit", 1);
+        body.put("offset", 0);
+        Map<String, Object> options = new LinkedHashMap<>(cfg.getOptions());
+        options.putIfAbsent("channel", "ONLINE");
+        body.put("options", options);
+        return body;
+    }
+
+    private static Map<String, Object> eq(String field, String value)
+    {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("field", field);
+        m.put("op", "EQ");
+        m.put("value", value);
+        return m;
+    }
+
+    /** 按列名取值（不依赖列顺序）；没有行或四值全空 → empty */
+    static void fillDistribution(UdsProperties.Distribution cfg, UdsRow row,
+            com.fivetech.dashboard.gateway.MetricDistribution out)
+    {
+        if (row == null)
+        {
+            out.setEmpty(true);
+            return;
+        }
+        Map<String, String> c = cfg.getColumns();
+        out.setP5(row.num(c.get("p5")));
+        out.setP95(row.num(c.get("p95")));
+        out.setMin(row.num(c.get("min")));
+        out.setMax(row.num(c.get("max")));
+        out.setMinAt(parseTime(row.str(c.get("minAt"))));
+        out.setMaxAt(parseTime(row.str(c.get("maxAt"))));
+        String countColumn = c.get("count");
+        if (StringUtils.isNotEmpty(countColumn))
+        {
+            BigDecimal n = row.num(countColumn);
+            out.setCount(n == null ? null : n.intValue());
+        }
+        out.setEmpty(out.getP5() == null && out.getP95() == null && out.getMin() == null && out.getMax() == null);
+    }
+
+    /** 「2026-10-20 12:00:00」/「2026-10-20T12:00」/「2026-10-20 12:00」/「2026-10-20」；认不出返回 null */
+    static LocalDateTime parseTime(String text)
+    {
+        if (StringUtils.isEmpty(text))
+        {
+            return null;
+        }
+        String t = text.trim().replace('T', ' ');
+        int dot = t.indexOf('.');
+        if (dot > 0)
+        {
+            t = t.substring(0, dot);
+        }
+        try
+        {
+            if (t.length() == 10)
+            {
+                return LocalDate.parse(t).atStartOfDay();
+            }
+            if (t.length() == 16)
+            {
+                t = t + ":00";
+            }
+            return LocalDateTime.parse(t.substring(0, Math.min(19, t.length())), DATETIME);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[uds] 无法识别的时间值：{}", text);
+            return null;
+        }
+    }
+
+    /**
      * 按维度分组的区间聚合（榜单、注册渠道、留存 / LTV）。
      * <p>
      * orderBy + limit 下推给 UDS，Top N 由上游截取；配置 withTotal 时再查一次同条件的全量
