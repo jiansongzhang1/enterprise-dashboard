@@ -50,7 +50,7 @@ public class SiteContextInterceptor implements HandlerInterceptor
         String requested = StringUtils.trim(request.getHeader(HEADER));
         if (StringUtils.isEmpty(requested))
         {
-            SiteContext.set(properties.getDefaultSite(), null);
+            SiteContext.set(properties.getDefaultSite(), properties.udsSite(properties.getDefaultSite()));
             return true;
         }
         String code = properties.canonical(requested);

@@ -1,7 +1,7 @@
 -- ============================================================================
--- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-23
+-- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-27（10-23 版 + ⑪～⑭）
 --
--- 由以下 10 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
+-- 由以下 14 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
 --   ① alter_sys_role_site                 sys_role.site_code（新 JAR 启动前必须有）
 --   ② alter_metric_card_monitor           指标监控属性；删除 dashboard_metric_card 4 个旧告警字段（需审批、先备份）
 --   ③ monitor_schema                      7 张 monitor 表 + SITE-IN 站点设置
@@ -12,6 +12,10 @@
 --   ⑧ add_monitor_notify_template         通知模板表 + 菜单「通知模板」（模板正文由后端启动时写入）
 --   ⑨ add_monitor_menu                    监控管理菜单 160–167
 --   ⑩ add_system_site_menu                菜单「站点管理」
+--   ⑪ alter_metric_card_chart_line        卡片图形 BAR → LINE，约束去掉 BAR（2026-10-23）
+--   ⑫ alter_metric_card_dictionary        指标口径与 UDS 取数字段收口到 dashboard_metric_card（2026-10-26，只改表不改取数）
+--   ⑬ add_metric_manage_menu              菜单「系统管理 · 指标管理」system:metric:*
+--   ⑭ add_monitor_rule_test_permission    按钮「手动触发测试告警」monitor:rule:test（挂在通知模板下，必须在 ⑧ 之后）
 --
 -- 执行方式（用 psql，不要用 DBeaver 等图形客户端整段执行）：
 --   psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f release_monitor_p1_postgresql.sql
@@ -910,6 +914,411 @@ FROM sys_menu WHERE perms LIKE 'system:site:%' ORDER BY menu_id;
 
 
 -- ############################################################################
+-- ## 11. alter_metric_card_chart_line_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 运营总览卡片图形去掉 BAR（2026-10-23）· PostgreSQL（dashboard_db）
+--
+-- 总览接口的 chart.type 只有 GAUGE / LINE（后端已不读 chart_type 决定卡片图形）。
+-- 这里把配置表里仍是 BAR 的 4 个指标（存提差 net、投注总额 bet、GGR ggr、NGR ngr）改成 LINE，
+-- 并把约束收紧为 LINE / PIE / NUMBER，防止再配 BAR。
+--
+-- 只给已有环境用：新环境的建表脚本 dashboard_metric_card_postgresql.sql 已同步修改；
+-- migrate_appdb_to_dashboard_db.sh 的 metrics 步骤按仓库建表脚本重建，也不需要再执行本脚本。
+-- 可重复执行：第二次执行没有 BAR 行，UPDATE 0 行；备份表只在第一次写入。
+-- ============================================================================
+
+BEGIN;
+
+-- 1. 备份要改的行（只在第一次执行时写入）
+CREATE TABLE IF NOT EXISTS dashboard_metric_card_chart_bak_20261023 (
+    metric_code VARCHAR(64) PRIMARY KEY,
+    chart_type  VARCHAR(16) NOT NULL,
+    backup_time TIMESTAMP   NOT NULL DEFAULT localtimestamp
+);
+INSERT INTO dashboard_metric_card_chart_bak_20261023 (metric_code, chart_type)
+SELECT metric_code, chart_type FROM dashboard_metric_card WHERE chart_type = 'BAR'
+ON CONFLICT (metric_code) DO NOTHING;
+
+-- 2. BAR → LINE
+UPDATE dashboard_metric_card SET chart_type = 'LINE' WHERE chart_type = 'BAR';
+
+-- 3. 约束去掉 BAR
+ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_chart_type;
+ALTER TABLE dashboard_metric_card ADD  CONSTRAINT ck_chart_type CHECK (chart_type IN ('LINE','PIE','NUMBER'));
+COMMENT ON COLUMN dashboard_metric_card.chart_type IS 'LINE 折线 / PIE 饼图 / NUMBER 纯数值；运营总览卡片只按刻度区分 GAUGE / LINE，不读本列';
+
+COMMIT;
+
+-- 自检：应为 0 行 BAR；备份表应有 4 行（net、bet、ggr、ngr）
+SELECT count(*) AS bar_left FROM dashboard_metric_card WHERE chart_type = 'BAR';
+SELECT metric_code, chart_type AS old_chart_type, backup_time FROM dashboard_metric_card_chart_bak_20261023 ORDER BY metric_code;
+
+-- 回滚（确认后手动执行）：
+-- BEGIN;
+-- ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_chart_type;
+-- ALTER TABLE dashboard_metric_card ADD  CONSTRAINT ck_chart_type CHECK (chart_type IN ('LINE','BAR','PIE','NUMBER'));
+-- UPDATE dashboard_metric_card c SET chart_type = b.chart_type
+--   FROM dashboard_metric_card_chart_bak_20261023 b WHERE b.metric_code = c.metric_code;
+-- COMMIT;
+
+
+
+-- ############################################################################
+-- ## 12. alter_metric_card_dictionary_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 指标字典：口径与取数方式收口到 dashboard_metric_card（2026-10-26）· PostgreSQL（dashboard_db）
+--
+-- 只改表，不改取数：运营总览、指标汇总仍按 application.yml 的 dashboard.gateway.uds 取数，
+-- 判定引擎的跌幅基准仍按 monitor.engine.baseline-fields；本表新增的字段是这些配置的「登记」，
+-- 后台「系统管理 · 指标管理」会对比两边，不一致时标出来。
+--
+--   1. 备份整表到 dashboard_metric_card_bak_20261026（只在第一次执行时写入）
+--   2. source_table / source_field 改为「UDS 上游原始表 / 字段」（待 UDS 提供）：清掉早期直连 Doris 时的旧表名，
+--      去掉「原子指标必须有 source_table」的约束（ck_source）。这两列没有任何代码读取
+--   3. 新增 4 列：uds_hour_field / uds_day_field / uds_amount_field / uds_baseline_field
+--   4. 按当前 yml 填 28 个指标的 UDS 字段
+--   5. remark 改为「口径：…」+「备注：…」（口径取自《Yata v0.1 操作指南 · 指标口径》与页面 ⓘ 文案）
+--
+-- 可重复执行：第 2 步只在第一次执行时清空；4、5 步只处理还没填过的行，不会覆盖后台已维护的内容。
+-- 新环境：先执行 dashboard_metric_card_postgresql.sql（已含新列），再执行本脚本填内容。
+-- 执行：psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f sql/alter_metric_card_dictionary_postgresql.sql
+-- ============================================================================
+
+BEGIN;
+
+-- 1. 备份
+CREATE TABLE IF NOT EXISTS dashboard_metric_card_bak_20261026 AS SELECT * FROM dashboard_metric_card;
+
+-- 2. 上游原始表 / 字段：旧值是早期直连 Doris 的表名（dws_* / ods_pay_order），与现在的取数无关，清空等 UDS 提供。
+--    只在第一次执行（还没有 uds_hour_field 列）时清空，之后执行不会再动后台填进去的值
+ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_source;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = current_schema() AND table_name = 'dashboard_metric_card'
+                      AND column_name = 'uds_hour_field') THEN
+        UPDATE dashboard_metric_card
+           SET source_table = NULL, source_field = NULL, update_by = 'admin', update_time = CURRENT_TIMESTAMP
+         WHERE source_table IS NOT NULL OR source_field IS NOT NULL;
+    END IF;
+END $$;
+
+-- 3. 新增列
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS uds_hour_field     VARCHAR(128);
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS uds_day_field      VARCHAR(128);
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS uds_amount_field   VARCHAR(128);
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS uds_baseline_field VARCHAR(128);
+
+-- 4. 取数字段：只填还没填过的行（后台已经维护过的不覆盖）
+UPDATE dashboard_metric_card c
+   SET uds_hour_field = v.hour_field, uds_day_field = v.day_field,
+       uds_amount_field = v.amount_field, uds_baseline_field = v.baseline_field,
+       update_by = 'admin', update_time = CURRENT_TIMESTAMP
+  FROM (VALUES
+    ('reg', 'reg', NULL, 'reg', 'reg_baseline', '口径：完成会员注册的人数，按注册时间（IST）归入所属小时。'),
+    ('ftd', 'ftd', NULL, 'ftd', 'ftd_baseline', '口径：完成生涯首笔存款的人数，按首笔存款成功时间（IST）归入所属小时。'),
+    ('ftdr', 'ftdr', NULL, 'ftdr', NULL, '口径：首存人数 ÷ 注册人数 × 100%。
+备注：UDS 直接提供比率；判定引擎在检测周期大于 1 小时时按 Σ首存人数 ÷ Σ注册人数 重算。'),
+    ('ftdA', 'ftdA', NULL, 'ftdA', 'ftdA_baseline', '口径：首存总金额 ÷ 首存人数。
+备注：UDS 直接提供；检测周期大于 1 小时时按 Σ首存总金额 ÷ Σ首存人数 重算。'),
+    ('dep', 'dep', NULL, 'dep', 'dep_baseline', '口径：所有会员成功存款金额加总（站点币种主单位）。'),
+    ('wd', 'wd', NULL, 'wd', 'wd_baseline', '口径：所有会员成功提款金额加总（站点币种主单位）。'),
+    ('net', NULL, NULL, NULL, NULL, '口径：存款总额 − 提款总额，可为负。
+备注：UDS 不返回，后端相减（dashboard.gateway.uds.overview.subtract：dep − wd）；任一为空则为空。'),
+    ('arppu', 'arppu_hour', 'arppu_day', NULL, 'arppu_hour_baseline', '口径：存款总额 ÷ 去重存款人数；按小时／日去重，仅支持查看单日数据。
+备注：小时取 arppu_hour，整日取 arppu_day；跨多日区间不出值。'),
+    ('turnX', 'turnX', NULL, 'turnX', NULL, '口径：投注总额 ÷ 存款总额。
+备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
+    ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
+备注：UDS 比率为 0～1，页面 ×100。'),
+    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
+    ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
+备注：UDS 比率为 0～1，页面 ×100。'),
+    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
+    ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
+备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),
+    ('bet', 'bet', NULL, 'bet', 'bet_baseline', '口径：所有投注金额加总。'),
+    ('ggr', 'ggr', NULL, 'ggr', 'ggr_baseline', '口径：0 − 玩家输赢（win loss amount），即投注总额 − 派彩金额。
+备注：UDS 直接提供 ggr。'),
+    ('killR', 'killR', NULL, 'killR', NULL, '口径：GGR ÷ 投注总额 × 100%。
+备注：业务参考区间 3% – 6%。'),
+    ('bonus', 'bonus', NULL, 'bonus', 'bonus_baseline', '口径：各赠金项目实际发放金额加总。
+备注：运营总览排行榜按赠金项目拆分展示。'),
+    ('bonusR', 'bonusR', NULL, 'bonusR', NULL, '口径：发放赠金总额 ÷ 投注总额 × 100%。
+备注：业务参考区间 2.5% – 5%。'),
+    ('ngr', NULL, NULL, NULL, 'ngr_baseline', '口径：GGR − 发放赠金总额。
+备注：UDS 不返回，后端相减（overview.subtract：ggr − bonus）；不取旧 ngr_net 口径。跌幅基准由 UDS 按每小时 NGR 取中位数。'),
+    ('login', 'login_player_cnt', 'login_player_cnt', NULL, NULL, '口径：完成登录的去重会员数；按小时／日去重，跨时段不可相加。
+备注：不上指标墙，仅在指标汇总的列选择器里；不参与告警。'),
+    ('depU', 'dep_users_hour', 'dep_users_day', NULL, NULL, '口径：有成功存款的去重会员数；按小时／日去重。
+备注：ARPPU 的分母，不单独展示。'),
+    ('ftdAmt', 'ftd_amount', NULL, 'ftd_amount', NULL, '口径：首笔存款金额加总。
+备注：首存 ARPPU 的分子，不单独展示。'),
+    ('pay', NULL, NULL, NULL, NULL, '口径：派彩金额 = 投注总额 + 玩家输赢（win_los_amt）。
+备注：UDS 没有派彩字段，后端相加（overview.add：bet + winLoss，winLoss 取金额数据集 win_los_amt）；GGR 的减数，不单独展示。'),
+    ('dOk', 'dep_ok', NULL, 'dep_ok', NULL, '口径：成功的存款订单笔数。
+备注：存款成功率的分子；存提差、平均到帐时间的最小样本量。'),
+    ('dTry', 'dep_try', NULL, 'dep_try', NULL, '口径：存款总尝试笔数（发起的存款订单数）。
+备注：存款成功率的分母和最小样本量。'),
+    ('wOk', 'wd_ok', NULL, 'wd_ok', NULL, '口径：成功的提款订单笔数。
+备注：出款成功率的分子；平均出款时间的最小样本量。'),
+    ('wTry', 'wd_try', NULL, 'wd_try', NULL, '口径：提款总尝试笔数（发起的提款订单数）。
+备注：出款成功率的分母和最小样本量。')
+  ) AS v(metric_code, hour_field, day_field, amount_field, baseline_field, remark)
+ WHERE c.metric_code = v.metric_code
+   AND c.uds_hour_field IS NULL AND c.uds_day_field IS NULL
+   AND c.uds_amount_field IS NULL AND c.uds_baseline_field IS NULL;
+
+-- 5. 口径：只改还不是「口径：」开头的行（后台维护过的不覆盖）
+UPDATE dashboard_metric_card c
+   SET remark = v.remark, update_by = 'admin', update_time = CURRENT_TIMESTAMP
+  FROM (VALUES
+    ('reg', 'reg', NULL, 'reg', 'reg_baseline', '口径：完成会员注册的人数，按注册时间（IST）归入所属小时。'),
+    ('ftd', 'ftd', NULL, 'ftd', 'ftd_baseline', '口径：完成生涯首笔存款的人数，按首笔存款成功时间（IST）归入所属小时。'),
+    ('ftdr', 'ftdr', NULL, 'ftdr', NULL, '口径：首存人数 ÷ 注册人数 × 100%。
+备注：UDS 直接提供比率；判定引擎在检测周期大于 1 小时时按 Σ首存人数 ÷ Σ注册人数 重算。'),
+    ('ftdA', 'ftdA', NULL, 'ftdA', 'ftdA_baseline', '口径：首存总金额 ÷ 首存人数。
+备注：UDS 直接提供；检测周期大于 1 小时时按 Σ首存总金额 ÷ Σ首存人数 重算。'),
+    ('dep', 'dep', NULL, 'dep', 'dep_baseline', '口径：所有会员成功存款金额加总（站点币种主单位）。'),
+    ('wd', 'wd', NULL, 'wd', 'wd_baseline', '口径：所有会员成功提款金额加总（站点币种主单位）。'),
+    ('net', NULL, NULL, NULL, NULL, '口径：存款总额 − 提款总额，可为负。
+备注：UDS 不返回，后端相减（dashboard.gateway.uds.overview.subtract：dep − wd）；任一为空则为空。'),
+    ('arppu', 'arppu_hour', 'arppu_day', NULL, 'arppu_hour_baseline', '口径：存款总额 ÷ 去重存款人数；按小时／日去重，仅支持查看单日数据。
+备注：小时取 arppu_hour，整日取 arppu_day；跨多日区间不出值。'),
+    ('turnX', 'turnX', NULL, 'turnX', NULL, '口径：投注总额 ÷ 存款总额。
+备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
+    ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
+备注：UDS 比率为 0～1，页面 ×100。'),
+    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
+    ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
+备注：UDS 比率为 0～1，页面 ×100。'),
+    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
+    ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
+备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),
+    ('bet', 'bet', NULL, 'bet', 'bet_baseline', '口径：所有投注金额加总。'),
+    ('ggr', 'ggr', NULL, 'ggr', 'ggr_baseline', '口径：0 − 玩家输赢（win loss amount），即投注总额 − 派彩金额。
+备注：UDS 直接提供 ggr。'),
+    ('killR', 'killR', NULL, 'killR', NULL, '口径：GGR ÷ 投注总额 × 100%。
+备注：业务参考区间 3% – 6%。'),
+    ('bonus', 'bonus', NULL, 'bonus', 'bonus_baseline', '口径：各赠金项目实际发放金额加总。
+备注：运营总览排行榜按赠金项目拆分展示。'),
+    ('bonusR', 'bonusR', NULL, 'bonusR', NULL, '口径：发放赠金总额 ÷ 投注总额 × 100%。
+备注：业务参考区间 2.5% – 5%。'),
+    ('ngr', NULL, NULL, NULL, 'ngr_baseline', '口径：GGR − 发放赠金总额。
+备注：UDS 不返回，后端相减（overview.subtract：ggr − bonus）；不取旧 ngr_net 口径。跌幅基准由 UDS 按每小时 NGR 取中位数。'),
+    ('login', 'login_player_cnt', 'login_player_cnt', NULL, NULL, '口径：完成登录的去重会员数；按小时／日去重，跨时段不可相加。
+备注：不上指标墙，仅在指标汇总的列选择器里；不参与告警。'),
+    ('depU', 'dep_users_hour', 'dep_users_day', NULL, NULL, '口径：有成功存款的去重会员数；按小时／日去重。
+备注：ARPPU 的分母，不单独展示。'),
+    ('ftdAmt', 'ftd_amount', NULL, 'ftd_amount', NULL, '口径：首笔存款金额加总。
+备注：首存 ARPPU 的分子，不单独展示。'),
+    ('pay', NULL, NULL, NULL, NULL, '口径：派彩金额 = 投注总额 + 玩家输赢（win_los_amt）。
+备注：UDS 没有派彩字段，后端相加（overview.add：bet + winLoss，winLoss 取金额数据集 win_los_amt）；GGR 的减数，不单独展示。'),
+    ('dOk', 'dep_ok', NULL, 'dep_ok', NULL, '口径：成功的存款订单笔数。
+备注：存款成功率的分子；存提差、平均到帐时间的最小样本量。'),
+    ('dTry', 'dep_try', NULL, 'dep_try', NULL, '口径：存款总尝试笔数（发起的存款订单数）。
+备注：存款成功率的分母和最小样本量。'),
+    ('wOk', 'wd_ok', NULL, 'wd_ok', NULL, '口径：成功的提款订单笔数。
+备注：出款成功率的分子；平均出款时间的最小样本量。'),
+    ('wTry', 'wd_try', NULL, 'wd_try', NULL, '口径：提款总尝试笔数（发起的提款订单数）。
+备注：出款成功率的分母和最小样本量。')
+  ) AS v(metric_code, hour_field, day_field, amount_field, baseline_field, remark)
+ WHERE c.metric_code = v.metric_code
+   AND (c.remark IS NULL OR c.remark NOT LIKE '口径：%');
+
+COMMENT ON COLUMN dashboard_metric_card.source_table       IS 'UDS 上游原始表（UDS 数据集由哪张表加工而来，待 UDS 提供）；仅作记录，取数不读';
+COMMENT ON COLUMN dashboard_metric_card.source_field       IS 'UDS 上游原始字段（与 source_table 成对，待 UDS 提供）；仅作记录，取数不读';
+COMMENT ON COLUMN dashboard_metric_card.uds_hour_field     IS 'dashboard_overview_hour_v2 里的字段（小时行）；与 dashboard.gateway.uds.datasets.overview_hour.metrics 一致，取数以 yml 为准';
+COMMENT ON COLUMN dashboard_metric_card.uds_day_field      IS 'dashboard_overview_day_v2 里的字段（整日去重人数类）；与 datasets.overview_day.metrics 一致';
+COMMENT ON COLUMN dashboard_metric_card.uds_amount_field   IS 'dashboard_overview_amount_v2 里的字段（金额 / 普通比率的日、周序列与区间值）；与 datasets.overview_amount.metrics 一致';
+COMMENT ON COLUMN dashboard_metric_card.uds_baseline_field IS '跌幅基准列（dashboard_overview_hour_v2，近 4 周同星期同小时中位数）；与 monitor.engine.baseline-fields 一致';
+COMMENT ON COLUMN dashboard_metric_card.remark             IS '业务口径与备注：第一行「口径：…」，其后「备注：…」；后台「指标管理」维护，运营总览的 ⓘ 文案仍取代码 OverviewMetricText';
+
+COMMIT;
+
+-- 执行后核对：28 行；口径全部以「口径：」开头；取数字段与 yml 一致（net、ngr、pay 由后端组装，没有 UDS 字段）
+SELECT metric_code, uds_hour_field, uds_day_field, uds_amount_field, uds_baseline_field,
+       source_table, source_field, split_part(remark, E'\n', 1) AS definition
+  FROM dashboard_metric_card ORDER BY show_as_card DESC, sort_no;
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE remark LIKE '口径：%') AS with_definition,
+       count(*) FILTER (WHERE source_table IS NOT NULL) AS with_upstream
+  FROM dashboard_metric_card;
+
+-- 回滚（恢复到执行前；新增的 4 列保留为空即可，不影响取数）：
+-- BEGIN;
+-- UPDATE dashboard_metric_card c
+--    SET source_table = b.source_table, source_field = b.source_field, remark = b.remark,
+--        uds_hour_field = NULL, uds_day_field = NULL, uds_amount_field = NULL, uds_baseline_field = NULL,
+--        update_by = b.update_by, update_time = b.update_time
+--   FROM dashboard_metric_card_bak_20261026 b WHERE b.metric_code = c.metric_code;
+-- COMMIT;
+
+
+
+-- ############################################################################
+-- ## 13. add_metric_manage_menu_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 系统管理 · 指标管理：菜单与按钮权限（2026-10-26）· PostgreSQL（dashboard_db）
+--
+-- 页面维护 dashboard_metric_card 的口径与取数说明（不改运营总览、指标汇总的取数）：
+--   system:metric:list    指标管理页面（查看）
+--   system:metric:add     登记新指标（仅登记：不上卡、不进页面、不能建告警规则）
+--   system:metric:edit    修改口径与取数说明；仅登记的指标还能改名称、分组、格式
+--   system:metric:remove  删除仅登记、且没有被页面 / 告警规则 / 其他指标引用的指标
+-- 授给超级管理员角色（role_id = 1）。可重复执行。
+-- 执行：psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f sql/add_metric_manage_menu_postgresql.sql
+-- ============================================================================
+
+BEGIN;
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '指标管理', 1, 12, 'metric', 'system/metric/index', '', '',
+       1, 0, 'C', '0', '0', 'system:metric:list', 'chart', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '指标口径与取数方式（dashboard_metric_card）'
+WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:metric:list');
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '登记指标', p.menu_id, 1, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:metric:add', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '登记新指标（仅登记，不接入取数）'
+FROM sys_menu p
+WHERE p.perms = 'system:metric:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:metric:add');
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '修改指标', p.menu_id, 2, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:metric:edit', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '修改口径与取数说明'
+FROM sys_menu p
+WHERE p.perms = 'system:metric:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:metric:edit');
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '删除指标', p.menu_id, 3, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:metric:remove', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '删除仅登记且没有被引用的指标'
+FROM sys_menu p
+WHERE p.perms = 'system:metric:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:metric:remove');
+
+INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
+SELECT m.menu_id, v.locale, v.menu_name, v.remark
+FROM sys_menu m
+JOIN (VALUES
+    ('system:metric:list',   'zh-CN', '指标管理', '指标口径与取数方式'),
+    ('system:metric:list',   'zh-TW', '指標管理', '指標口徑與取數方式'),
+    ('system:metric:list',   'en-US', 'Metrics', 'Metric definitions and data sources'),
+    ('system:metric:add',    'zh-CN', '登记指标', '登记新指标（仅登记，不接入取数）'),
+    ('system:metric:add',    'zh-TW', '登記指標', '登記新指標（僅登記，不接入取數）'),
+    ('system:metric:add',    'en-US', 'Register Metric', 'Register a metric (record only, not fetched)'),
+    ('system:metric:edit',   'zh-CN', '修改指标', '修改口径与取数说明'),
+    ('system:metric:edit',   'zh-TW', '修改指標', '修改口徑與取數說明'),
+    ('system:metric:edit',   'en-US', 'Edit Metric', 'Edit definitions and data source notes'),
+    ('system:metric:remove', 'zh-CN', '删除指标', '删除仅登记且没有被引用的指标'),
+    ('system:metric:remove', 'zh-TW', '刪除指標', '刪除僅登記且沒有被引用的指標'),
+    ('system:metric:remove', 'en-US', 'Delete Metric', 'Delete registered, unreferenced metrics')
+) AS v(perms, locale, menu_name, remark) ON v.perms = m.perms
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale
+);
+
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 1, m.menu_id
+FROM sys_menu m
+WHERE m.perms IN ('system:metric:list', 'system:metric:add', 'system:metric:edit', 'system:metric:remove')
+  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+
+COMMIT;
+
+-- 执行后应有 4 行：1 个菜单 + 3 个按钮；重新登录后台后「系统管理」下出现「指标管理」
+SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms LIKE 'system:metric:%' ORDER BY menu_id;
+
+
+
+-- ############################################################################
+-- ## 14. add_monitor_rule_test_permission_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 管理后台 · 监控规则「手动触发测试告警」按钮权限 monitor:rule:test（dashboard_db）。可重复执行。
+--
+-- 接口：POST /monitor/rules/{ruleId}/test-alert（站点取请求头 X-Site-Code）
+-- 挂在「系统管理 · 通知模板」菜单下（页面入口在通知模板页），默认只给超级管理员角色（role_id = 1）。
+-- 依赖：已执行 add_monitor_notify_template_postgresql.sql（通知模板菜单 system:notifyTpl:list）。
+-- 测试群 chat_id 配在环境变量 MONITOR_TEST_CHAT_ID（/etc/fivetech.env），不配时接口返回「未配置測試群」。
+-- ============================================================================
+
+BEGIN;
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '手动触发测试告警', p.menu_id, 2, '', '', '', '',
+       1, 0, 'F', '0', '0', 'monitor:rule:test', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '取规则最近一个周期的真实数据，发一条【測試】告警到 MONITOR_TEST_CHAT_ID 测试群'
+FROM sys_menu p
+WHERE p.perms = 'system:notifyTpl:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'monitor:rule:test');
+
+INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
+SELECT m.menu_id, v.locale, v.menu_name, v.remark
+FROM sys_menu m
+JOIN (VALUES
+    ('zh-CN', '手动触发测试告警', '发一条【测试】告警到测试群'),
+    ('zh-TW', '手動觸發測試告警', '發一條【測試】告警到測試群'),
+    ('en-US', 'Trigger Test Alert', 'Send a [TEST] alert to the test chat')
+) AS v(locale, menu_name, remark) ON TRUE
+WHERE m.perms = 'monitor:rule:test'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
+
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 1, m.menu_id
+FROM sys_menu m
+WHERE m.perms = 'monitor:rule:test'
+  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+
+COMMIT;
+
+-- 应返回 1 行（父菜单为「通知模板」）；为 0 行说明还没执行 add_monitor_notify_template_postgresql.sql
+SELECT m.menu_id, m.menu_name, m.perms, p.menu_name AS parent
+  FROM sys_menu m JOIN sys_menu p ON p.menu_id = m.parent_id
+ WHERE m.perms = 'monitor:rule:test';
+
+
+
+-- ############################################################################
 -- ## 汇总自检（只查询）
 -- ############################################################################
 
@@ -919,8 +1328,15 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = current_sc
 SELECT count(*) FILTER (WHERE monitorable) AS monitorable, count(*) FILTER (WHERE gauge_min IS NOT NULL) AS gauge FROM dashboard_metric_card;
 -- 应含 muted、paused
 SELECT pg_get_constraintdef(oid) AS notify_check FROM pg_constraint WHERE conname = 'ck_monitor_event_notify';
--- 菜单：监控管理 8 行 + 站点管理 2 行 + 通知模板 2 行
+-- 菜单：监控管理 8 行 + 站点管理 2 行 + 通知模板 2 行 + 手动触发 1 行 + 指标管理 4 行
 SELECT menu_id, menu_name, parent_id, perms FROM sys_menu
- WHERE menu_id BETWEEN 160 AND 167 OR perms LIKE 'system:site:%' OR perms LIKE 'system:notifyTpl:%' ORDER BY menu_id;
+ WHERE menu_id BETWEEN 160 AND 167 OR perms LIKE 'system:site:%' OR perms LIKE 'system:notifyTpl:%'
+    OR perms = 'monitor:rule:test' OR perms LIKE 'system:metric:%' ORDER BY menu_id;
+-- 卡片图形不再有 BAR：0
+SELECT count(*) AS bar_left FROM dashboard_metric_card WHERE chart_type = 'BAR';
+-- 指标字典：28 行全部有「口径：」，UDS 字段已填（net / ngr / pay 由后端组装，没有字段）
+SELECT count(*) AS total, count(*) FILTER (WHERE remark LIKE '口径：%') AS with_definition,
+       count(*) FILTER (WHERE coalesce(uds_hour_field, uds_day_field, uds_amount_field) IS NOT NULL) AS with_uds_field
+  FROM dashboard_metric_card;
 -- sys_role.site_code 存在
 SELECT column_name FROM information_schema.columns WHERE table_name = 'sys_role' AND column_name = 'site_code';

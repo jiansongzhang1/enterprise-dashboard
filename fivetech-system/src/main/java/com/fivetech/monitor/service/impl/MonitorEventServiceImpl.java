@@ -170,7 +170,7 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         vo.setRuleCode(MonitorRuleServiceImpl.ruleCode(e.getRuleNo()));
         vo.setRuleDeleted(e.isRuleDeleted());
         vo.setMetricCode(e.getMetricCode());
-        vo.setMetricName(e.getMetricName());
+        vo.setMetricName(com.fivetech.monitor.service.MonitorText.metricName(e.getMetricCode(), e.getMetricName()));
         vo.setUnit(MonitorRuleServiceImpl.unit(e.getValueFormat()));
         vo.setLevel(e.getLevel());
         vo.setEscalated(e.isEscalated());

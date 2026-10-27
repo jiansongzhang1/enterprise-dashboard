@@ -58,6 +58,7 @@ class SiteSettingServiceTest
         assertEquals("uWin", in.getSiteName());
         assertEquals("包網A", in.getPackageNetwork());
         assertEquals(5, in.getNextRuleNo());
+        assertEquals("SITE-IN", in.getUdsSite(), "默认站点也有 X-Uds-Site");
         SiteSettingVO j = list.get(1);
         assertEquals("SITE-B", j.getUdsSite());
         assertNull(j.getPackageNetwork(), "还没有设置行");

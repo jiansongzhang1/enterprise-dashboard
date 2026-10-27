@@ -15,7 +15,7 @@ public final class SiteContext
 {
     private static final ThreadLocal<String> CODE = new ThreadLocal<>();
 
-    /** 该站点在 UDS 的站点标识（请求头 X-Uds-Site，如 SITE-B）；默认（已上线的老）站点为空，不发这个头 */
+    /** 该站点在 UDS 的站点标识（请求头 X-Uds-Site，如 SITE-IN / SITE-B）；每次请求 UDS 都带，没有上下文时 UdsClient 回退到默认站点 */
     private static final ThreadLocal<String> UDS_SITE = new ThreadLocal<>();
 
     private SiteContext()

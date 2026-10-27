@@ -54,6 +54,7 @@ import com.fivetech.monitor.mapper.MonitorLarkChatMapper;
 import com.fivetech.monitor.mapper.MonitorMetaMapper;
 import com.fivetech.monitor.mapper.MonitorRuleMapper;
 import com.fivetech.monitor.mapper.MonitorSiteMapper;
+import com.fivetech.monitor.service.MonitorText;
 import com.fivetech.monitor.service.IMonitorRuleService;
 import com.fivetech.monitor.service.MonitorCacheKeys;
 import com.fivetech.monitor.service.MonitorRuleValidator;
@@ -148,7 +149,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         fillRuleVO(vo, rule);
         MinSampleVO minSample = new MinSampleVO();
         minSample.setKey(rule.getMinSampleKey());
-        minSample.setLabel(rule.getMinSampleLabel());
+        minSample.setLabel(MonitorText.sampleLabel(rule.getMinSampleKey(), rule.getMinSampleLabel()));
         minSample.setValue(num(rule.getMinSampleValue()));
         vo.setMinSample(minSample);
         vo.setCreateBy(emailOr(rule.getCreateByEmail(), rule.getCreateBy()));
@@ -169,12 +170,12 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         {
             MonitorMetricVO vo = new MonitorMetricVO();
             vo.setMetricCode(m.getMetricCode());
-            vo.setMetricName(m.getMetricName());
+            vo.setMetricName(MonitorText.metricName(m.getMetricCode(), m.getMetricName()));
             vo.setUnit(unit(m.getValueFormat()));
             vo.setJudgeType(m.getJudgeType());
             MinSampleVO minSample = new MinSampleVO();
             minSample.setKey(m.getMinSampleKey());
-            minSample.setLabel(m.getMinSampleLabel());
+            minSample.setLabel(MonitorText.sampleLabel(m.getMinSampleKey(), m.getMinSampleLabel()));
             minSample.setDefaultValue(num(m.getMinSampleDefault() == null ? BigDecimal.ZERO : m.getMinSampleDefault()));
             vo.setMinSample(minSample);
             vo.setAllowNegative(m.isAllowNegative());
@@ -546,7 +547,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         vo.setRuleNo(rule.getRuleNo());
         vo.setRuleCode(ruleCode(rule.getRuleNo()));
         vo.setMetricCode(rule.getMetricCode());
-        vo.setMetricName(rule.getMetricName());
+        vo.setMetricName(MonitorText.metricName(rule.getMetricCode(), rule.getMetricName()));
         vo.setUnit(unit(rule.getValueFormat()));
         vo.setJudgeType(rule.getJudgeType());
         vo.setWarn(ThresholdVO.of(num(rule.getWarnLow()), num(rule.getWarnHigh())));

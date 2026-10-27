@@ -20,6 +20,9 @@ public class DashboardProperties
     /** 默认站点编码 */
     private String defaultSite = "SITE-IN";
 
+    /** 默认站点在 UDS 的站点标识（X-Uds-Site）；为空用默认站点编码 */
+    private String defaultUdsSite;
+
     /** 站点显示名（导出文件「導出說明」的站点写作「{siteName} · {siteCode}」） */
     private String siteName = "uWin";
 
@@ -338,11 +341,33 @@ public class DashboardProperties
         return timezone == null || timezone.trim().isEmpty() ? "Asia/Kolkata" : timezone.trim();
     }
 
-    /** 站点在 UDS 的站点标识（X-Uds-Site）；默认站点返回 null，不发这个头 */
+    /**
+     * 站点在 UDS 的站点标识（请求头 X-Uds-Site，每次请求都带）：
+     * 默认站点（或没有站点上下文）取 {@code default-uds-site}，没配用默认站点编码；
+     * 其他站点取 {@code sites[].uds-site}，没配用站点编码；未配置的站点返回 null。
+     */
     public String udsSite(String code)
     {
+        if (code == null || code.trim().isEmpty() || code.trim().equalsIgnoreCase(defaultSite))
+        {
+            return defaultUdsSite == null || defaultUdsSite.trim().isEmpty() ? defaultSite : defaultUdsSite.trim();
+        }
         Site site = findSite(code);
-        return site == null ? null : site.getUdsSite();
+        if (site == null)
+        {
+            return null;
+        }
+        return site.getUdsSite() == null || site.getUdsSite().trim().isEmpty() ? site.getCode() : site.getUdsSite().trim();
+    }
+
+    public String getDefaultUdsSite()
+    {
+        return defaultUdsSite;
+    }
+
+    public void setDefaultUdsSite(String defaultUdsSite)
+    {
+        this.defaultUdsSite = defaultUdsSite;
     }
 
     private Site findSite(String code)

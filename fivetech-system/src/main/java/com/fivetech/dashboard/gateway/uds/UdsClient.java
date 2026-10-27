@@ -39,9 +39,12 @@ public class UdsClient
 
     private final HttpClient httpClient;
 
-    public UdsClient(UdsProperties properties, ObjectMapper objectMapper)
+    private final com.fivetech.dashboard.config.DashboardProperties dashboard;
+
+    public UdsClient(UdsProperties properties, ObjectMapper objectMapper, com.fivetech.dashboard.config.DashboardProperties dashboard)
     {
         this.properties = properties;
+        this.dashboard = dashboard;
         this.objectMapper = objectMapper;
         HttpClient.Builder builder = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(Math.max(1, properties.getConnectTimeoutSeconds())));
@@ -641,8 +644,9 @@ public class UdsClient
         // 经 8443 mTLS 网关时身份由客户端证书决定，网关会忽略这些头，带上也无害。配置为空的不发
         header(builder, "X-Uds-Principal", properties.getPrincipal());
         header(builder, "X-Uds-Tenant", properties.getTenant());
-        // 多站点（与 UDS 约定）：新站点加 X-Uds-Site（如 SITE-B）；已上线的老站点不带这个头，行为与原来完全一致
-        header(builder, "X-Uds-Site", com.fivetech.common.utils.SiteContext.udsSite());
+        // 多站点（与 UDS 约定）：每次请求都带 X-Uds-Site（默认站点也带，如 SITE-IN）
+        header(builder, "X-Uds-Site", siteHeader(com.fivetech.common.utils.SiteContext.code(),
+            com.fivetech.common.utils.SiteContext.udsSite(), dashboard));
         header(builder, "X-Uds-Roles", properties.getRoles());
         header(builder, "X-Uds-Merchant-Codes", properties.getMerchantCodes());
         // X-Request-Id 每次调用唯一（联调手册第 3 节）：一个页面请求会打出多次 UDS 调用，
@@ -651,6 +655,20 @@ public class UdsClient
         String prefix = StringUtils.isEmpty(traceId) ? TraceIdUtils.generate() : traceId;
         builder.header("X-Request-Id", prefix + "-" + Long.toHexString(REQUEST_SEQ.incrementAndGet()));
         return builder;
+    }
+
+    /**
+     * X-Uds-Site 的值：有站点上下文用上下文里的；没有（定时任务等没走拦截器的线程）按站点编码解析，
+     * 连站点编码也没有时用默认站点。包内可见供测试。
+     */
+    static String siteHeader(String contextCode, String contextUdsSite,
+            com.fivetech.dashboard.config.DashboardProperties dashboard)
+    {
+        if (StringUtils.isNotEmpty(contextUdsSite))
+        {
+            return contextUdsSite.trim();
+        }
+        return dashboard == null ? null : dashboard.udsSite(contextCode);
     }
 
     private static void header(HttpRequest.Builder builder, String name, String value)

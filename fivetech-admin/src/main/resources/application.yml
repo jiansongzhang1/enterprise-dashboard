@@ -145,11 +145,14 @@ notification:
 dashboard:
   # 默认站点，一期单站点
   default-site: ${DASHBOARD_SITE:SITE-IN}
+  # 默认站点在 UDS 的站点标识（X-Uds-Site），每次请求都带；为空用 default-site
+  default-uds-site: ${DASHBOARD_DEFAULT_UDS_SITE:SITE-IN}
   # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
   site-name: ${DASHBOARD_SITE_NAME:uWin}
   # 默认站点之外的其他站点（多站点一期）。前端在请求头 X-Site-Code 里带站点编码，不带 = 默认站点；
   # 未配置的站点、或用户在该站点没有角色时返回 403。站点权限在「角色管理」里给角色选站点（sys_role.site_code）。
-  # uds-site：调 UDS 时加请求头 X-Uds-Site（与 UDS 约定）；默认站点（老站点）不带这个头。租户 X-Uds-Tenant 各站点相同。
+  # uds-site：调 UDS 时每次都带请求头 X-Uds-Site（与 UDS 约定），没配用站点编码；默认站点用下面的 default-uds-site。
+  # 租户 X-Uds-Tenant 各站点相同。
   # 时区、币种、上线日一期与默认站点共用
   sites:
     - code: ${DASHBOARD_SITE_JITO_CODE:JITO}

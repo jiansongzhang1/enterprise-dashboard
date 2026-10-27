@@ -65,7 +65,7 @@ public class MonitorMessageBuilder
         String fmt = rule.getValueFormat();
         boolean drop = JudgeRule.DROP.equals(judge.getJudgeType());
         v.put("site", dashboard.siteName(rule.getSiteCode()));
-        v.put("metric", StringUtils.isEmpty(rule.getMetricName()) ? rule.getMetricCode() : rule.getMetricName());
+        v.put("metric", com.fivetech.monitor.service.MonitorText.metricName(rule.getMetricCode(), rule.getMetricName()));
         v.put("level", "嚴重");
         BigDecimal[] last = recent == null || recent.isEmpty() ? null : recent.get(recent.size() - 1);
         v.put("currentValue", last == null || last[0] == null ? "" : display(fmt, last[0]));

@@ -132,7 +132,7 @@ public class MonitorOverviewService
         item.setLevel(e.getLevel());
         item.setEscalated(e.isEscalated());
         item.setMetricCode(e.getMetricCode());
-        item.setMetricName(e.getMetricName());
+        item.setMetricName(MonitorText.metricName(e.getMetricCode(), e.getMetricName()));
         item.setRuleCode(e.getRuleNo() == null ? null : String.format("R-%03d", e.getRuleNo()));
         item.setJudgeValue(new MonitorAnomalyItemVO.JudgeValue(
             MonitorMessageBuilder.windowText(window.size(), judge.getPeriodHours(), windowFrom, windowTo),
