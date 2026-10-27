@@ -1,0 +1,16 @@
+# ---------- Maven 构建输出（mvn package / IDE 编译生成，不提交） ----------
+target/
+
+# ---------- IDE ----------
+.idea/
+*.iml
+.vscode/
+
+# ---------- macOS ----------
+.DS_Store
+
+# ---------- 本地临时文件 ----------
+_wt_main.tgz
+_rmtest/
+logs/
+*.log
