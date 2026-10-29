@@ -35,6 +35,19 @@ public class MonitorCardRule
     private LocalDateTime eventTriggerHour;
     private LocalDateTime eventLastPeriodEnd;
 
+    /** 异常中事件触发时的规则快照（JSON）；原因句按它写，与提醒条一致（MON-19） */
+    private String eventRuleSnapshot;
+
+    public String getEventRuleSnapshot()
+    {
+        return eventRuleSnapshot;
+    }
+
+    public void setEventRuleSnapshot(String eventRuleSnapshot)
+    {
+        this.eventRuleSnapshot = eventRuleSnapshot;
+    }
+
     public Long getRuleId() { return ruleId; }
     public void setRuleId(Long ruleId) { this.ruleId = ruleId; }
     public Integer getRuleNo() { return ruleNo; }

@@ -25,7 +25,7 @@ import com.fivetech.monitor.engine.judge.MonitorJudge;
  * 【uWin】Yata 告警 · 嚴重
  * 指標：存款成功率 81.33%
  * 判定：低於嚴重閾值 90.00% · R-001
- * 時間：2026-10-22 14:00（IST）
+ * 時間：2026-10-22 14:00
  * 負責人：zhang@yata.demo
  * </pre>
  * 格式见 FY-30「四、页面与交互」（「查看監控詳情」深链接一期不做）；同一事件只在新触发严重、注意升级为严重时各发一次，不重复提醒（R2）。
@@ -56,7 +56,7 @@ public class MonitorMessageBuilder
      *
      * @param trigger 事件的触发周期起点（FY-30「時間」行；升级而来的严重也写原始触发周期）
      * @param recent  判定窗口内各周期的 [值, 基准]（时间正序，含本周期）
-     * @param now     生成消息的时间（IST）
+     * @param now     生成消息的时间（站点时区；调用方用 {@link DashboardProperties#toSiteTime} 换算）
      */
     public java.util.Map<String, String> alertValues(MonitorEngineRule rule, JudgeRule judge, boolean escalated,
             LocalDateTime trigger, List<BigDecimal[]> recent, LocalDateTime now)
@@ -70,6 +70,7 @@ public class MonitorMessageBuilder
         BigDecimal[] last = recent == null || recent.isEmpty() ? null : recent.get(recent.size() - 1);
         v.put("currentValue", last == null || last[0] == null ? "" : display(fmt, last[0]));
         v.put("judgeText", judgeText(fmt, judge, escalated));
+        // trigger 是数据小时，本来就是站点时间；2026-10-29 起不写时区
         v.put("triggerTime", triggerTime(trigger, judge.getPeriodHours()));
         v.put("ruleCode", String.format(Locale.ROOT, "R-%03d", rule.getRuleNo() == null ? 0 : rule.getRuleNo()));
         v.put("owner", StringUtils.isEmpty(rule.getOwnerEmail()) ? "" : rule.getOwnerEmail());
@@ -80,13 +81,21 @@ public class MonitorMessageBuilder
         v.put("warnLine", judge.hasWarn() ? lineSpec(fmt, judge, judge.getWarnLow(), judge.getWarnHigh()) : "");
         v.put("critLine", lineSpec(fmt, judge, judge.getCritLow(), judge.getCritHigh()));
         int p = judge.getPeriodHours();
-        v.put("periodText", (p <= 1 ? "每小時" : "每 " + p + " 小時") + " · 連續 " + judge.getDurationCount() + " 次");
+        // 原型 y12durTxt：每小时「每小時 · 連續 2 小時」，多小时周期「每 4 小時 · 連續 2 次」
+        v.put("periodText", p <= 1 ? "每小時 · 連續 " + judge.getDurationCount() + " 小時"
+            : "每 " + p + " 小時 · 連續 " + judge.getDurationCount() + " 次");
         Integer esc = judge.getEscalateHours();
         v.put("escalateHours", esc == null || esc <= 0 ? "" : String.valueOf(esc));
         String url = properties.getEngine().getEventPageUrl();
         v.put("eventUrl", StringUtils.isEmpty(url) ? "" : url.trim());
         v.put("sentAt", now == null ? "" : now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
         return v;
+    }
+
+    /** 统计时区的「现在」换成站点时区（Lark 消息「生成时间」sentAt 用）；时区来自站点表，内存里，不查库 */
+    public LocalDateTime siteTime(String siteCode, LocalDateTime statNow)
+    {
+        return dashboard == null ? statNow : dashboard.toSiteTime(siteCode, statNow);
     }
 
     /**
@@ -123,8 +132,8 @@ public class MonitorMessageBuilder
     }
 
     /**
-     * FY-30「時間」行：触发周期的开始时刻。每小时「2026-10-22 14:00（IST）」；多小时周期写时段
-     * 「2026-10-22 00:00 – 12:00（IST）」；24 小时周期「2026-10-22 全天」。
+     * FY-30「時間」行：触发周期的开始时刻（站点时间，不写时区）。每小时「2026-10-22 14:00」；多小时周期写时段
+     * 「2026-10-22 00:00 – 12:00」；24 小时周期「2026-10-22 全天」。
      */
     public static String triggerTime(LocalDateTime trigger, int periodHours)
     {
@@ -139,14 +148,14 @@ public class MonitorMessageBuilder
         }
         if (periodHours <= 1)
         {
-            return day + " " + trigger.format(HM) + "（IST）";
+            return day + " " + trigger.format(HM);
         }
         LocalDateTime end = trigger.plusHours(periodHours);
         String e = end.toLocalTime().equals(java.time.LocalTime.MIDNIGHT) ? "24:00" : end.format(HM);
-        return day + " " + trigger.format(HM) + " – " + e + "（IST）";
+        return day + " " + trigger.format(HM) + " – " + e;
     }
 
-    /** 判定线的写法：下限「< 95.00%」、上限「> 5.0 分鐘」、区间「2.00% – 8.00%」、跌幅「跌幅 ≥ 20%」；线没设为空串 */
+    /** 判定线的写法：下限「< 95.00%」、上限「> 5.0 min」、区间「2.00% – 8.00%」、跌幅「跌幅 ≥ 20%」；线没设为空串 */
     static String lineSpec(String fmt, JudgeRule judge, BigDecimal low, BigDecimal high)
     {
         switch (judge.getJudgeType())
@@ -257,7 +266,28 @@ public class MonitorMessageBuilder
      */
     public String valueText(String valueFormat, JudgeRule judge, String level, boolean escalated, List<BigDecimal[]> recent)
     {
+        return valueText(valueFormat, judge, level, escalated, recent, false);
+    }
+
+    /**
+     * 指标卡 alert.reasonValue（原型 ytagParts 第 2 行，MON-22）：窗口 + 值，区间用紧凑写法「近 2 小時 83.60–84.20%」；
+     * 跌幅类写「較基準跌 12.4–13.1%」，每小时检测时省略「近 N 小時」（多小时周期的时段照写）。
+     *
+     * @param window {@link #windowText} 的结果
+     */
+    public String cardValueText(String valueFormat, JudgeRule judge, String level, boolean escalated, List<BigDecimal[]> recent,
+            String window)
+    {
+        String value = compact(valueText(valueFormat, judge, level, escalated, recent, true));
+        boolean dropHourly = JudgeRule.DROP.equals(judge.getJudgeType()) && judge.getPeriodHours() <= 1;
+        return dropHourly || StringUtils.isEmpty(window) ? value : window + " " + value;
+    }
+
+    private String valueText(String valueFormat, JudgeRule judge, String level, boolean escalated, List<BigDecimal[]> recent,
+            boolean card)
+    {
         boolean drop = JudgeRule.DROP.equals(judge.getJudgeType());
+        String dropWord = card ? "較基準跌 " : "較基準下跌 ";
         List<BigDecimal> values = new java.util.ArrayList<>();
         for (BigDecimal[] p : recent)
         {
@@ -269,7 +299,7 @@ public class MonitorMessageBuilder
         }
         if (values.isEmpty())
         {
-            return drop ? "較基準下跌 —" : "—";
+            return drop ? dropWord + "—" : "—";
         }
         if (JudgeRule.BAND.equals(judge.getJudgeType()))
         {
@@ -292,7 +322,7 @@ public class MonitorMessageBuilder
         BigDecimal max = values.stream().max(BigDecimal::compareTo).get();
         String a = drop ? pct1(min) : format(valueFormat, min);
         String b = drop ? pct1(max) : format(valueFormat, max);
-        return (drop ? "較基準下跌 " : "") + (min.compareTo(max) == 0 ? a : a + " – " + b);
+        return (drop ? dropWord : "") + (min.compareTo(max) == 0 ? a : a + " – " + b);
     }
 
     /** 卡片 alert.deviation 的计算结果 */
@@ -318,7 +348,7 @@ public class MonitorMessageBuilder
      * 某个周期离线多远（卡片 alert.deviation / recent[].deviation）：
      * <ul>
      *   <li>下限：值 − 线（负数 = 低于线）「低於嚴重線 6.40%」</li>
-     *   <li>上限：值 − 线（正数 = 高于线）「高於嚴重線 3.0 分鐘」</li>
+     *   <li>上限：值 − 线（正数 = 高于线）「高於嚴重線 3.0 min」</li>
      *   <li>区间：超出一侧到边界的距离，低于下限为负、高于上限为正，区间内为 0「高於嚴重區間上限 1.10%」</li>
      *   <li>跌幅：实际跌幅 − 阈值「跌幅超過嚴重線 5.0%」</li>
      *   <li>未越线：距对照线还有多远「距注意線還有 2.10%」</li>
@@ -427,7 +457,7 @@ public class MonitorMessageBuilder
         return v.setScale(scale, RoundingMode.HALF_UP).toPlainString();
     }
 
-    /** 对照线文案（judgeLine.text / alert.reasonLine）：「低於嚴重線 90.00%」 */
+    /** 对照线文案（提醒条 judgeLine.text、Lark reasonLine）：「低於嚴重線 90.00%」「超出嚴重區間 5.00× – 30.00×」；跌幅「超過嚴重線 60%」（原型 reasonBase） */
     public String lineText(String valueFormat, JudgeRule judge, String level, boolean escalated)
     {
         String fmt = valueFormat;
@@ -444,11 +474,48 @@ public class MonitorMessageBuilder
             case JudgeRule.BAND:
                 return "超出" + line + "區間 " + format(fmt, low) + " – " + format(fmt, high);
             case JudgeRule.DROP:
-                return "跌幅超過" + line + "線 " + plain(low) + "%";
+                return "超過" + line + "線 " + plain(low) + "%";
             default:
                 return "";
         }
     }
+
+    /**
+     * 指标卡 alert.reasonLine（原型 ytagParts 第 1 行，MON-22）：{@link #lineText} 的紧凑写法，
+     * 「低於嚴重線 90.00%」「高於注意線 5.0 min」「超出嚴重區間 5.00–30.00×」；跌幅「超過嚴重線 60%」。
+     */
+    public String cardLineText(String valueFormat, JudgeRule judge, String level, boolean escalated)
+    {
+        return compact(lineText(valueFormat, judge, level, escalated));
+    }
+
+    /**
+     * 原型 util.js y02cmp：区间压成紧凑写法，「36.8% – 37.5%」→「36.8–37.5%」，「5.00× – 30.00×」→「5.00–30.00×」，
+     * 「20.5 min – 21.1 min」→「20.5–21.1 min」；两端单位不同时各自保留；右端为负数时不压缩。
+     */
+    static String compact(String s)
+    {
+        if (s == null)
+        {
+            return null;
+        }
+        java.util.regex.Matcher m = COMPACT.matcher(s);
+        StringBuilder sb = new StringBuilder();
+        while (m.find())
+        {
+            String a = m.group(1);
+            String ua = m.group(2) == null ? "" : m.group(2);
+            String b = m.group(3);
+            String ub = m.group(4) == null ? "" : m.group(4);
+            String r = b.startsWith("\u2212") ? m.group(0) : ua.equals(ub) ? a + "–" + b + ub : a + ua + "–" + b + ub;
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(r));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    private static final java.util.regex.Pattern COMPACT = java.util.regex.Pattern.compile(
+            "(\u2212?₹?[\\d.,]+[KM]?)(%|×|pt| min)? – (\u2212?₹?[\\d.,]+[KM]?)(%|×|pt| min)?");
 
     /**
      * 异常事件列表「判定基準」列（原型 evBaseTxt），每段一个字符串，前端用「 · 」连接、每段不折行：
@@ -457,7 +524,7 @@ public class MonitorMessageBuilder
      *       严重且不是升级来的对照严重线，其余对照注意线（没有注意线时用严重线）。</li>
      *   <li>跌幅：两段「基準 ₹40,000」「較基準下跌 12.4%」（基准和实际跌幅，不是跌幅阈值）；没有基准时为空列表。</li>
      * </ul>
-     * 数值格式与原型表格一致：百分比 2 位、分钟 1 位 + min、倍数 2 位 + x、金额和人数 ≥ 100 万用 M。
+     * 数值格式与原型表格一致：百分比 2 位、分钟 1 位 + min、倍数 2 位 + ×、金额和人数 ≥ 100 万用 M。
      */
     public List<String> judgeBasisParts(String valueFormat, JudgeRule judge, String level, boolean escalated,
             BigDecimal currentValue, BigDecimal baseline)
@@ -503,9 +570,10 @@ public class MonitorMessageBuilder
             case "MIN":
                 return v.setScale(1, RoundingMode.HALF_UP).toPlainString() + " min";
             case "MULTIPLE":
-                return v.setScale(2, RoundingMode.HALF_UP).toPlainString() + "x";
+                return v.setScale(2, RoundingMode.HALF_UP).toPlainString() + "×";
             default:
-                String sign = v.signum() < 0 ? "-" : "";
+                // 负号用「−」（U+2212），写在 ₹ 前面（FY-30 指标名称与数值格式）
+                String sign = v.signum() < 0 ? "\u2212" : "";
                 String money = "MONEY".equals(f) ? "₹" : "";
                 BigDecimal a = v.abs();
                 if (a.compareTo(BigDecimal.valueOf(99_950_000L)) >= 0)
@@ -534,6 +602,16 @@ public class MonitorMessageBuilder
     public static String durationTip(String status, boolean ruleDeleted, LocalDateTime start, LocalDateTime end,
             LocalDateTime stoppedAt)
     {
+        return durationTip(status, ruleDeleted, null, start, end, stoppedAt);
+    }
+
+    /**
+     * @param stopReason pause / delete / update；update = 修改了阈值、检测周期或注意升级（MON-28 / MON-29），
+     *                   悬停「10:40 規則修改，之後按新規則重新判定」；老数据为 null 时按 ruleDeleted 写删除 / 暂停
+     */
+    public static String durationTip(String status, boolean ruleDeleted, String stopReason, LocalDateTime start,
+            LocalDateTime end, LocalDateTime stoppedAt)
+    {
         if (start == null)
         {
             return "";
@@ -541,12 +619,15 @@ public class MonitorMessageBuilder
         String a = start.format(MDHM);
         if ("stopped".equals(status))
         {
+            boolean updated = "update".equals(stopReason);
+            String what = updated ? "修改" : ruleDeleted || "delete".equals(stopReason) ? "刪除" : "暫停";
+            String after = updated ? "，之後按新規則重新判定" : "，之後不再判定";
             if (stoppedAt == null)
             {
-                return a + " 起；規則" + (ruleDeleted ? "刪除" : "暫停") + "，之後不再判定";
+                return a + " 起；規則" + what + after;
             }
             String at = stoppedAt.toLocalDate().equals(start.toLocalDate()) ? stoppedAt.format(HM) : stoppedAt.format(MDHM);
-            return a + " 起；" + at + " 規則" + (ruleDeleted ? "刪除" : "暫停") + "，之後不再判定";
+            return a + " 起；" + at + " 規則" + what + after;
         }
         if ("resolved".equals(status) && end != null)
         {
@@ -561,7 +642,7 @@ public class MonitorMessageBuilder
         return sameDay ? start.format(HM) : start.format(MDHM);
     }
 
-    /** 按指标格式显示：百分比 2 位 + %，分钟 1 位，倍数 2 位 + x，金额 ₹ + 千分位 2 位，人数 / 笔数取整 */
+    /** 按指标格式显示（同原型 util.js fmt）：百分比 2 位 + %，分钟 1 位 + min，倍数 2 位 + ×，金额同 {@link #display}，人数 / 笔数取整 */
     static String format(String valueFormat, BigDecimal v)
     {
         if (v == null)
@@ -574,11 +655,12 @@ public class MonitorMessageBuilder
             case "PCT":
                 return v.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
             case "MIN":
-                return v.setScale(1, RoundingMode.HALF_UP).toPlainString() + " 分鐘";
+                return v.setScale(1, RoundingMode.HALF_UP).toPlainString() + " min";
             case "MULTIPLE":
-                return v.setScale(2, RoundingMode.HALF_UP).toPlainString() + "x";
+                return v.setScale(2, RoundingMode.HALF_UP).toPlainString() + "×";
             case "MONEY":
-                return (v.signum() < 0 ? "-₹" : "₹") + new DecimalFormat("#,##0.00").format(v.abs());
+                // 金额与运营总览、Lark 消息同一写法：₹ 千分位整数，≥ 1,000,000 缩写为 M（MON-20）
+                return display(valueFormat, v);
             case "INT":
                 return new DecimalFormat("#,##0").format(v.setScale(0, RoundingMode.HALF_UP));
             default:

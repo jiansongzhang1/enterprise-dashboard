@@ -16,6 +16,9 @@ public class MonitorSiteSetting
 
     private Integer nextRuleNo;
 
+    /** 站点列表的排序号（从小到大）；不是站点的设置行也有，但列表里排在最后 */
+    private Integer sortNo;
+
     private String updateBy;
 
     private LocalDateTime updateTime;
@@ -48,6 +51,16 @@ public class MonitorSiteSetting
     public void setNextRuleNo(Integer nextRuleNo)
     {
         this.nextRuleNo = nextRuleNo;
+    }
+
+    public Integer getSortNo()
+    {
+        return sortNo;
+    }
+
+    public void setSortNo(Integer sortNo)
+    {
+        this.sortNo = sortNo;
     }
 
     public String getUpdateBy()

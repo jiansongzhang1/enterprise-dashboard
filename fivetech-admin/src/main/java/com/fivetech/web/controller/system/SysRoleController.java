@@ -181,12 +181,11 @@ public class SysRoleController extends BaseController
     @GetMapping("/siteOptions")
     public AjaxResult siteOptions()
     {
+        // 按创建先后（与登录可切换的站点、站点管理同一顺序）
         java.util.List<java.util.Map<String, String>> list = new java.util.ArrayList<>();
-        list.add(java.util.Map.of("code", dashboardProperties.getDefaultSite(),
-            "name", dashboardProperties.siteName(dashboardProperties.getDefaultSite())));
-        for (com.fivetech.dashboard.config.DashboardProperties.Site site : dashboardProperties.getSites())
+        for (String code : dashboardProperties.allSiteCodes())
         {
-            list.add(java.util.Map.of("code", site.getCode(), "name", dashboardProperties.siteName(site.getCode())));
+            list.add(java.util.Map.of("code", code, "name", dashboardProperties.siteName(code)));
         }
         return success(list);
     }

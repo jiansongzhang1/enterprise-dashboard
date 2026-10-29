@@ -214,7 +214,20 @@ public class MonitorOverviewService
 
         boolean hasEvent = r.getEventId() != null && r.getEventLevel() != null;
         boolean escalated = hasEvent && Boolean.TRUE.equals(r.getEventEscalated());
-        List<Map<String, Object>> window = windowPeriods(r.getRecentPeriods(), judge.getDurationCount());
+        // 有异常中事件：原因句、判定线按事件快照写，与提醒条、事件列表同一句话（MON-19）；没有事件按当前规则
+        JudgeRule text = judge;
+        if (hasEvent && StringUtils.isNotEmpty(r.getEventRuleSnapshot()))
+        {
+            try
+            {
+                text = judgeRuleOf(r.getEventRuleSnapshot());
+            }
+            catch (RuntimeException ex)
+            {
+                log.warn("[monitor] 事件规则快照解析失败，原因句按当前规则 eventId={}：{}", r.getEventId(), ex.getMessage());
+            }
+        }
+        List<Map<String, Object>> window = windowPeriods(r.getRecentPeriods(), text.getDurationCount());
         boolean drop = JudgeRule.DROP.equals(r.getJudgeType());
 
         List<MetricAlertVO.RecentVO> recent = new ArrayList<>();
@@ -235,7 +248,7 @@ public class MonitorOverviewService
             item.setEscalated(periodEscalated);
             if (!Levels.SKIP.equals(level))
             {
-                MonitorMessageBuilder.Deviation d = messages.deviation(fmt, judge, level, periodEscalated, value, baseline);
+                MonitorMessageBuilder.Deviation d = messages.deviation(fmt, text, level, periodEscalated, value, baseline);
                 item.setDeviation(d == null ? null : d.getValue());
                 lastJudged = p;
             }
@@ -257,25 +270,27 @@ public class MonitorOverviewService
                 LocalDateTime end = r.getEventLastPeriodEnd();
                 alert.setDurationHours(end == null ? null : Math.max(0, ChronoUnit.HOURS.between(start, end)));
             }
-            alert.setReasonLine(messages.lineText(fmt, judge, r.getEventLevel(), escalated));
+            alert.setReasonLine(messages.cardLineText(fmt, text, r.getEventLevel(), escalated));
         }
         else
         {
-            String last = window.isEmpty() ? null : String.valueOf(window.get(window.size() - 1).get("level"));
+            // 没有事件：状态看最新一个周期（未判定 → 样本不足），原因句仍取最近已判定的窗口
+            String last = com.fivetech.monitor.engine.MonitorPeriods.lastLevel(allPeriods(r.getRecentPeriods()));
             alert.setState(last == null || Levels.SKIP.equals(last) || "null".equals(last)
                 ? MetricAlertVO.STATE_INSUFFICIENT_SAMPLE : MetricAlertVO.STATE_OK);
         }
         if (!window.isEmpty())
         {
+            // 原型 ytagParts（MON-22）：「近 2 小時 83.60–84.20%」；跌幅类「較基準跌 100.0%」不写近 N 小時
             LocalDateTime from = time(window.get(0).get("from"));
             LocalDateTime to = time(window.get(window.size() - 1).get("to"));
-            alert.setReasonValue(MonitorMessageBuilder.windowText(window.size(), judge.getPeriodHours(), from, to) + " "
-                + messages.valueText(fmt, judge, hasEvent ? r.getEventLevel() : Levels.WARN, escalated, values));
+            alert.setReasonValue(messages.cardValueText(fmt, text, hasEvent ? r.getEventLevel() : Levels.WARN, escalated, values,
+                MonitorMessageBuilder.windowText(window.size(), text.getPeriodHours(), from, to)));
         }
         if (lastJudged != null)
         {
             String level = String.valueOf(lastJudged.get("level"));
-            MonitorMessageBuilder.Deviation d = messages.deviation(fmt, judge, level, escalated,
+            MonitorMessageBuilder.Deviation d = messages.deviation(fmt, text, level, escalated,
                 decimal(lastJudged.get("value")), decimal(lastJudged.get("baseline")));
             if (d != null)
             {
@@ -368,9 +383,17 @@ public class MonitorOverviewService
             escalate == null ? null : intOf(escalate, 0), decimal(m.get("minSample")), false);
     }
 
-    /** 判定窗口：recent_periods 的最后 durationCount 个周期（时间正序） */
-    @SuppressWarnings("unchecked")
+    /**
+     * 判定窗口：recent_periods 里最近 durationCount 个已判定的周期（时间正序）。
+     * 最新周期未判定时停在上一次有效判定，原因句不出现「—」（FY-23 R15 / MON-18）。
+     */
     private List<Map<String, Object>> windowPeriods(String recentPeriods, int durationCount)
+    {
+        return com.fivetech.monitor.engine.MonitorPeriods.window(allPeriods(recentPeriods), durationCount);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> allPeriods(String recentPeriods)
     {
         List<Map<String, Object>> all = new ArrayList<>();
         if (StringUtils.isEmpty(recentPeriods))
@@ -384,8 +407,7 @@ public class MonitorOverviewService
                 all.add((Map<String, Object>) o);
             }
         }
-        int n = Math.max(1, durationCount);
-        return all.size() <= n ? all : new ArrayList<>(all.subList(all.size() - n, all.size()));
+        return all;
     }
 
     private static BigDecimal decimal(Object o)

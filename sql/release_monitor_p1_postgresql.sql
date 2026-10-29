@@ -1,7 +1,7 @@
 -- ============================================================================
--- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-27（10-23 版 + ⑪～⑭）
+-- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-27（10-23 版 + ⑪～⑰）
 --
--- 由以下 14 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
+-- 由以下 17 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
 --   ① alter_sys_role_site                 sys_role.site_code（新 JAR 启动前必须有）
 --   ② alter_metric_card_monitor           指标监控属性；删除 dashboard_metric_card 4 个旧告警字段（需审批、先备份）
 --   ③ monitor_schema                      7 张 monitor 表 + SITE-IN 站点设置
@@ -16,6 +16,9 @@
 --   ⑫ alter_metric_card_dictionary        指标口径与 UDS 取数字段收口到 dashboard_metric_card（2026-10-26，只改表不改取数）
 --   ⑬ add_metric_manage_menu              菜单「系统管理 · 指标管理」system:metric:*
 --   ⑭ add_monitor_rule_test_permission    按钮「手动触发测试告警」monitor:rule:test（挂在通知模板下，必须在 ⑧ 之后）
+--   ⑮ alter_monitor_sample_bet_users      区间类样本量改为投注人数 active（2026-10-27 MON-34）
+--   ⑯ fix_monitor_event_level_peak        到过严重的事件等级改回严重（2026-10-27 MON-01，新 jar 上线后执行）
+--   ⑰ alter_monitor_event_stop_reason     事件停止原因 stop_reason（2026-10-27 MON-28 / MON-29，新 jar 启动前执行）
 --
 -- 执行方式（用 psql，不要用 DBeaver 等图形客户端整段执行）：
 --   psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f release_monitor_p1_postgresql.sql
@@ -167,10 +170,10 @@ UPDATE dashboard_metric_card AS c
     -- 上限
     ('dT',     'hi',   'dOk',   20,      FALSE),  -- 平均到帐时间：存款成功笔数 ≥ 20（R-002）
     ('wT',     'hi',   'wOk',   15,      FALSE),  -- 平均出款时间：提款成功笔数 ≥ 15（R-004）
-    -- 区间（投注人数 betU 尚未入本表，见下方说明）
-    ('killR',  'band', 'betU',  50,      FALSE),  -- 平均杀率（R-005）
-    ('bonusR', 'band', 'betU',  50,      FALSE),  -- 赠金比（R-006）
-    ('turnX',  'band', 'betU',  50,      FALSE),  -- 流水倍数（R-007）
+    -- 区间：样本量看投注人数 = 活跃人数 active（有投注行为的去重会员数，原型 MINNL「投注人數」；2026-10-27 MON-34）
+    ('killR',  'band', 'active',  50,      FALSE),  -- 平均杀率（R-005）
+    ('bonusR', 'band', 'active',  50,      FALSE),  -- 赠金比（R-006）
+    ('turnX',  'band', 'active',  50,      FALSE),  -- 流水倍数（R-007）
     -- 跌幅
     ('reg',    'drop', 'base',  15,      FALSE),  -- 注册人数：基准 ≥ 15 人（R-012）
     ('ftd',    'drop', 'base',  5,       FALSE),  -- 首存人数：基准 ≥ 5 人
@@ -188,7 +191,7 @@ UPDATE dashboard_metric_card AS c
 
 -- 说明：
 -- 1. 区间类的样本量口径是「投注人数」（需求文档 R-005～R-007），本表目前没有这个原子量，
---    暂记为 betU。判定引擎上线前需与 UDS 确认字段，并补一行 betU（show_as_card = FALSE）。
+--    用 active（活跃人数 = 有投注行为的去重会员数，与原型一致；2026-10-27 起，原来记为 betU，UDS 没有该字段，样本量不生效）。
 -- 2. 默认样本量来自需求文档预置规则与原型；量级较小的站点在新建 / 预置规则时自行调整，
 --    这里只是新建规则表单的默认值，不影响已建规则。
 
@@ -1315,6 +1318,103 @@ COMMIT;
 SELECT m.menu_id, m.menu_name, m.perms, p.menu_name AS parent
   FROM sys_menu m JOIN sys_menu p ON p.menu_id = m.parent_id
  WHERE m.perms = 'monitor:rule:test';
+
+
+
+-- ############################################################################
+-- ## 15. alter_monitor_sample_bet_users_postgresql.sql（2026-10-27 V0.2 测试问题修复）
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 区间类指标的最小样本量改为投注人数（活跃人数 active）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- MON-34：平均杀率 killR、赠金比 bonusR、流水倍数 turnX 的样本量口径原来记为 betU，UDS 没有这个字段，
+-- 取不到样本量时按「样本足够」处理，最小样本量（默认 50）完全不生效，凌晨一两个人的小时也参与判定。
+-- 原型（Yata-V0.2 MINNL）这三个指标的样本量用 active「投注人數」：活跃人数的口径就是有投注行为的去重会员数。
+-- 本脚本：指标配置 + 已建规则一起改成 active；后端同时改为取不到样本量 = 样本不足、不判定。
+-- 已建规则的最小样本量数值不变（默认 50）。
+-- ============================================================================
+BEGIN;
+
+UPDATE dashboard_metric_card
+   SET min_sample_key = 'active'
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX')
+   AND min_sample_key = 'betU';
+
+UPDATE monitor_rule
+   SET min_sample_key = 'active'
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX')
+   AND min_sample_key = 'betU';
+
+COMMIT;
+
+-- 自检：应都为 active
+SELECT metric_code, min_sample_key, min_sample_default FROM dashboard_metric_card WHERE metric_code IN ('killR', 'bonusR', 'turnX') ORDER BY 1;
+SELECT site_code, rule_no, metric_code, min_sample_key, min_sample_value FROM monitor_rule
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX') AND del_flag = '0' ORDER BY 1, 2;
+
+
+
+-- ############################################################################
+-- ## 16. fix_monitor_event_level_peak_postgresql.sql（2026-10-27 V0.2 测试问题修复）
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 修正已被「降级」的事件等级（MON-01 / MON-04）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- 修复前，事件到过严重后只要有一个周期回到注意范围，monitor_event.level 就被改成 WARN（peak_level 仍记着 CRIT）。
+-- 新代码只升不降；本脚本把历史数据改回：到过严重的事件 level = CRIT。
+-- 判定基准（threshold.against）、提醒条、指标卡都按 level 显示，随之恢复为严重线。
+-- 不改 escalated、通知记录和处理状态；当前值（MON-03）历史上已被覆盖为最近一期，无法还原，新事件起按触发周期记录。
+-- 和新 jar 一起执行（先停旧 jar 的判定也可以不停：旧 jar 可能再次降级，新 jar 上线后再执行一次即可）。
+-- ============================================================================
+BEGIN;
+
+-- 执行前看一下会改哪些
+SELECT event_id, site_code, rule_id, metric_code, level, peak_level, status, trigger_hour
+  FROM monitor_event
+ WHERE event_type = 'alert' AND peak_level = 'CRIT' AND level <> 'CRIT'
+ ORDER BY site_code, event_id;
+
+UPDATE monitor_event
+   SET level = 'CRIT',
+       update_time = (now() AT TIME ZONE 'Asia/Kolkata')
+ WHERE event_type = 'alert' AND peak_level = 'CRIT' AND level <> 'CRIT';
+
+COMMIT;
+
+
+
+-- ############################################################################
+-- ## 17. alter_monitor_event_stop_reason_postgresql.sql（2026-10-27 MON-28 / MON-29）
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 事件停止原因（MON-28 / MON-29）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- 2026-10-27 与产品确认：修改规则的阈值、检测周期或注意升级后，异常中的事件标为「已停止判定」，按新规则重新起算
+-- （不再按新阈值直接结束旧事件、也不会按新升级时长立刻升级推送）。
+-- monitor_event + stop_reason：pause 暂停 / delete 删除 / update 修改判定条件；之前停止的事件为空（悬停按暂停 / 删除写）。
+-- 「持續」列悬停：update →「10:40 規則修改，之後按新規則重新判定」。
+-- ============================================================================
+BEGIN;
+
+ALTER TABLE monitor_event ADD COLUMN IF NOT EXISTS stop_reason VARCHAR(10);
+ALTER TABLE monitor_event DROP CONSTRAINT IF EXISTS ck_monitor_event_stop_reason;
+ALTER TABLE monitor_event ADD CONSTRAINT ck_monitor_event_stop_reason
+    CHECK (stop_reason IS NULL OR stop_reason IN ('pause', 'delete', 'update'));
+COMMENT ON COLUMN monitor_event.stop_reason IS '事件停止原因（status = stopped）：pause 规则暂停 / delete 规则删除 / update 修改了阈值、检测周期或注意升级';
+
+-- 老数据：规则已删除的补 delete，其余已停止的补 pause
+UPDATE monitor_event e
+   SET stop_reason = CASE WHEN r.del_flag = '2' THEN 'delete' ELSE 'pause' END
+  FROM monitor_rule r
+ WHERE r.rule_id = e.rule_id AND r.site_code = e.site_code
+   AND e.status = 'stopped' AND e.stop_reason IS NULL;
+
+COMMIT;
+
+SELECT stop_reason, count(*) FROM monitor_event WHERE status = 'stopped' GROUP BY 1;
 
 
 

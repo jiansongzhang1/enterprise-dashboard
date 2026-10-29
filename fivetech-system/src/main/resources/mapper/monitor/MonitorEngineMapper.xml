@@ -232,6 +232,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		</include>
 	</select>
 
+	<!-- 同一事件、同一通知类型、同一数据小时的发送记录数：严重回落注意后再次越线时按小时幂等 -->
+	<select id="countNotifyAtHour" resultType="java.lang.Integer">
+		select count(*)
+		  from monitor_notify_log n
+		 where n.event_id = #{eventId}
+		   and n.notify_type = #{notifyType}
+		   and n.data_hour = #{dataHour}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="n"/>
+		</include>
+	</select>
+
 	<insert id="insertNotifyLog" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
 		insert into monitor_notify_log (site_code, msg_type, event_id, data_hour, chat_id, platform, status, content,
 		                                retry_count, next_retry_at, create_time, template_id, template_version, notify_type)

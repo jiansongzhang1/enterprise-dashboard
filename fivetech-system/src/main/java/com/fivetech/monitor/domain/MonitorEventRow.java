@@ -73,6 +73,10 @@ public class MonitorEventRow
     public LocalDateTime getLastPeriodEnd() { return lastPeriodEnd; }
     public void setLastPeriodEnd(LocalDateTime lastPeriodEnd) { this.lastPeriodEnd = lastPeriodEnd; }
     public LocalDateTime getStoppedAt() { return stoppedAt; }
+    /** 停止原因：pause / delete / update（修改了判定条件）；老数据为 null */
+    private String stopReason;
+    public String getStopReason() { return stopReason; }
+    public void setStopReason(String stopReason) { this.stopReason = stopReason; }
     public void setStoppedAt(LocalDateTime stoppedAt) { this.stoppedAt = stoppedAt; }
     public BigDecimal getCurrentValue() { return currentValue; }
     public void setCurrentValue(BigDecimal currentValue) { this.currentValue = currentValue; }

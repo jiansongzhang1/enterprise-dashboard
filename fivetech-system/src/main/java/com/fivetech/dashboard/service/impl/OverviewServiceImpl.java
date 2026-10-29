@@ -3,7 +3,6 @@ package com.fivetech.dashboard.service.impl;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.math.BigDecimal;
@@ -136,7 +135,7 @@ public class OverviewServiceImpl implements IOverviewService
         // · 其他粒度：终点晚于当前整点时截到当前整点（未结束的小时没有数据）。
         // 当前整点不晚于起点（如 00:25 查今天，还没有任何完整小时）时不调整，避免区间为空
         Duration clampedBy = Duration.ZERO;
-        LocalDateTime currentHour = LocalDateTime.now(ZoneId.of(properties.getTimezone())).truncatedTo(ChronoUnit.HOURS);
+        LocalDateTime currentHour = LocalDateTime.now(properties.currentZone()).truncatedTo(ChronoUnit.HOURS);
         boolean endsToday = to.minusNanos(1).toLocalDate().equals(currentHour.toLocalDate());
         boolean pinToNow = granularity == Granularity.HOUR ? endsToday || to.isAfter(currentHour) : to.isAfter(currentHour);
         if (pinToNow && currentHour.isAfter(from) && !to.isEqual(currentHour))
@@ -162,8 +161,9 @@ public class OverviewServiceImpl implements IOverviewService
         
 
         // ---------- 4. 上下文 ----------
-        vo.setCurrency(properties.getCurrency());
-        vo.setTimezone(properties.getTimezone());
+        // 币种、时区按当前站点（站点表 monitor_site_setting，内存里），所有时间字段都是这个时区
+        vo.setCurrency(properties.currentCurrency());
+        vo.setTimezone(properties.currentTimezone());
         OverviewMonitoringVO monitoring = new OverviewMonitoringVO();
         // 卡片 alert：读监控模块的规则、运行状态和异常中事件；没有规则的指标为 NOT_CONFIGURED（绝不填 OK）。
         // 读取失败时全部按 NOT_CONFIGURED 处理，指标照常
@@ -200,14 +200,17 @@ public class OverviewServiceImpl implements IOverviewService
         }
 
         // ---------- 5. 取数 ----------
-        // 跨天时「仅支持单日」的指标（活跃人数、ARPPU）不去查数，但卡片照常返回、数值为 null
+        // 跨天时「仅支持单日」的指标（活跃人数、ARPPU）没有区间值：卡片数值、对比值、构成为 null；
+        // 但每个时间片（小时 / 日）本身是完整的去重口径，series / prevSeries 照常向 UDS 取每小时或每天的值
         List<String> allCodes = resolveMetricCodes(query);
         List<String> codes = dropSingleDayOnly(allCodes, from, to, vo.getCompare(), notices);
         Set<String> nullCodes = new LinkedHashSet<>(allCodes);
         nullCodes.removeAll(codes);
         // 派生指标要展开成「分子 ÷ 分母」给前端看，所以取数时把操作数一并带上。
         // 它们不进 items，只是多取几列，成本远低于前端为了展开构成再打一次请求
-        Fetched fetched = fetch(query, from, to, effective, withOperands(codes), vo, notices);
+        // 周粒度不支持这两个指标（周去重没有口径）：序列也不取，卡片提示切换为日或小时
+        List<String> seriesCodes = effective == Granularity.WEEK ? withOperands(codes) : withOperands(allCodes);
+        Fetched fetched = fetch(query, from, to, effective, withOperands(codes), seriesCodes, vo, notices);
         if (fetched != null && todayHourly)
         {
             fetched.baselines = fetchBaselines(codes, from, to, notices);
@@ -226,8 +229,12 @@ public class OverviewServiceImpl implements IOverviewService
             }
             else
             {
+                // 多站点：本站不提供的指标（UDS meta.omitted）不返回卡片，
+                // 例如请求 20 个指标、本站 8 个不提供，items 只有 12 个
+                List<String> shown = new ArrayList<>(allCodes);
+                shown.removeAll(gateway.omittedMetrics(site(query), allCodes));
                 vo.getBlocks().put(OverviewBlock.METRICS.name(),
-                    buildMetrics(query, slot, allCodes, nullCodes, fetched, alerts));
+                    buildMetrics(query, slot, shown, nullCodes, fetched, alerts));
             }
         }
         vo.setEmpty(fetched == null || fetched.isEmpty());
@@ -270,7 +277,7 @@ public class OverviewServiceImpl implements IOverviewService
     // ===================== 取数 =====================
 
     /** 一次请求取到的四组数：当期/对比期 × 序列/合计 */
-    private static final class Fetched
+    static final class Fetched
     {
         private Map<String, List<BigDecimal>> series = new LinkedHashMap<>();
 
@@ -304,9 +311,13 @@ public class OverviewServiceImpl implements IOverviewService
      * 区间去重的 active_users 严格小于各小时相加），平均耗时要按笔数加权。</p>
      *
      * <p>取数失败返回 null，由调用方降级成 blockError——一块失败不该让整页白屏。</p>
+     *
+     * @param codes       取合计（卡片数值、对比值）的指标；跨天时不含「仅支持单日」的指标
+     * @param seriesCodes 取序列（series / prevSeries）的指标；含「仅支持单日」的指标，每个时间片照常取值
      */
-    private Fetched fetch(OverviewQuery query, LocalDateTime from, LocalDateTime to,
-            Granularity granularity, List<String> codes, OverviewVO vo, List<OverviewNoticeVO> notices)
+    Fetched fetch(OverviewQuery query, LocalDateTime from, LocalDateTime to,
+            Granularity granularity, List<String> codes, List<String> seriesCodes, OverviewVO vo,
+            List<OverviewNoticeVO> notices)
     {
         try
         {
@@ -315,7 +326,7 @@ public class OverviewServiceImpl implements IOverviewService
 
             if (query.isIncludeSeries())
             {
-                result.series = gateway.querySeries(slotRequest(site, from, to, granularity, codes));
+                result.series = gateway.querySeries(slotRequest(site, from, to, granularity, seriesCodes));
             }
             result.totals = gateway.queryTotals(slotRequest(site, from, to, granularity, codes));
 
@@ -327,7 +338,7 @@ public class OverviewServiceImpl implements IOverviewService
                 if (query.isIncludeSeries())
                 {
                     result.prevSeries =
-                        gateway.querySeries(slotRequest(site, cmpFrom, cmpTo, granularity, codes));
+                        gateway.querySeries(slotRequest(site, cmpFrom, cmpTo, granularity, seriesCodes));
                 }
                 result.prevTotals =
                     gateway.queryTotals(slotRequest(site, cmpFrom, cmpTo, granularity, codes));
@@ -678,7 +689,8 @@ public class OverviewServiceImpl implements IOverviewService
     }
 
     /**
-     * @param nullCodes 本次不取数、数值一律返回 null 的指标（区间跨天时的「仅支持单日」指标）
+     * @param nullCodes 本次没有区间值的指标（区间跨天时的「仅支持单日」指标）：value / prevValue / composition 为 null，
+     *                  series / prevSeries 照常按时间片给值
      */
     private MetricsBlockVO buildMetrics(OverviewQuery query, OverviewSlotVO slot,
             List<String> codes, Set<String> nullCodes, Fetched fetched, Map<String, MetricAlertVO> alerts)
@@ -735,11 +747,9 @@ public class OverviewServiceImpl implements IOverviewService
             {
                 // series 长度必须恒等于 slot.points：前端按下标对齐 slot.labels，
                 // 短一截会让整条趋势线错位，而且不报错
-                // 不取数的指标：序列补满 null，长度仍等于 slot.points
-                card.setSeries(fitSeries(noValue ? null : normalizer.normalizeSeries(code, fetched.series.get(code)),
-                    slot.getPoints()));
-                card.setPrevSeries(fitSeries(
-                    noValue ? null : normalizer.normalizeSeries(code, fetched.prevSeries.get(code)), slot.getPoints()));
+                // 跨天的「仅支持单日」指标（noValue）：没有区间值，但每个时间片的值照常给（UDS 小时 / 日去重）
+                card.setSeries(fitSeries(normalizer.normalizeSeries(code, fetched.series.get(code)), slot.getPoints()));
+                card.setPrevSeries(fitSeries(normalizer.normalizeSeries(code, fetched.prevSeries.get(code)), slot.getPoints()));
                 // 今日 + 小时：有基准列的 11 个指标给基准线（与 series 等长，缺的小时为 null）；其他指标、其他区间为 null
                 if (fetched.todayHourly && fetched.baselines.containsKey(code))
                 {
@@ -765,6 +775,13 @@ public class OverviewServiceImpl implements IOverviewService
             }
             // 不取数的派生指标不给构成：否则会出现「分子有值、分母缺失」的半截算式
             card.setComposition(noValue ? null : buildComposition(def, fetched));
+            if (noValue)
+            {
+                // 卡片数值位置显示的大标题、提示文字（按实际返回的粒度，粒度被降级时以降级后为准）
+                String[] text = singleDayOnlyText(slot.getGranularity());
+                card.setNoValueTitle(text[0]);
+                card.setNoValueHint(text[1]);
+            }
             items.add(card);
         }
         block.setGroups(buildGroups());
@@ -808,9 +825,8 @@ public class OverviewServiceImpl implements IOverviewService
     /**
      * 区间跨天时去掉「仅支持单日」的指标（dashboard_metric_card.single_day_only = true）。
      *
-     * <p>在取数之前过滤：这些指标既不向数据平台查询，也不出现在 items 里，
-     * total / coreCount 随之减少。派生指标的操作数由 withOperands 按过滤后的列表展开，
-     * 被隐藏的指标的操作数也不会再去查。</p>
+     * <p>返回的是要取「区间值」（卡片数值、对比值）的指标：被去掉的指标不查合计，卡片照常返回、数值为 null；
+     * 序列（每小时 / 每天一个值）不受影响，照常取数（2026-10-29）。</p>
      *
      * <p>「跨天」按站点时区的自然日判断：00:00 ~ 次日 00:00 仍算单日；
      * 对比期跨天也算——否则当期有值、对比期是个跨天的错数，变化率同样没有意义。</p>
@@ -852,10 +868,27 @@ public class OverviewServiceImpl implements IOverviewService
         if (!hidden.isEmpty())
         {
             notices.add(OverviewNoticeVO.info("SINGLE_DAY_ONLY_HIDDEN",
-                String.join("、", hidden) + "僅支援單日查詢，跨天區間不提供數值",
-                "所選區間跨越多個自然日，這些指標只有按日口徑的資料，卡片照常顯示、數值為空"));
+                String.join("、", hidden) + "僅支援單日查詢，跨天區間不提供區間值",
+                "所選區間跨越多個自然日，這些指標只有按小時 / 按日去重的資料：卡片數值為空，趨勢圖照常按每個時間片顯示"));
         }
         return kept;
+    }
+
+    /**
+     * 区间跨天时「仅支持单日」指标卡的大标题、提示文字：
+     * 日「僅支援單日」/「點擊查看每日資料」；小时「僅支援單日」/「點擊查看每小時資料」；周「不支援週粒度」/「請切換為日或小時」
+     */
+    static String[] singleDayOnlyText(Granularity granularity)
+    {
+        if (granularity == Granularity.WEEK)
+        {
+            return new String[] { "不支援週粒度", "請切換為日或小時" };
+        }
+        if (granularity == Granularity.HOUR)
+        {
+            return new String[] { "僅支援單日", "點擊查看每小時資料" };
+        }
+        return new String[] { "僅支援單日", "點擊查看每日資料" };
     }
 
     /** [from, to) 是否跨越多个自然日：to 是开区间，末端回退一分钟再取日期 */

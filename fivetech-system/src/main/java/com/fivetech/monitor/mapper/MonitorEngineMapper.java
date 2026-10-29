@@ -60,5 +60,9 @@ public interface MonitorEngineMapper
     int countNotifyOfType(@Param("scope") MonitorScope scope, @Param("eventId") Long eventId,
             @Param("notifyType") String notifyType);
 
+    /** 同一事件、同一通知类型、同一数据小时的发送记录数：再次越过严重线时按小时幂等（补跑不重复发） */
+    int countNotifyAtHour(@Param("scope") MonitorScope scope, @Param("eventId") Long eventId,
+            @Param("notifyType") String notifyType, @Param("dataHour") java.time.LocalDateTime dataHour);
+
     int insertNotifyLog(MonitorNotifyRecord record);
 }

@@ -71,7 +71,8 @@ public class MonitorPreviewService
 
     static final int WINDOW_DAYS = 30;
 
-    static final int MAX_EVENTS = 50;
+    /** FY-26 R5：有效周期少于这个数时不估计 P5 / P95，只给极值 */
+    static final int MIN_ESTIMATE_PERIODS = 20;
 
     static final int RATE_PER_SECOND = 2;
 
@@ -178,34 +179,47 @@ public class MonitorPreviewService
         }
         // 平时水平：UDS 按周期统计好的四值与极值时间，时间范围 = 窗口内已结束的周期（与回测同一组周期起点）
         LocalDateTime openStart = openEventStart(scope, metric.getMetricCode());
+        // 最小样本量取表单当前值（与回测同一个值，FY-26 R1），样本量不足的周期由 UDS 排除
         MetricDistribution dist = points.isEmpty() ? null
-            : distribution(scope.getSiteCode(), metric.getMetricCode(), period, from, points.get(points.size() - 1).getFrom());
+            : distribution(scope.getSiteCode(), metric.getMetricCode(), period, from, points.get(points.size() - 1).getFrom(),
+                rule.getMinSampleValue());
         String code = metric.getMetricCode();
-        out.put("usual", usualOf(fmt, dist, v -> normalizer.normalize(code, v), openStart));
-        out.put("preview", previewOf(judge, fmt, points));
+        out.put("usual", usualOf(fmt, metric.getJudgeType(), dist, v -> normalizer.normalize(code, v), openStart));
+        out.put("preview", previewOf(judge, fmt, points, properties.getEngine().getLookbackHours()));
         return out;
     }
 
     // ------------------------------------------------------------------ usual
 
     /**
-     * 平时水平（原型 y12usual、设计文档 usual）：取 UDS metric_distribution 的结果，后端只做单位换算和格式化，不统计。
+     * 平时水平（原型 y12usual、设计文档 usual、FY-26 R1–R5 / R12）：取 UDS metric_distribution 的结果，后端只做单位换算和格式化，不统计。
      * <ul>
-     *   <li>p5 / p95 / min / max：UDS 按检测周期的周期值统计（最近排名法，不插值）；比率 ×100、时长秒 → 分钟（MetricValueNormalizer）。</li>
+     *   <li>kind = value（下限 / 上限 / 区间）：p5 / p95 / min / max 是周期原值；比率 ×100、时长秒 → 分钟（MetricValueNormalizer）。</li>
+     *   <li>kind = drop（跌幅类）：UDS 返回较基准的跌幅（基准 − 值）÷ 基准（小数，可为负），×100 后保留 1 位小数；
+     *       只用 p95（较基准跌超）和 max（最大跌幅），p5 / min 为 null。p95 ≤ 0、max ≤ 0 对应 R12 的两种写法，前端按值判断。</li>
      *   <li>min / max 的 hour：极值所在周期的起点（UDS min_at / max_at）；属于当前未恢复事件时 inOpenEvent = true。</li>
-     *   <li>跌幅类同样是周期原始值（如注册人数）的四值，不是较基准的跌幅百分比。</li>
-     *   <li>sampleHours：参与统计的有效周期数（UDS valid_point_count，字段名沿用）；skippedHours、median UDS 不提供，为 null（字段保留兼容）。</li>
-     *   <li>source = uds；status：ok / empty（窗口内没有有效周期）/ notReady（上游未就绪）/ notConfigured（未接入）。</li>
+     *   <li>sampleHours：有效周期数 n（UDS valid_point_count，已按最小样本量过滤）；empty 时为 0。</li>
+     *   <li>estimable：n ≥ 20。不足 20 时不估计（R5），p5 / p95 为 null，只给极值。</li>
+     *   <li>source = uds；status：ok / empty（n = 0，R12）/ notReady（上游未就绪）/ notConfigured（未接入）。</li>
      * </ul>
      */
-    static Map<String, Object> usualOf(String fmt, MetricDistribution d, UnaryOperator<BigDecimal> norm,
+    static Map<String, Object> usualOf(String fmt, String judgeType, MetricDistribution d, UnaryOperator<BigDecimal> norm,
             LocalDateTime openStart)
     {
+        boolean drop = JudgeRule.DROP.equals(judgeType);
         Map<String, Object> u = new LinkedHashMap<>();
         u.put("source", "uds");
         String status = d == null || !d.isConfigured() ? "notConfigured" : d.isNotReady() ? "notReady" : d.isEmpty() ? "empty" : "ok";
         u.put("status", status);
-        u.put("sampleHours", d == null ? null : d.getCount());
+        u.put("kind", drop ? "drop" : "value");
+        Integer n = d == null ? null : d.getCount();
+        if ("empty".equals(status) && n == null)
+        {
+            n = 0;
+        }
+        u.put("sampleHours", n);
+        boolean estimable = "ok".equals(status) && n != null && n >= MIN_ESTIMATE_PERIODS;
+        u.put("estimable", estimable);
         u.put("skippedHours", null);
         u.put("median", null);
         if (!"ok".equals(status))
@@ -216,16 +230,33 @@ public class MonitorPreviewService
             u.put("max", null);
             return u;
         }
-        BigDecimal p5 = round(fmt, norm.apply(d.getP5()));
-        BigDecimal p95 = round(fmt, norm.apply(d.getP95()));
-        BigDecimal minV = round(fmt, norm.apply(d.getMin()));
-        BigDecimal maxV = round(fmt, norm.apply(d.getMax()));
-        u.put("p5", p5);
-        u.put("p95", p95);
-        u.put("min", point(minV, d.getMinAt(), openStart));
-        u.put("max", point(maxV, d.getMaxAt(), openStart));
+        if (drop)
+        {
+            u.put("p5", null);
+            u.put("p95", estimable ? dropPercent(d.getP95()) : null);
+            u.put("min", null);
+            u.put("max", point(dropPercent(d.getMax()), d.getMaxAt(), openStart));
+        }
+        else
+        {
+            u.put("p5", estimable ? round(fmt, norm.apply(d.getP5())) : null);
+            u.put("p95", estimable ? round(fmt, norm.apply(d.getP95())) : null);
+            u.put("min", point(round(fmt, norm.apply(d.getMin())), d.getMinAt(), openStart));
+            u.put("max", point(round(fmt, norm.apply(d.getMax())), d.getMaxAt(), openStart));
+        }
         u.put("stale", d.isStale());
         return u;
+    }
+
+    /** 跌幅小数 → 百分数，保留 1 位（R12 按四舍五入到 0.1 后判断 ≤ 0） */
+    static BigDecimal dropPercent(BigDecimal ratio)
+    {
+        if (ratio == null)
+        {
+            return null;
+        }
+        BigDecimal r = ratio.multiply(BigDecimal.valueOf(100)).setScale(1, RoundingMode.HALF_UP);
+        return r.signum() == 0 ? BigDecimal.ZERO.setScale(1) : r;
     }
 
     private static Map<String, Object> point(BigDecimal v, LocalDateTime at, LocalDateTime openStart)
@@ -239,9 +270,11 @@ public class MonitorPreviewService
 
     /** UDS 周期值分布（Redis 缓存 10 分钟；取数失败不影响回测，平时水平返回 notReady） */
     private MetricDistribution distribution(String site, String metricCode, int period, LocalDateTime firstStart,
-            LocalDateTime lastStart)
+            LocalDateTime lastStart, BigDecimal minSample)
     {
-        String key = "monitor:dist:" + site + ":" + metricCode + ":" + period + ":" + firstStart + ":" + lastStart;
+        BigDecimal threshold = minSample == null || minSample.signum() <= 0 ? null : minSample;
+        String key = "monitor:dist:" + site + ":" + metricCode + ":" + period + ":" + firstStart + ":" + lastStart + ":"
+            + (threshold == null ? "-" : threshold.stripTrailingZeros().toPlainString());
         MetricDistribution cached = readDistCache(key);
         if (cached != null)
         {
@@ -250,7 +283,7 @@ public class MonitorPreviewService
         MetricDistribution d;
         try
         {
-            d = gateway.queryDistribution(metricCode, period, firstStart, lastStart);
+            d = gateway.queryDistribution(metricCode, period, firstStart, lastStart, threshold);
         }
         catch (RuntimeException e)
         {
@@ -350,9 +383,10 @@ public class MonitorPreviewService
 
     // ------------------------------------------------------------------ preview
 
-    private Map<String, Object> previewOf(JudgeRule judge, String fmt, List<PeriodPoint> points)
+    /** 触发回测：events 返回全部触发（按开始时间倒序，不截断），triggers 与 events 条数一致；包内可见供测试 */
+    static Map<String, Object> previewOf(JudgeRule judge, String fmt, List<PeriodPoint> points, int lookbackHours)
     {
-        JudgeResult r = MonitorJudge.judge(judge, points, null, properties.getEngine().getLookbackHours());
+        JudgeResult r = MonitorJudge.judge(judge, points, null, lookbackHours);
         int crit = 0;
         int warn = 0;
         List<Map<String, Object>> events = new ArrayList<>();
@@ -367,10 +401,6 @@ public class MonitorPreviewService
             else
             {
                 warn++;
-            }
-            if (events.size() >= MAX_EVENTS)
-            {
-                continue;
             }
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("startHour", s.getStartHour().format(MINUTE));

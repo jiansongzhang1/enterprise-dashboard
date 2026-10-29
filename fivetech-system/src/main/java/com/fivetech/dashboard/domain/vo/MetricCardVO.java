@@ -86,6 +86,15 @@ public class MetricCardVO implements Serializable
     /** 派生指标的计算构成；原子指标为 null */
     private MetricCompositionVO composition;
 
+    /**
+     * 区间跨天时「仅支持单日」的指标（活跃人数、ARPPU）没有区间值，卡片数值位置显示的大标题（灰色文字，不用数字字体）：
+     * 日、小时粒度「僅支援單日」，周粒度「不支援週粒度」；其余情况为 null
+     */
+    private String noValueTitle;
+
+    /** 同上，大标题下的提示文字：日「點擊查看每日資料」、小时「點擊查看每小時資料」、周「請切換為日或小時」；其余情况为 null */
+    private String noValueHint;
+
     private MetricAlertVO alert;
 
     /** 卡片画什么图（GAUGE / LINE）；旧前端忽略即可，缺失时按旧逻辑显示 */
@@ -302,6 +311,26 @@ public class MetricCardVO implements Serializable
     public void setMonitorSlots(List<MetricMonitorSlotVO> monitorSlots)
     {
         this.monitorSlots = monitorSlots;
+    }
+
+    public String getNoValueTitle()
+    {
+        return noValueTitle;
+    }
+
+    public void setNoValueTitle(String noValueTitle)
+    {
+        this.noValueTitle = noValueTitle;
+    }
+
+    public String getNoValueHint()
+    {
+        return noValueHint;
+    }
+
+    public void setNoValueHint(String noValueHint)
+    {
+        this.noValueHint = noValueHint;
     }
 
     public MetricCompositionVO getComposition()

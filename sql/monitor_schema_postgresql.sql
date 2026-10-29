@@ -161,10 +161,12 @@ CREATE TABLE IF NOT EXISTS monitor_event (
     handled_at      TIMESTAMP,
     handle_reset    BOOLEAN         NOT NULL DEFAULT FALSE,
     stopped_at      TIMESTAMP,
+    stop_reason     VARCHAR(10),
     create_time     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP,
     -- 2026-10-22 起数据缺失不再写事件记录，event_type 只有 alert（列保留，查询都带 event_type = 'alert'）
     CONSTRAINT ck_monitor_event_type   CHECK (event_type = 'alert'),
+    CONSTRAINT ck_monitor_event_stop_reason CHECK (stop_reason IS NULL OR stop_reason IN ('pause', 'delete', 'update')),
     -- IS NOT NULL 不能省：CHECK 遇到 NULL 结果按通过处理
     CONSTRAINT ck_monitor_event_level  CHECK (
             level IS NOT NULL AND peak_level IS NOT NULL
@@ -200,7 +202,8 @@ COMMENT ON COLUMN monitor_event.last_period_end IS '最近一次判定周期的�
 COMMENT ON COLUMN monitor_event.notify_count  IS '已成功发送通知的次数';
 COMMENT ON COLUMN monitor_event.mute_sent_at  IS 'notify_status = muted 时：压住本次发送的那次发送时间（规则 last_notified_at）';
 COMMENT ON COLUMN monitor_event.mute_hours    IS 'notify_status = muted 时：当时规则的静默时长（小时）';
-COMMENT ON COLUMN monitor_event.stopped_at    IS '规则暂停或删除、事件改为 stopped 的时间';
+COMMENT ON COLUMN monitor_event.stopped_at    IS '规则暂停、删除或修改判定条件、事件改为 stopped 的时间';
+COMMENT ON COLUMN monitor_event.stop_reason   IS '事件停止原因（status = stopped）：pause 规则暂停 / delete 规则删除 / update 修改了阈值、检测周期或注意升级';
 
 -- ---------- 6. 发送记录 ----------
 CREATE TABLE IF NOT EXISTS monitor_notify_log (

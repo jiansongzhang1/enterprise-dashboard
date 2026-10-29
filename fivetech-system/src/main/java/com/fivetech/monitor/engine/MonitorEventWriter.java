@@ -148,8 +148,9 @@ public class MonitorEventWriter
                 }
                 LocalDateTime from = hour.minusHours(period - 1L);
                 LocalDateTime to = hour.plusHours(1);
-                // 本小时缺数据：整个时段不判定；时段内其他小时缺数据由 periodBuilder 判断（取数窗口覆盖整个时段）
-                point = missing ? new PeriodPoint(from, to, null, null, null, true)
+                // 每小时检测：本小时缺数据即不判定。多小时周期（MON-10）：本小时为空也按时段重算，
+                // 时段内全部小时都没有数才算缺失（periodBuilder 判断；取数窗口覆盖整个时段）
+                point = missing && period == 1 ? new PeriodPoint(from, to, null, null, null, true)
                         : periodBuilder.build(rule, data, from, to);
                 step = MonitorJudge.step(judge, prev, point, properties.getEngine().getLookbackHours());
             }
@@ -171,11 +172,9 @@ public class MonitorEventWriter
             boolean periodEscalated = (step.getAction() == StepResult.Action.OPEN
                     || step.getAction() == StepResult.Action.UPDATE) && step.isEscalated();
             periods.add(periodJson(point, step.getLevel(), periodEscalated));
-            while (periods.size() > judge.getDurationCount())
-            {
-                periods.remove(0);
-            }
-            openEventId = applyStep(scope, rule, judge, step, point, periods, hour, now);
+            MonitorPeriods.trim(periods, judge.getDurationCount());
+            openEventId = applyStep(scope, rule, judge, step, point, periods, hour, now,
+                    MonitorJudge.reCrossedCrit(judge, prev, step));
             next = step.getNext();
         }
 
@@ -194,8 +193,11 @@ public class MonitorEventWriter
     }
 
     /** @return 处理后仍异常中的事件 id（恢复后为 null） */
+    /**
+     * @param reCrit 严重事件进行中，本周期在回落到注意之后又越过严重线：同一事件再发一次「新触发」（ALERT_NEW）
+     */
     private Long applyStep(MonitorScope scope, MonitorEngineRule rule, JudgeRule judge, StepResult step,
-            PeriodPoint point, List<Map<String, Object>> periods, LocalDateTime hour, LocalDateTime now)
+            PeriodPoint point, List<Map<String, Object>> periods, LocalDateTime hour, LocalDateTime now, boolean reCrit)
     {
         switch (step.getAction())
         {
@@ -215,7 +217,7 @@ public class MonitorEventWriter
                 e.setLastPeriodEnd(point.getTo());
                 e.setCurrentValue(point.getValue());
                 e.setBaselineValue(point.getBaseline());
-                e.setRuleSnapshot(snapshot(judge));
+                e.setRuleSnapshot(snapshot(judge, rule));
                 e.setHandleStatus("pending");
                 e.setNow(now);
                 // FY-30 R1/R2：事件一开出来就是严重 → 发一次「新触发」；注意事件不发
@@ -229,7 +231,7 @@ public class MonitorEventWriter
                 mapper.insertEvent(e);
                 if (decision == Notify.SEND)
                 {
-                    enqueue(scope, rule, judge, e, periods, hour, now);
+                    enqueue(scope, rule, judge, e, periods, hour, now, notifyType(e), e.isEscalated());
                 }
                 return e.getEventId();
             }
@@ -237,23 +239,38 @@ public class MonitorEventWriter
             {
                 MonitorEventRecord e = current(scope, rule, now);
                 String before = rule.getEventLevel();
-                e.setLevel(step.getEventLevel());
-                e.setPeakLevel(higher(rule.getEventPeakLevel(), step.getEventLevel()));
-                e.setEscalated(step.isEscalated());
+                boolean wasCrit = Levels.CRIT.equals(before);
+                // 只升不降（FY-23 R23 / MON-01）：到过严重就保持严重直到结束；已是严重时保留当初是否由注意升级而来
+                String level = Levels.higher(before, step.getEventLevel());
+                e.setLevel(level);
+                e.setPeakLevel(higher(rule.getEventPeakLevel(), level));
+                e.setEscalated(wasCrit ? Boolean.TRUE.equals(rule.getEventEscalated()) : step.isEscalated());
                 e.setLastPeriodEnd(point.getTo());
-                e.setCurrentValue(point.getValue());
-                e.setBaselineValue(point.getBaseline());
+                // 当前值、基准 = 触发周期的值（FY-23 R16 / MON-03），之后不再覆盖（updateEvent 对 null 保留库里的值）
                 // 标记已处理后由注意升为严重：自动退回未处理，保留原处理人和说明，前端提示需重新处理
-                if ("done".equals(e.getHandleStatus()) && Levels.CRIT.equals(step.getEventLevel())
+                if ("done".equals(e.getHandleStatus()) && !wasCrit && Levels.CRIT.equals(level)
                         && !Levels.CRIT.equals(rule.getEventHandledLevel()))
                 {
                     e.setHandleStatus("pending");
                     e.setHandleReset(true);
                 }
-                // FY-30 R2：未恢复期间不重复发送。只在「本周期由注意变成严重」时判断一次是否发送
-                // （注意升级 → ALERT_ESCALATED；越过严重线 → ALERT_NEW），同一事件同一类型只发一次；持续严重不再提醒
-                Notify decision = Levels.CRIT.equals(before) ? Notify.KEEP
-                        : decide(scope, rule, e, rule.getEventId(), notifyType(e), now);
+                // FY-30 R2：持续严重不重复提醒。发送时机：
+                //  ① 本周期由注意变成严重（注意升级 → ALERT_ESCALATED；越过严重线 → ALERT_NEW），同一事件同一类型一次；
+                //  ② 严重事件中途回落到注意（事件等级仍为严重，只升不降），之后再次越过严重线 → 再发一次 ALERT_NEW
+                //     （2026-10-27 与产品确认；按发生的数据小时幂等，静默期照常生效）
+                Notify decision;
+                if (!wasCrit)
+                {
+                    decision = decide(scope, rule, e, rule.getEventId(), notifyType(e), now);
+                }
+                else if (reCrit)
+                {
+                    decision = decideAgain(scope, rule, e, rule.getEventId(), hour, now);
+                }
+                else
+                {
+                    decision = Notify.KEEP;
+                }
                 if (decision == Notify.SEND)
                 {
                     e.setNotifyStatus("pending");
@@ -271,7 +288,16 @@ public class MonitorEventWriter
                 mapper.updateEvent(scope, e);
                 if (decision == Notify.SEND)
                 {
-                    enqueue(scope, rule, judge, e, periods, hour, now);
+                    if (reCrit)
+                    {
+                        // 再次越过严重线：按「新触发」发，判定行写严重线
+                        enqueue(scope, rule, judge, e, periods, hour, now,
+                                com.fivetech.monitor.domain.MonitorNotifyTemplate.ALERT_NEW, false);
+                    }
+                    else
+                    {
+                        enqueue(scope, rule, judge, e, periods, hour, now, notifyType(e), e.isEscalated());
+                    }
                 }
                 return rule.getEventId();
             }
@@ -332,6 +358,12 @@ public class MonitorEventWriter
         {
             return Notify.KEEP;
         }
+        // 同一事件只发送一次（FY-30 R2 / MON-02）：已发过「新触发」的事件不再发「注意升级」
+        if (eventId != null && com.fivetech.monitor.domain.MonitorNotifyTemplate.ALERT_ESCALATED.equals(type)
+                && mapper.countNotifyOfType(scope, eventId, com.fivetech.monitor.domain.MonitorNotifyTemplate.ALERT_NEW) > 0)
+        {
+            return Notify.KEEP;
+        }
         if (StringUtils.isEmpty(rule.getNotifyChatId()))
         {
             return Notify.UNSET;
@@ -345,16 +377,43 @@ public class MonitorEventWriter
         return Notify.SEND;
     }
 
+    /**
+     * 严重事件回落注意后再次越过严重线时是否再发（ALERT_NEW）：已处理的事件不发；同一数据小时已有记录不发（补跑幂等）；
+     * 规则没有通知群不改通知状态；距规则上次发送不足静默期 → MUTED（事件已发送过，通知状态不变）。
+     */
+    private Notify decideAgain(MonitorScope scope, MonitorEngineRule rule, MonitorEventRecord e, Long eventId,
+            LocalDateTime hour, LocalDateTime now)
+    {
+        if ("done".equals(e.getHandleStatus()) || eventId == null)
+        {
+            return Notify.KEEP;
+        }
+        if (mapper.countNotifyAtHour(scope, eventId, com.fivetech.monitor.domain.MonitorNotifyTemplate.ALERT_NEW, hour) > 0)
+        {
+            return Notify.KEEP;
+        }
+        if (StringUtils.isEmpty(rule.getNotifyChatId()))
+        {
+            return Notify.KEEP;
+        }
+        Integer mute = rule.getMuteHours();
+        if (rule.getLastNotifiedAt() != null && mute != null && mute > 0
+                && rule.getLastNotifiedAt().plusHours(mute).isAfter(now))
+        {
+            return Notify.MUTED;
+        }
+        return Notify.SEND;
+    }
+
     private void enqueue(MonitorScope scope, MonitorEngineRule rule, JudgeRule judge, MonitorEventRecord e,
-            List<Map<String, Object>> periods, LocalDateTime hour, LocalDateTime now)
+            List<Map<String, Object>> periods, LocalDateTime hour, LocalDateTime now, String type, boolean escalated)
     {
         List<BigDecimal[]> recent = new ArrayList<>();
-        for (Map<String, Object> p : periods)
+        for (Map<String, Object> p : MonitorPeriods.window(periods, judge.getDurationCount()))
         {
             recent.add(new BigDecimal[] { decimal(p.get("value")), decimal(p.get("baseline")) });
         }
         LocalDateTime trigger = e.getTriggerHour() != null ? e.getTriggerHour() : rule.getEventTriggerHour();
-        String type = notifyType(e);
         MonitorNotifyRecord n = new MonitorNotifyRecord();
         n.setSiteCode(scope.getSiteCode());
         n.setMsgType("alert");
@@ -363,7 +422,8 @@ public class MonitorEventWriter
         n.setDataHour(hour);
         n.setChatId(rule.getNotifyChatId());
         // 正文：站点专用模板 → 全站默认模板 → 内置默认模板（FY-30 格式）
-        java.util.Map<String, String> values = messages.alertValues(rule, judge, e.isEscalated(), trigger, recent, now);
+        java.util.Map<String, String> values = messages.alertValues(rule, judge, escalated, trigger, recent,
+            messages.siteTime(scope.getSiteCode(), now));
         com.fivetech.monitor.service.MonitorNotifyTemplateService.Rendered rendered = templates.render(scope.getSiteCode(), type,
                 values);
         n.setContent(rendered.getContent());
@@ -486,7 +546,7 @@ public class MonitorEventWriter
         return m;
     }
 
-    private String snapshot(JudgeRule j)
+    private String snapshot(JudgeRule j, MonitorEngineRule rule)
     {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("judgeType", j.getJudgeType());
@@ -502,6 +562,9 @@ public class MonitorEventWriter
         m.put("durationCount", j.getDurationCount());
         m.put("escalateHours", j.getEscalateHours());
         m.put("minSample", j.getMinSample());
+        // 触发时的通知群：异常事件「通知送達」按快照显示，不随之后改规则变化（FY-27 R10 / MON-32）
+        m.put("notifyChatId", rule == null ? null : rule.getNotifyChatId());
+        m.put("notifyChatName", rule == null ? null : rule.getNotifyChatName());
         return write(m);
     }
 

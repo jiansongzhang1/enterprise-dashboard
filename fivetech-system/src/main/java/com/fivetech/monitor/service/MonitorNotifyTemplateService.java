@@ -53,7 +53,7 @@ public class MonitorNotifyTemplateService
         m.put("currentValue", "81.33%");
         m.put("judgeText", "低於嚴重閾值 90.00%");
         m.put("ruleCode", "R-001");
-        m.put("triggerTime", "2026-10-22 14:00（IST）");
+        m.put("triggerTime", "2026-10-22 14:00");
         m.put("owner", "zhang@yata.demo");
         m.put("level", "嚴重");
         m.put("reason", "近 2 小時 81.33% – 84.20%，低於嚴重線 90.00%");
@@ -62,7 +62,7 @@ public class MonitorNotifyTemplateService
         m.put("baseline", "");
         m.put("warnLine", "< 95.00%");
         m.put("critLine", "< 90.00%");
-        m.put("periodText", "每小時 · 連續 2 次");
+        m.put("periodText", "每小時 · 連續 2 小時");
         m.put("escalateHours", "3");
         m.put("eventUrl", "");
         m.put("sentAt", "2026-10-22 15:05");
@@ -420,16 +420,7 @@ public class MonitorNotifyTemplateService
 
     private List<String> siteCodes()
     {
-        List<String> codes = new ArrayList<>();
-        codes.add(dashboard.getDefaultSite());
-        for (DashboardProperties.Site s : dashboard.getSites())
-        {
-            if (StringUtils.isNotEmpty(s.getCode()) && !codes.contains(s.getCode()))
-            {
-                codes.add(s.getCode());
-            }
-        }
-        return codes;
+        return dashboard.allSiteCodes();
     }
 
     private static MonitorNotifyTemplate find(List<MonitorNotifyTemplate> all, String site, String type, boolean enabledOnly)

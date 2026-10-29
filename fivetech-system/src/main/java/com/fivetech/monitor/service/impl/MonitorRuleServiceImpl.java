@@ -68,7 +68,8 @@ import com.fivetech.monitor.service.MonitorRuleValidator;
  *   <li>一个指标一条规则：先查占用给出 4801；并发新建由唯一索引 uk_monitor_rule_metric 兜底，同样转成 4801。</li>
  *   <li>规则号按站点自增：{@code monitor_site_setting.next_rule_no} 加行锁取号，删除后不复用。</li>
  *   <li>通知群直接存 Lark chat_id：必须在本站群列表缓存里且未失效；修改时原来的群已失效可以保留。</li>
- *   <li>修改只对之后的小时生效：已有事件的 rule_snapshot 不变；改了周期或持续次数时清掉运行状态，连续计数重新累计。</li>
+ *   <li>修改只对之后的小时生效：已有事件的 rule_snapshot 不变；改了阈值、检测周期或注意升级时，异常中的事件标为已停止判定
+ *       （stop_reason = update），运行状态重置按新规则重新起算；只改持续次数时清掉运行状态，连续计数重新累计、事件保持。</li>
  *   <li>暂停 / 删除：异常中的事件改为 stopped，end_hour = 本站最近一个已判定小时。</li>
  *   <li>数据库是唯一的真实来源：事务提交后才清 Redis 缓存，清失败只记日志。</li>
  * </ul>
@@ -135,6 +136,8 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
             {
                 MonitorRuleVO vo = new MonitorRuleVO();
                 fillRuleVO(vo, rule);
+                // 列表的金额单位返回 money，前端按当前站点币种显示符号（详情等其他接口不变）
+                vo.setUnit(listUnit(rule.getValueFormat()));
                 rows.add(vo);
             }
         }
@@ -337,7 +340,27 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
 
         boolean countingChanged = !Objects.equals(existing.getPeriodHours(), rule.getPeriodHours())
                 || !Objects.equals(existing.getDurationCount(), rule.getDurationCount());
-        if (countingChanged)
+        // MON-28 / MON-29（2026-10-27 产品确认）：改了阈值、检测周期或注意升级 → 异常中的事件标为「已停止判定」，
+        // 运行状态重置，按新规则从下一个结束的小时重新起算；不会因为新阈值 / 新升级时长立刻升级或推送，也不会把旧事件按新阈值结束
+        boolean judgeChanged = !sameNum(existing.getWarnLow(), rule.getWarnLow())
+                || !sameNum(existing.getWarnHigh(), rule.getWarnHigh())
+                || !sameNum(existing.getCritLow(), rule.getCritLow())
+                || !sameNum(existing.getCritHigh(), rule.getCritHigh())
+                || !Objects.equals(existing.getPeriodHours(), rule.getPeriodHours())
+                || !Objects.equals(existing.getEscalateHours(), rule.getEscalateHours());
+        if (judgeChanged)
+        {
+            stopEvents(scope, ruleId, now, STOP_UPDATE);
+            if (Boolean.TRUE.equals(existing.getEnabled()))
+            {
+                resetState(scope, ruleId, now);
+            }
+            else
+            {
+                ruleMapper.deleteRuleState(scope, ruleId);
+            }
+        }
+        else if (countingChanged)
         {
             // 改了检测周期或持续次数：连续计数清零重新累计；异常中的事件保持，下一小时按新阈值判定
             if (Boolean.TRUE.equals(existing.getEnabled()))
@@ -376,7 +399,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         requireRule(scope, ruleId);
         LocalDateTime now = now();
         ruleMapper.deleteRuleLogically(scope, ruleId, operator, now);
-        stopEvents(scope, ruleId, now);
+        stopEvents(scope, ruleId, now, STOP_DELETE);
         ruleMapper.deleteRuleState(scope, ruleId);
         evictAfterCommit(scope.getSiteCode());
     }
@@ -414,7 +437,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         }
         else
         {
-            stopEvents(scope, ruleId, now);
+            stopEvents(scope, ruleId, now, STOP_PAUSE);
             ruleMapper.deleteRuleState(scope, ruleId);
         }
     }
@@ -441,15 +464,26 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         ruleMapper.resetRuleState(scope, ruleId, now.truncatedTo(ChronoUnit.HOURS).minusHours(1), now);
     }
 
+    /** 事件停止原因（monitor_event.stop_reason） */
+    static final String STOP_PAUSE = "pause";
+    static final String STOP_DELETE = "delete";
+    static final String STOP_UPDATE = "update";
+
+    /** 数值相等（忽略 scale，90 与 90.00 视为相同）；都为空也相等 */
+    private static boolean sameNum(BigDecimal a, BigDecimal b)
+    {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
     /** 异常中的事件 → stopped，end_hour = 本站最近一个已判定小时（还没判定过时取当前整点） */
-    private void stopEvents(MonitorScope scope, Long ruleId, LocalDateTime now)
+    private void stopEvents(MonitorScope scope, Long ruleId, LocalDateTime now, String reason)
     {
         LocalDateTime endHour = siteMapper.selectLastJudgedHour(scope);
         if (endHour == null)
         {
             endHour = now.truncatedTo(ChronoUnit.HOURS);
         }
-        ruleMapper.stopOpenEvents(scope, ruleId, endHour, now);
+        ruleMapper.stopOpenEvents(scope, ruleId, endHour, now, reason);
     }
 
     /**
@@ -477,7 +511,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     {
         if (ownerUserId == null)
         {
-            errors.putIfAbsent("ownerUserId", "請選擇負責人");
+            errors.putIfAbsent("ownerUserId", "請從列表中選擇負責人（輸入郵箱搜尋）");
             return;
         }
         if (ownerUserId.equals(existingOwnerId))
@@ -637,6 +671,20 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
      */
     static String unit(String valueFormat)
     {
+        return unitOf(valueFormat, "₹");
+    }
+
+    /**
+     * GET /monitor/rules 列表 rows[].unit：金额返回 "money"（多站点币种不同，前端按当前站点配置的币种显示符号），
+     * 其余同 {@link #unit(String)}（% / x / min / 空串）
+     */
+    static String listUnit(String valueFormat)
+    {
+        return unitOf(valueFormat, "money");
+    }
+
+    private static String unitOf(String valueFormat, String money)
+    {
         if (valueFormat == null)
         {
             return "";
@@ -650,7 +698,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
             case "MIN":
                 return "min";
             case "MONEY":
-                return "₹";
+                return money;
             default:
                 return "";
         }

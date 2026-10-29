@@ -28,6 +28,9 @@ public class BreakdownResult implements Serializable
 
     private boolean ready = true;
 
+    /** 本站不提供这个数据集（UDS meta.omitted 数据集级，多站点公共契约）：200 空数据，不是故障也不是未就绪 */
+    private boolean omitted;
+
     private List<Row> rows = new ArrayList<>();
 
     /** 上游自报的水位 */
@@ -55,6 +58,21 @@ public class BreakdownResult implements Serializable
         r.configured = false;
         r.ready = false;
         return r;
+    }
+
+    /** 本站不提供（configured = true、ready = false、omitted = true） */
+    public static BreakdownResult omitted()
+    {
+        BreakdownResult r = new BreakdownResult();
+        r.configured = true;
+        r.ready = false;
+        r.omitted = true;
+        return r;
+    }
+
+    public boolean isOmitted()
+    {
+        return omitted;
     }
 
     public static BreakdownResult notReady()

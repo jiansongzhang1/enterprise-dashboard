@@ -104,7 +104,7 @@ UPDATE dashboard_metric_card c
    AND c.uds_hour_field IS NULL AND c.uds_day_field IS NULL
    AND c.uds_amount_field IS NULL AND c.uds_baseline_field IS NULL;
 
--- 5. 口径：只改还不是「口径：」开头的行（后台维护过的不覆盖）
+-- 5. 口径：只改还不是「口径：」/「口徑：」开头的行（后台维护过的、⑰ 改成繁体的都不覆盖）
 UPDATE dashboard_metric_card c
    SET remark = v.remark, update_by = 'admin', update_time = CURRENT_TIMESTAMP
   FROM (VALUES
@@ -161,7 +161,7 @@ UPDATE dashboard_metric_card c
 备注：出款成功率的分母和最小样本量。')
   ) AS v(metric_code, hour_field, day_field, amount_field, baseline_field, remark)
  WHERE c.metric_code = v.metric_code
-   AND (c.remark IS NULL OR c.remark NOT LIKE '口径：%');
+   AND (c.remark IS NULL OR (c.remark NOT LIKE '口径：%' AND c.remark NOT LIKE '口徑：%'));
 
 COMMENT ON COLUMN dashboard_metric_card.source_table       IS 'UDS 上游原始表（UDS 数据集由哪张表加工而来，待 UDS 提供）；仅作记录，取数不读';
 COMMENT ON COLUMN dashboard_metric_card.source_field       IS 'UDS 上游原始字段（与 source_table 成对，待 UDS 提供）；仅作记录，取数不读';
@@ -178,7 +178,7 @@ SELECT metric_code, uds_hour_field, uds_day_field, uds_amount_field, uds_baselin
        source_table, source_field, split_part(remark, E'\n', 1) AS definition
   FROM dashboard_metric_card ORDER BY show_as_card DESC, sort_no;
 SELECT count(*) AS total,
-       count(*) FILTER (WHERE remark LIKE '口径：%') AS with_definition,
+       count(*) FILTER (WHERE remark LIKE '口径：%' OR remark LIKE '口徑：%') AS with_definition,
        count(*) FILTER (WHERE source_table IS NOT NULL) AS with_upstream
   FROM dashboard_metric_card;
 

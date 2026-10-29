@@ -242,14 +242,14 @@ VALUES
 UPDATE dashboard_metric_card SET single_day_only = TRUE WHERE metric_code IN ('active', 'arppu');
 
 -- 监控属性：需求文档「监控预警」的 20 个可监控指标。
--- 区间类的样本量口径是投注人数，本表暂无该原子量，记为 betU，判定引擎上线前补齐
+-- 区间类的样本量口径是投注人数 = 活跃人数 active（有投注行为的去重会员数）
 UPDATE dashboard_metric_card AS c
    SET monitorable = TRUE, judge_type = v.judge_type, min_sample_key = v.min_sample_key,
        min_sample_default = v.min_sample_default, allow_negative = v.allow_negative
   FROM (VALUES
     ('dOkR','lo','dTry',30,FALSE), ('wOkR','lo','wTry',20,FALSE), ('ftdr','lo','reg',10,FALSE), ('net','lo','dOk',20,TRUE),
     ('dT','hi','dOk',20,FALSE), ('wT','hi','wOk',15,FALSE),
-    ('killR','band','betU',50,FALSE), ('bonusR','band','betU',50,FALSE), ('turnX','band','betU',50,FALSE),
+    ('killR','band','active',50,FALSE), ('bonusR','band','active',50,FALSE), ('turnX','band','active',50,FALSE),
     ('reg','drop','base',15,FALSE), ('ftd','drop','base',5,FALSE), ('ftdA','drop','ftd',3,FALSE),
     ('dep','drop','base',50000,FALSE), ('wd','drop','base',50000,FALSE), ('arppu','drop','depU',20,FALSE),
     ('active','drop','base',30,FALSE), ('bet','drop','base',100000,FALSE), ('ggr','drop','base',30000,FALSE),

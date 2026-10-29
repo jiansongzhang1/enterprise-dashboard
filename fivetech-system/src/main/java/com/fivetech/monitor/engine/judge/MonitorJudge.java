@@ -69,7 +69,8 @@ public final class MonitorJudge
             return true;
         }
         BigDecimal sample = rule.isSampleIsBaseline() ? p.getBaseline() : p.getSample();
-        return sample == null || sample.compareTo(min) >= 0;
+        // 取不到样本量（该周期没有投注人数等）按样本不足处理，不判定（FY-23 R10 / MON-34）
+        return sample != null && sample.compareTo(min) >= 0;
     }
 
     private static boolean crosses(JudgeRule rule, PeriodPoint p, BigDecimal low, BigDecimal high)
@@ -174,6 +175,43 @@ public final class MonitorJudge
         return out;
     }
 
+    /**
+     * 这一状态下的判定窗口（最近 durationCount 个越线周期）是否全为严重，即「当时越过严重线」。
+     * 事件等级只升不降后，用它判断「回落到注意之后又越过严重线」（再次发送，见 {@link #reCrossedCrit}）。
+     */
+    public static boolean windowCrit(JudgeRule rule, RunState s)
+    {
+        if (s == null)
+        {
+            return false;
+        }
+        List<String> recent = s.getRecentLevels();
+        if (recent.size() < rule.getDurationCount())
+        {
+            return false;
+        }
+        for (String l : recent)
+        {
+            if (!Levels.CRIT.equals(l))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 严重事件进行中：上一周期判定窗口已回落到注意（未越严重线），本周期又越过严重线
+     * （不是由注意升级而来）。这时同一事件再发一次通知（2026-10-27 与产品确认，静默期照常生效）。
+     *
+     * @param prev 本周期判定前的状态
+     */
+    public static boolean reCrossedCrit(JudgeRule rule, RunState prev, StepResult step)
+    {
+        return step != null && step.getAction() == StepResult.Action.UPDATE && prev != null && prev.isEventOpen()
+                && Levels.CRIT.equals(step.getEventLevel()) && !step.isEscalated() && !windowCrit(rule, prev);
+    }
+
     private static void currentLevel(JudgeRule rule, RunState s, PeriodPoint p, StepResult out)
     {
         List<String> recent = s.getRecentLevels();
@@ -237,8 +275,12 @@ public final class MonitorJudge
                     break;
                 case UPDATE:
                     open.getPointIndexes().add(i);
-                    open.setLevel(r.getEventLevel());
-                    open.setEscalated(r.isEscalated());
+                    // 只升不降（FY-23 R23）：到过严重就保持严重；已是严重时保留当初是否由注意升级而来
+                    if (!Levels.CRIT.equals(open.getLevel()))
+                    {
+                        open.setEscalated(r.isEscalated());
+                    }
+                    open.setLevel(Levels.higher(open.getLevel(), r.getEventLevel()));
                     break;
                 case RESOLVE:
                     close(rule, open, points, r.getEndHour(), false);

@@ -31,7 +31,7 @@ public final class MonitorTemplateRenderer
         m.put("currentValue", "當前值（最近一個週期），如 81.33%");
         m.put("judgeText", "判定（FY-30）：低於嚴重閾值 90.00% / 跌幅超過嚴重閾值 20% / 超出嚴重區間 2.00% – 8.00%；升級而來的寫注意閾值並加「，已升為嚴重」");
         m.put("ruleCode", "規則編號，如 R-001");
-        m.put("triggerTime", "觸發週期的開始時刻：2026-10-22 14:00（IST）；多小時週期 2026-10-22 00:00 – 12:00（IST）；24 小時 2026-10-22 全天");
+        m.put("triggerTime", "觸發週期的開始時刻（站點時間，不寫時區）：2026-10-22 14:00；多小時週期 2026-10-22 00:00 – 12:00；24 小時 2026-10-22 全天");
         m.put("owner", "負責人郵箱（純文本，不 @）");
         m.put("level", "當前等級，如 嚴重");
         m.put("reason", "原因句，如 近 2 小時 83.60% – 84.20%，低於嚴重線 90.00%");
@@ -40,10 +40,10 @@ public final class MonitorTemplateRenderer
         m.put("baseline", "最近一個週期的基準（只有跌幅類），如 ₹40,000");
         m.put("warnLine", "注意線，如 < 95.00%；沒設注意線為空");
         m.put("critLine", "嚴重線，如 < 90.00%");
-        m.put("periodText", "檢測週期與持續次數，如 每小時 · 連續 2 次");
+        m.put("periodText", "檢測週期與持續次數，如 每小時 · 連續 2 小時、每 4 小時 · 連續 2 次");
         m.put("escalateHours", "注意升級的小時數；沒設升級為空");
         m.put("eventUrl", "異常事件頁地址（MONITOR_EVENT_PAGE_URL）；沒配為空");
-        m.put("sentAt", "生成消息的時間（IST），如 2026-10-22 11:03");
+        m.put("sentAt", "生成消息的時間（站點時區），如 2026-10-22 11:03");
         PLACEHOLDERS = Collections.unmodifiableMap(m);
     }
 

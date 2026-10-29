@@ -20,7 +20,7 @@ import com.fivetech.monitor.config.MonitorProperties;
 import com.fivetech.monitor.exception.MonitorException;
 import com.fivetech.monitor.exception.MonitorFieldException;
 
-/** 系统管理 · 指标管理：只改口径与取数说明、仅登记指标的增删改、与线上配置对照（不连数据库） */
+/** 系统管理 · 指标管理：口径与取数说明、名称 / 分组 / 格式（已接入也能改，改后重载 MetricRegistry）、仅登记指标的增删改、与线上配置对照（不连数据库） */
 class MetricDictServiceTest
 {
     private final Map<String, MetricDictItem> rows = new LinkedHashMap<>();
@@ -36,6 +36,13 @@ class MetricDictServiceTest
     private MetricDictItem lastWrite;
 
     private MetricDictService service;
+
+    /** 记录重载次数；reloadFails 时模拟配置校验不通过 */
+    private int reloads;
+
+    private boolean reloadFails;
+
+    private int ruleCountForFormat;
 
     private static MetricDictItem row(String code, String status, String hour, String amount, String baseline)
     {
@@ -113,9 +120,12 @@ class MetricDictServiceTest
                             return ruleCounts;
                         case "countEvents":
                             return events;
+                        case "countRules":
+                            return ruleCountForFormat;
                         case "insertRegistered":
                         case "updateDictionary":
                         case "updateRegisteredBasic":
+                        case "updateLiveBasic":
                             lastWrite = (MetricDictItem) args[0];
                             return 1;
                         case "deleteRegistered":
@@ -146,7 +156,19 @@ class MetricDictServiceTest
         base.put("dep", "dep_baseline");
         base.put("wd", "wd_baseline");
         monitor.getEngine().setBaselineFields(base);
-        service = new MetricDictService(mapper, uds, monitor);
+        MetricRegistry registry = new MetricRegistry(null, null)
+        {
+            @Override
+            public synchronized void reload()
+            {
+                reloads++;
+                if (reloadFails)
+                {
+                    throw new IllegalStateException("分组 egX 未启用");
+                }
+            }
+        };
+        service = new MetricDictService(mapper, uds, monitor, registry);
     }
 
     private static UdsProperties.Dataset dataset(String name, String... kv)
@@ -260,19 +282,21 @@ class MetricDictServiceTest
     // ------------------------------------------------------------------ 修改
 
     @Test
-    void liveMetricOnlyDictionaryChanges()
+    void liveMetricDictionaryChanges()
     {
         MetricDictItem body = new MetricDictItem();
-        body.setMetricName("reg名");            // 与原值相同：允许（前端会带上整行）
+        body.setMetricName("reg名");            // 与原值相同（前端会带上整行）
         body.setRemark("口径：新的说明");
         body.setUdsBaselineField("reg_baseline2");
         service.update("reg", body, "ops");
         assertTrue(calls.contains("updateDictionary"));
-        assertFalse(calls.contains("updateRegisteredBasic"), "已接入的指标不改基础列");
+        assertTrue(calls.contains("updateLiveBasic"), "已接入的指标同时写名称 / 分组 / 格式");
+        assertFalse(calls.contains("updateRegisteredBasic"));
         assertEquals("口径：新的说明", lastWrite.getRemark());
         assertEquals("ops", lastWrite.getUpdateBy());
         assertEquals("reg", lastWrite.getUdsHourField(), "没传的沿用原值");
         assertEquals("reg_baseline2", lastWrite.getUdsBaselineField());
+        assertEquals(1, reloads, "保存后重载指标配置");
 
         MetricDictItem clear = new MetricDictItem();
         clear.setUdsAmountField("");
@@ -282,15 +306,82 @@ class MetricDictServiceTest
     }
 
     @Test
-    void liveMetricRejectsBasicChanges()
+    void liveMetricNameGroupFormatEditable()
+    {
+        MetricDictItem body = new MetricDictItem();
+        body.setMetricName("  註冊人數（新）  ");
+        body.setMetricNameEn("Registrations");
+        body.setGroupCode("eg1");
+        body.setValueFormat("PCT");
+        service.update("reg", body, "ops");
+        assertTrue(calls.contains("updateLiveBasic"));
+        assertEquals("註冊人數（新）", lastWrite.getMetricName(), "名称去掉首尾空白后原样保存（不转换）");
+        assertEquals("Registrations", lastWrite.getMetricNameEn());
+        assertEquals("PCT", lastWrite.getValueFormat(), "没有告警规则：格式可以改");
+        assertEquals("eg1", lastWrite.getGroupCode());
+        assertEquals(1, reloads);
+        assertTrue(calls.contains("countRules"), "改了格式要查告警规则");
+    }
+
+    @Test
+    void liveMetricDirectionAndFrequencyStillLocked()
     {
         MetricDictItem body = new MetricDictItem();
         body.setMetricName("改名");
-        body.setValueFormat("PCT");
+        body.setDirection("down");
+        body.setUpdateFrequency("day");
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update("reg", body, "ops"));
+        assertTrue(e.getFields().containsKey("direction"));
+        assertTrue(e.getFields().containsKey("updateFrequency"));
+        assertFalse(e.getFields().containsKey("metricName"), "名称可以改");
+        assertFalse(calls.contains("updateDictionary"));
+        assertEquals(0, reloads);
+    }
+
+    @Test
+    void liveMetricFormatLockedWhenRulesExist()
+    {
+        ruleCountForFormat = 2;
+        MetricDictItem body = new MetricDictItem();
+        body.setValueFormat("MONEY");
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update("dep", body, "ops"));
+        assertTrue(e.getFields().get("valueFormat").contains("2 條告警規則"), e.getFields().toString());
+        assertFalse(calls.contains("updateLiveBasic"));
+
+        // 格式没变：有规则也能改名称
+        calls.clear();
+        MetricDictItem rename = new MetricDictItem();
+        rename.setMetricName("存款總額");
+        rename.setValueFormat("INT");
+        service.update("dep", rename, "ops");
+        assertTrue(calls.contains("updateLiveBasic"));
+        assertFalse(calls.contains("countRules"), "格式没变不查规则");
+        assertEquals("存款總額", lastWrite.getMetricName());
+    }
+
+    @Test
+    void liveMetricReloadFailureIs400()
+    {
+        reloadFails = true;
+        MetricDictItem body = new MetricDictItem();
+        body.setMetricName("新名");
+        MonitorException e = assertThrows(MonitorException.class, () -> service.update("reg", body, "ops"));
+        assertEquals(400, e.getCode());
+        assertTrue(e.getMessage().contains("分组 egX 未启用"), e.getMessage());
+    }
+
+    @Test
+    void liveMetricBasicValidation()
+    {
+        MetricDictItem body = new MetricDictItem();
+        body.setMetricName("   ");
+        body.setValueFormat("XX");
+        body.setGroupCode("nope");
         MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update("reg", body, "ops"));
         assertTrue(e.getFields().containsKey("metricName"));
         assertTrue(e.getFields().containsKey("valueFormat"));
-        assertFalse(calls.contains("updateDictionary"));
+        assertTrue(e.getFields().containsKey("groupCode"));
+        assertEquals(0, reloads);
     }
 
     @Test
@@ -301,6 +392,7 @@ class MetricDictServiceTest
         body.setValueFormat("MONEY");
         service.update("newOne", body, "ops");
         assertTrue(calls.contains("updateRegisteredBasic"));
+        assertEquals(0, reloads, "仅登记的指标不在运营总览、指标汇总里，不用重载");
         assertEquals("新名字", lastWrite.getMetricName());
         assertEquals("MONEY", lastWrite.getValueFormat());
         assertEquals("eg1", lastWrite.getGroupCode(), "没传的沿用原值");

@@ -157,12 +157,31 @@ class MonitorTestAlertDryRunTest
     @Test
     void sameEventSameTypeOnlyOnce()
     {
-        // 严重（发）→ 回落注意 → 再严重：同一事件 ALERT_NEW 已发过
+        // 严重（发）→ 回落注意 → 再严重：事件仍为严重（只升不降），再次越过严重线 → 再发一次 ALERT_NEW（2026-10-27 产品确认）
         MonitorTestAlertService.DryRun r = replay(rule(1, null), null, 0, 3, 0);
         assertEquals("CRIT", r.eventLevel);
-        assertEquals("KEEP", r.decision);
+        assertFalse(r.escalated);
+        assertEquals("SEND", r.decision);
         assertEquals(MonitorNotifyTemplate.ALERT_NEW, r.type);
-        assertEquals("同一事件已發過這類通知，不再發送", r.reason);
+        assertEquals("回落注意後再次越過嚴重線", r.reason);
+    }
+
+    @Test
+    void reCrossWithinMuteIsMuted()
+    {
+        // 严重（发，第 1 段结束）→ 注意 → 再严重：距上次发送不足 24 小时 → 静默期内不发
+        MonitorTestAlertService.DryRun r = replay(rule(1, null), 24, 0, 3, 0);
+        assertEquals("MUTED", r.decision);
+        assertTrue(r.reason.startsWith("靜默期內"), r.reason);
+    }
+
+    @Test
+    void falloutStepItselfDoesNotSend()
+    {
+        // 严重 → 回落注意：这一周期不发
+        MonitorTestAlertService.DryRun r = replay(rule(1, null), null, 0, 3);
+        assertEquals("CRIT", r.eventLevel, "事件等级只升不降");
+        assertEquals("KEEP", r.decision);
     }
 
     @Test
@@ -201,4 +220,5 @@ class MonitorTestAlertDryRunTest
         assertEquals("OK", ok.level);
         assertEquals("未越線", ok.reason);
     }
+
 }

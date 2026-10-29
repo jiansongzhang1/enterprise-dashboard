@@ -26,7 +26,7 @@ public class MonitorRuleVO
 
     private String metricName;
 
-    /** 阈值单位：% / x / min / ₹ / 空串（人数、笔数） */
+    /** 阈值单位：% / x / min / 空串（人数、笔数）；金额在规则列表 GET /monitor/rules 为 "money"（前端按站点币种显示符号），详情为 ₹ */
     private String unit;
 
     private String judgeType;

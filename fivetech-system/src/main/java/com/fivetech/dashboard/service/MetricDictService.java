@@ -23,11 +23,13 @@ import com.fivetech.monitor.exception.MonitorFieldException;
 /**
  * 系统管理 · 指标管理：每个指标的口径与取数方式收口在 dashboard_metric_card。
  *
- * <p><b>不改线上取数</b>：运营总览、指标汇总启动时按 {@link MetricRegistry} 加载 status = '0' 的指标，
- * 向 UDS 取哪个字段仍以 application.yml（dashboard.gateway.uds）为准，跌幅基准以 monitor.engine.baseline-fields 为准。
- * 本服务只读这些配置用来对照（{@link MetricDictItem#getConfigMismatch()}），不改它们，也不刷新 MetricRegistry。</p>
+ * <p><b>不改线上取数</b>：向 UDS 取哪个字段仍以 application.yml（dashboard.gateway.uds）为准，跌幅基准以
+ * monitor.engine.baseline-fields 为准；本服务只读这些配置用来对照（{@link MetricDictItem#getConfigMismatch()}）。</p>
  * <ul>
- *   <li>已接入（status = '0'）：只能改口径（remark）、UDS 上游原始表 / 字段、四个 UDS 字段列，不能删除；</li>
+ *   <li>已接入（status = '0'）：能改口径（remark）、UDS 上游原始表 / 字段、四个 UDS 字段列，以及名称、英文名、分组、数值格式
+ *       （2026-10-27 放开）。名称、分组、格式保存后立即重新加载 {@link MetricRegistry}，运营总览、指标汇总、告警规则、
+ *       异常事件、Lark 消息都用这里的值；其他实例由 {@link MetricRegistryRefresher} 定时发现后重载。
+ *       有告警规则（含暂停）的指标不能改数值格式（阈值按格式的单位填写）；漲跌方向、更新频率不能改；不能删除；</li>
  *   <li>仅登记（status = '1'，后台新增的都是）：运营总览、指标汇总不加载、不能建告警规则；
  *       还能改名称、分组、格式、方向、更新频率；没有任何引用时可以删除。要接入取数需另改配置与 SQL。</li>
  * </ul>
@@ -70,11 +72,14 @@ public class MetricDictService
 
     private final MonitorProperties monitor;
 
-    public MetricDictService(MetricDictMapper mapper, UdsProperties uds, MonitorProperties monitor)
+    private final MetricRegistry registry;
+
+    public MetricDictService(MetricDictMapper mapper, UdsProperties uds, MonitorProperties monitor, MetricRegistry registry)
     {
         this.mapper = mapper;
         this.uds = uds;
         this.monitor = monitor;
+        this.registry = registry;
     }
 
     // ------------------------------------------------------------------ 查询
@@ -168,9 +173,13 @@ public class MetricDictService
     }
 
     /**
-     * 修改：已接入的指标只改口径与取数说明；仅登记的指标还能改名称、分组、格式、方向、更新频率。
+     * 修改：所有指标都能改口径与取数说明、名称、英文名、分组、数值格式；仅登记的指标还能改漲跌方向、更新频率。
      * 没传（null）的字段沿用原值，传空串表示清空。
-     * 已接入的指标传了不同的基础字段视为误操作，返回 400（前端会把这些字段置灰）。
+     * <ul>
+     *   <li>已接入的指标改了方向 / 更新频率：返回 400（前端置灰）；</li>
+     *   <li>已接入的指标改数值格式、但有告警规则（含暂停）：返回 400 valueFormat，要先删规则（阈值按格式的单位填写）；</li>
+     *   <li>已接入的指标保存后在同一事务里重载 {@link MetricRegistry}，校验不通过（如分组未启用）整体回滚并返回 400。</li>
+     * </ul>
      */
     @Transactional(rollbackFor = Exception.class)
     public void update(String metricCode, MetricDictItem body, String operator)
@@ -186,20 +195,47 @@ public class MetricDictService
         item.setUpdateBy(operator);
         copyDictionary(dictionaryWithDefaults(body, existing), item, errors);
         boolean registered = STATUS_REGISTERED.equals(existing.getStatus());
-        if (registered)
-        {
-            MetricDictItem merged = withDefaults(body, existing);
-            copyBasic(merged, item, errors);
-        }
-        else
+        MetricDictItem merged = withDefaults(body, existing);
+        copyBasic(merged, item, errors);
+        if (!registered)
         {
             rejectLiveBasicChanges(body, existing, errors);
+            if (item.getValueFormat() != null && !item.getValueFormat().equalsIgnoreCase(StringUtils.trimToEmpty(existing.getValueFormat())))
+            {
+                int rules = mapper.countRules(existing.getMetricCode());
+                if (rules > 0)
+                {
+                    errors.put("valueFormat", "該指標有 " + rules + " 條告警規則（含暫停），不能改數值格式：閾值按格式的單位填寫，請先刪除規則再改");
+                }
+            }
         }
         failIfAny(errors);
         mapper.updateDictionary(item);
         if (registered)
         {
             mapper.updateRegisteredBasic(item);
+        }
+        else
+        {
+            mapper.updateLiveBasic(item);
+            reloadRegistry();
+        }
+    }
+
+    /** 同一事务里重载指标配置：校验不通过时抛 400，事务回滚，线上快照保持原样 */
+    private void reloadRegistry()
+    {
+        if (registry == null)
+        {
+            return;
+        }
+        try
+        {
+            registry.reload();
+        }
+        catch (RuntimeException e)
+        {
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "保存失敗，修改後的指標配置校驗不通過：" + e.getMessage());
         }
     }
 
@@ -439,14 +475,10 @@ public class MetricDictService
         return m;
     }
 
-    /** 已接入的指标改了基础字段：报错而不是静默忽略，免得以为改成功了 */
+    /** 已接入的指标改了漲跌方向 / 更新频率：报错而不是静默忽略，免得以为改成功了（名称、分组、格式 2026-10-27 起可改） */
     static void rejectLiveBasicChanges(MetricDictItem body, MetricDictItem existing, Map<String, String> errors)
     {
         String msg = "已接入的指標不能修改，以免影響運營總覽、指標匯總";
-        if (changed(body.getMetricName(), existing.getMetricName())) errors.put("metricName", msg);
-        if (changed(body.getMetricNameEn(), existing.getMetricNameEn())) errors.put("metricNameEn", msg);
-        if (changed(body.getGroupCode(), existing.getGroupCode())) errors.put("groupCode", msg);
-        if (changed(body.getValueFormat(), existing.getValueFormat())) errors.put("valueFormat", msg);
         if (changed(body.getDirection(), existing.getDirection())) errors.put("direction", msg);
         if (changed(body.getUpdateFrequency(), existing.getUpdateFrequency())) errors.put("updateFrequency", msg);
     }

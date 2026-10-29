@@ -66,6 +66,8 @@ public class MonitorLarkChatServiceImpl implements IMonitorLarkChatService
 
     private final ZoneId zone;
 
+    private final DashboardProperties dashboard;
+
     public MonitorLarkChatServiceImpl(LarkClient larkClient, MonitorLarkChatMapper chatMapper, MonitorLarkChatWriter writer,
             MonitorProperties monitorProperties, DashboardProperties properties)
     {
@@ -74,6 +76,7 @@ public class MonitorLarkChatServiceImpl implements IMonitorLarkChatService
         this.writer = writer;
         this.monitorProperties = monitorProperties;
         this.zone = ZoneId.of(properties.getTimezone());
+        this.dashboard = properties;
     }
 
     @Override
@@ -160,7 +163,9 @@ public class MonitorLarkChatServiceImpl implements IMonitorLarkChatService
         }
         // 取不到名称（超时、未开通机器人能力等）不影响测试，用 App ID 代替
         String botName = bot.isSuccess() && !isBlank(bot.getData()) ? bot.getData() : lark.getAppId();
-        String time = LocalDateTime.now(zone).format(TEST_TIME) + "（IST）";
+        // 卡片「時間」按站点时区（站点表的时区，内存里，不查库），不写时区
+        String site = scope.getSiteCode();
+        String time = LocalDateTime.now(ZoneId.of(dashboard.siteTimezone(site))).format(TEST_TIME);
         Map<String, Object> card = groupTestCard(botName, chat.getName(), isBlank(sender) ? "—" : sender.trim(), time);
         LarkResult<String> r = larkClient.sendCard(lark.getAppId(), lark.getAppSecret(), "chat_id", id, card);
         if (r.isSuccess())
@@ -180,9 +185,9 @@ public class MonitorLarkChatServiceImpl implements IMonitorLarkChatService
         }
         if (markDeadIfChatGone(scope, id, r) || r.isChatGone())
         {
-            throw new MonitorException(MonitorErrorCode.CHAT_DEAD, "測試消息發送失敗：" + reason);
+            throw new MonitorException(MonitorErrorCode.CHAT_DEAD, "測試訊息發送失敗：" + reason);
         }
-        throw new MonitorException(MonitorErrorCode.LARK_SEND_FAILED, "測試消息發送失敗：" + reason);
+        throw new MonitorException(MonitorErrorCode.LARK_SEND_FAILED, "測試訊息發送失敗：" + reason);
     }
 
     /**

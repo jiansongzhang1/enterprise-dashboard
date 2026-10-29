@@ -28,7 +28,7 @@ import com.fivetech.monitor.service.IMonitorLarkChatService;
  *   <li>凭证无效（App ID / Secret 错误、应用停用、缺权限）→ 暂停发送：记录 failed、事件 paused（「僅記錄」，悬停
  *       「Lark 機器人憑證失效，未發送」），本轮剩下的不再请求 Lark；告警到研发值班。不补发（FY-30 R13②、R14、R15）。</li>
  *   <li>没配凭证（本站没有可用的 Lark 机器人）→ 不调 Lark，事件 unset（「未配置」，FY-30 R4）。</li>
- *   <li>事件已停止（规则在发送前被暂停或删除）→ 不发送，记录与事件都为 failed，原因「規則已暫停或刪除，取消發送」。</li>
+ *   <li>事件已停止（规则在发送前被修改判定条件、暂停或删除）→ 不发送，记录与事件都为 failed，原因「規則已修改、暫停或刪除，取消發送」。</li>
  * </ul>
  * 调用方负责加锁（多实例只有一个在发）；一轮超过时间预算时剩下的留到下一轮。
  *
@@ -42,7 +42,7 @@ public class MonitorNotifySender
     /** 第 1、2、3 次重试前等待的分钟数 */
     static final int[] RETRY_DELAY_MINUTES = { 1, 5, 30 };
 
-    static final String STOPPED_ERROR = "規則已暫停或刪除，取消發送";
+    static final String STOPPED_ERROR = "規則已修改、暫停或刪除，取消發送";
 
     /** FY-30 R13②：僅記錄的悬停文案 */
     public static final String PAUSED_REASON = "Lark 機器人憑證失效，未發送";

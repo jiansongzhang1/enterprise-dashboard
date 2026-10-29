@@ -39,9 +39,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	<!-- 系统管理 · 站点管理：列出全部站点的设置（跨站点，MonitorMapperScopeTest 白名单；接口有 system:site:list 权限控制） -->
 	<select id="selectAllSiteSettings" resultType="com.fivetech.monitor.domain.MonitorSiteSetting">
 		select s.site_code as siteCode, s.package_network as packageNetwork, s.next_rule_no as nextRuleNo,
-		       s.update_by as updateBy, s.update_time as updateTime
+		       s.sort_no as sortNo, s.update_by as updateBy, s.update_time as updateTime
 		  from monitor_site_setting s
-		 order by s.site_code
+		 order by s.sort_no, s.site_code
 	</select>
 
 	<!-- 已用过的包网名称（跨站点，白名单）：站点管理页输入包网时做候选 -->

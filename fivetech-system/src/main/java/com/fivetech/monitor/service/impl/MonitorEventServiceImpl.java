@@ -171,7 +171,7 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         vo.setRuleDeleted(e.isRuleDeleted());
         vo.setMetricCode(e.getMetricCode());
         vo.setMetricName(com.fivetech.monitor.service.MonitorText.metricName(e.getMetricCode(), e.getMetricName()));
-        vo.setUnit(MonitorRuleServiceImpl.unit(e.getValueFormat()));
+        vo.setUnit(eventUnit(e.getValueFormat()));
         vo.setLevel(e.getLevel());
         vo.setEscalated(e.isEscalated());
         vo.setStatus(e.getStatus());
@@ -215,8 +215,8 @@ public class MonitorEventServiceImpl implements IMonitorEventService
                 : (e.getEndHour() != null ? e.getEndHour() : e.getLastPeriodEnd());
         vo.setDurationHours(e.getStartHour() == null || end == null ? 0
                 : Math.max(0, ChronoUnit.HOURS.between(e.getStartHour(), end)));
-        vo.setDurationTip(MonitorMessageBuilder.durationTip(e.getStatus(), e.isRuleDeleted(), e.getStartHour(),
-            e.getEndHour(), e.getStoppedAt()));
+        vo.setDurationTip(MonitorMessageBuilder.durationTip(e.getStatus(), e.isRuleDeleted(), e.getStopReason(),
+            e.getStartHour(), e.getEndHour(), e.getStoppedAt()));
 
         vo.setOwner(e.getOwnerUserId() == null ? null : new MonitorEventVO.OwnerVO(e.getOwnerUserId(), e.getOwnerEmail()));
 
@@ -268,6 +268,15 @@ public class MonitorEventServiceImpl implements IMonitorEventService
     {
         String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
         return "open".equals(s) || "resolved".equals(s) || "stopped".equals(s) ? s : null;
+    }
+
+    /**
+     * 异常事件列表的单位：金额返回 "money"（多站点币种不同，前端按当前站点配置的币种显示符号），
+     * 其余同告警规则（% / x / min / 空）
+     */
+    static String eventUnit(String valueFormat)
+    {
+        return "MONEY".equalsIgnoreCase(valueFormat) ? "money" : MonitorRuleServiceImpl.unit(valueFormat);
     }
 
     /** range → trigger_hour 区间（IST 自然日）；all / 未知值 = 不限 */

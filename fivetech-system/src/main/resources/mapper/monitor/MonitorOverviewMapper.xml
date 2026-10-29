@@ -88,6 +88,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="eventStartHour"     column="event_start_hour"      />
 		<result property="eventTriggerHour"   column="event_trigger_hour"    />
 		<result property="eventLastPeriodEnd" column="event_last_period_end" />
+		<result property="eventRuleSnapshot"  column="event_rule_snapshot"   />
 	</resultMap>
 
 	<select id="selectCardRules" resultMap="CardRuleResult">
@@ -97,7 +98,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       s.recent_periods::text as recent_periods,
 		       e.event_id, e.level as event_level, e.escalated as event_escalated,
 		       e.start_hour as event_start_hour, e.trigger_hour as event_trigger_hour,
-		       e.last_period_end as event_last_period_end
+		       e.last_period_end as event_last_period_end, e.rule_snapshot::text as event_rule_snapshot
 		  from monitor_rule r
 		  left join dashboard_metric_card c on c.metric_code = r.metric_code
 		  left join monitor_rule_state s on s.rule_id = r.rule_id and s.site_code = r.site_code

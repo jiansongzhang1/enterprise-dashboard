@@ -112,7 +112,7 @@ public class MetricAlertVO implements Serializable
 
     // ===================== 监控管理一期新增（只增不改） =====================
 
-    /** 原因·值：「近 2 小時 83.60% – 84.20%」；没有规则或没有判定结果为 null */
+    /** 原因·值（紧凑写法，原型 ytagParts）：「近 2 小時 83.60–84.20%」；跌幅类「較基準跌 100.0%」不带近 N 小時（MON-22）；没有规则或没有判定结果为 null */
     private String reasonValue;
 
     /** 原因·对照线：「低於嚴重線 90.00%」；只在 WARN / CRIT 时有值 */

@@ -81,11 +81,11 @@ public final class ExportMetricText
         put("wd", "提款總額", G_FUND, "INR", "所有會員成功提款金額加總", U_INR, "0.00");
         put("net", "存提差", G_FUND, "INR", "存款總額 − 提款總額", U_INR, "0.00");
         put("turnX", "流水倍數", G_FUND, "倍", "投注總額 ÷ 存款總額", "倍，2 位小數", "0.00");
-        put("arppu", "ARPPU", G_FUND, "INR", "存款總額 ÷ 去重存款人數。同一人在區間內只計一次，因此區間值不等於各行的平均", U_INR, "0.00");
+        put("arppu", "ARPPU", G_FUND, "INR", "存款總額 ÷ 存款人數。同一人在區間內只計一次，因此區間值不等於各行的平均", U_INR, "0.00");
         put("ftdA", "首存ARPPU", G_ACQ, "INR", "首存總額 ÷ 首存人數", U_INR, "0.00");
-        put("dOkR", "存款成功率", G_PAY, "%", "存款成功筆數 ÷ 存款總嘗試筆數 × 100%", U_PCT, "0.00");
+        put("dOkR", "存款成功率", G_PAY, "%", "存款成功筆數 ÷ 存款總訂單數 × 100%", U_PCT, "0.00");
         put("dT", "平均到帳時間", G_PAY, "min", "存款自送出到入帳的平均耗時", U_MIN, "0.0");
-        put("wOkR", "出款成功率", G_PAY, "%", "出款成功筆數 ÷ 出款總嘗試筆數 × 100%", U_PCT, "0.00");
+        put("wOkR", "出款成功率", G_PAY, "%", "出款成功筆數 ÷ 出款總訂單數 × 100%", U_PCT, "0.00");
         put("wT", "平均出款時間", G_PAY, "min", "提款自申請到撥款完成的平均耗時", U_MIN, "0.0");
         put("bonus", "發放贈金總額", G_BET, "INR", "各贈金項目實際發放金額加總", U_INR, "0.00");
         put("bonusR", "贈金比", G_BET, "%", "發放贈金總額 ÷ 總流水 × 100%", U_PCT, "0.00");
@@ -111,17 +111,36 @@ public final class ExportMetricText
     }
 
     /**
-     * 取指标文案；模板之外的指标用注册表文案兜底（转繁体），单位按值格式推断。
+     * 取指标文案。
+     * <ul>
+     *   <li>名称、分组（2026-10-27 起）：用调用方传入的注册表文案（dashboard_metric_card，后台「指标管理」可改）；没传时用模板；</li>
+     *   <li>单位与数字格式：后台把数值格式改得和模板不一样时按新格式，否则用模板；</li>
+     *   <li>口径说明：模板里有的用模板；模板之外的指标全部用注册表文案兜底（转繁体），单位按值格式推断。</li>
+     * </ul>
      *
-     * @param valueFormat MONEY / PCT / MIN / X / INT ...
+     * @param valueFormat MONEY / PCT / MIN / MULTIPLE / INT ...
      */
     public static M of(String code, String fallbackLabel, String fallbackGroup, String fallbackNote, String valueFormat)
     {
         M m = ALL.get(code);
         if (m != null)
         {
-            return m;
+            String label = fallbackLabel == null || fallbackLabel.trim().isEmpty() ? m.label : fallbackLabel;
+            String group = fallbackGroup == null || fallbackGroup.trim().isEmpty() ? m.group : ExportTemplate.t(fallbackGroup);
+            if (valueFormat == null || unitOf(valueFormat).equals(m.unit))
+            {
+                return new M(code, label, group, m.unit, m.note, m.unitNote, m.format);
+            }
+            M d = derived(code, label, group, m.note, valueFormat);
+            return new M(code, label, group, d.unit, m.note, d.unitNote, d.format);
         }
+        return derived(code, ExportTemplate.t(fallbackLabel == null ? code : fallbackLabel), ExportTemplate.t(fallbackGroup),
+            ExportTemplate.t(fallbackNote), valueFormat);
+    }
+
+    /** 按值格式推断单位、单位说明、数字格式 */
+    private static M derived(String code, String label, String group, String note, String valueFormat)
+    {
         String unit = unitOf(valueFormat);
         String unitNote;
         String format;
@@ -147,8 +166,7 @@ public final class ExportMetricText
                 unitNote = U_INT;
                 format = null;
         }
-        return new M(code, ExportTemplate.t(fallbackLabel == null ? code : fallbackLabel),
-            ExportTemplate.t(fallbackGroup), unit, ExportTemplate.t(fallbackNote), unitNote, format);
+        return new M(code, label, group, unit, note, unitNote, format);
     }
 
     public static String unitOf(String valueFormat)
@@ -168,6 +186,7 @@ public final class ExportMetricText
             case "MIN":
                 return "min";
             case "X":
+            case "MULTIPLE":
                 return "倍";
             case "HOUR":
                 return "小時";

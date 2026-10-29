@@ -220,4 +220,17 @@ public class MetricDefinition implements Serializable
     public void setGaugeMin(java.math.BigDecimal gaugeMin) { this.gaugeMin = gaugeMin; }
     public java.math.BigDecimal getGaugeMax() { return gaugeMax; }
     public void setGaugeMax(java.math.BigDecimal gaugeMax) { this.gaugeMax = gaugeMax; }
+
+    /** 口径与备注（dashboard_metric_card.remark，后台「指标管理」维护）；运营总览的 expression 取其中「口徑：」那一行 */
+    private String remark;
+
+    public String getRemark()
+    {
+        return remark;
+    }
+
+    public void setRemark(String remark)
+    {
+        this.remark = remark;
+    }
 }

@@ -60,7 +60,7 @@ public class MonitorRuleValidator
         }
         else if (minSample.signum() < 0)
         {
-            errors.putIfAbsent("minSampleValue", "最小樣本量不能小於 0");
+            errors.putIfAbsent("minSampleValue", "最小樣本量要填不小於 0 的數字");
         }
         else if (minSample.abs().compareTo(MAX_ABS) > 0)
         {
@@ -97,7 +97,7 @@ public class MonitorRuleValidator
     {
         if (crit == null || ("band".equals(judgeType) && (crit.getLow() == null || crit.getHigh() == null)))
         {
-            errors.putIfAbsent("crit", crit == null ? "嚴重閾值不能為空" : "請填寫嚴重閾值的上下限");
+            errors.putIfAbsent("crit", "band".equals(judgeType) ? "請填寫嚴重區間的下限和上限" : "請填寫嚴重閾值");
             return false;
         }
         return true;
@@ -108,7 +108,7 @@ public class MonitorRuleValidator
     {
         if (warn != null && "band".equals(judgeType) && (warn.getLow() == null || warn.getHigh() == null))
         {
-            errors.putIfAbsent("warn", "請填寫注意閾值的上下限");
+            errors.putIfAbsent("warn", "注意區間要填完整，或兩格都留空");
             return false;
         }
         return true;
@@ -138,7 +138,7 @@ public class MonitorRuleValidator
             // 跌幅 0% 没有意义（任何波动都算越线），与原型一致要求大于 0
             if (v.signum() <= 0 || v.compareTo(HUNDRED) > 0)
             {
-                errors.putIfAbsent(field, "跌幅需大於 0 且不超過 100");
+                errors.putIfAbsent(field, "跌幅要在 0% 到 100% 之間");
                 return false;
             }
             return true;
@@ -154,7 +154,7 @@ public class MonitorRuleValidator
         }
         if (v.signum() < 0 && !metric.isAllowNegative())
         {
-            errors.putIfAbsent(field, "不能為負數");
+            errors.putIfAbsent(field, "閾值不能是負數");
             return false;
         }
         if (v.abs().compareTo(MAX_ABS) > 0)
@@ -174,7 +174,7 @@ public class MonitorRuleValidator
         }
         if (t.getLow().compareTo(t.getHigh()) >= 0)
         {
-            errors.putIfAbsent(name, "下限需小於上限");
+            errors.putIfAbsent(name, ("crit".equals(name) ? "嚴重" : "注意") + "區間的下限要小於上限");
             return false;
         }
         return true;
@@ -209,7 +209,23 @@ public class MonitorRuleValidator
         }
         if (!stricter)
         {
-            errors.putIfAbsent("crit", "嚴重閾值需比注意閾值更嚴");
+            errors.putIfAbsent("crit", stricterMessage(judgeType));
+        }
+    }
+
+    /** 原型 rules.js 的写法 */
+    private static String stricterMessage(String judgeType)
+    {
+        switch (judgeType)
+        {
+            case "lo":
+                return "注意閾值要高於嚴重閾值（越低越嚴重）";
+            case "hi":
+                return "注意閾值要低於嚴重閾值（越高越嚴重）";
+            case "drop":
+                return "注意閾值要小於嚴重閾值（跌幅越大越嚴重）";
+            default:
+                return "嚴重區間要完全包住注意區間：下限更低、上限更高";
         }
     }
 

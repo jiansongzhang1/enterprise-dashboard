@@ -33,4 +33,7 @@ public interface DashboardConfigMapper
      * <p>既用于校验指标卡引用的 group_code 是否存在，也是分组名与分组按钮顺序的来源。</p>
      */
     List<MetricGroupConfig> selectEnabledGroups();
+
+    /** 指标配置的版本（行数 + 最后修改时间），{@link com.fivetech.dashboard.service.MetricRegistryRefresher} 用来发现其他实例的修改 */
+    String selectMetricCardVersion();
 }

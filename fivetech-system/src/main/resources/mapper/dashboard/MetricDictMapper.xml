@@ -142,6 +142,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   and status = '1'
 	</update>
 
+	<update id="updateLiveBasic">
+		update dashboard_metric_card
+		   set metric_name    = #{item.metricName},
+		       metric_name_en = #{item.metricNameEn},
+		       group_code     = #{item.groupCode},
+		       value_format   = #{item.valueFormat},
+		       update_by      = #{item.updateBy},
+		       update_time    = current_timestamp
+		 where metric_code = #{item.metricCode}
+		   and status = '0'
+	</update>
+
+	<select id="countRules" resultType="int">
+		select count(*) from monitor_rule where metric_code = #{metricCode} and del_flag = '0'
+	</select>
+
 	<delete id="deleteRegistered">
 		delete from dashboard_metric_card where metric_code = #{metricCode} and status = '1'
 	</delete>

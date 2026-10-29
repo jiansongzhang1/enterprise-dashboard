@@ -3,6 +3,7 @@ package com.fivetech.dashboard.gateway;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import com.fivetech.dashboard.domain.vo.BetRecordVO;
 import com.fivetech.dashboard.domain.vo.DepositRecordVO;
 import com.fivetech.dashboard.domain.vo.MemberRecordVO;
@@ -78,9 +79,21 @@ public interface MetricDataGateway
      * @param periodHours 检测周期 1 / 4 / 6 / 12 / 24 小时（映射成 period_code H1 / H4 / H6 / H12 / DAY）
      * @param firstStart  第一个周期的起点（含）
      * @param lastStart   最后一个周期的起点（含）；UDS 按周期起点筛选，两端都包含
+     * @param minSample   规则当前的最小样本量；&gt; 0 时只统计样本量（UDS sample_basis）≥ 该值的周期，为空或 ≤ 0 不限制
      */
+    /**
+     * 当前站点不提供的指标（UDS meta.omitted，多站点公共契约）：codes 里本站没有的那部分。
+     * 由最近的查询响应得知，所以要在查过这些指标之后调用；相减组装的指标（存提差、NGR）任一操作数不提供即不提供。
+     *
+     * @param siteCode 站点编码
+     */
+    default Set<String> omittedMetrics(String siteCode, java.util.Collection<String> codes)
+    {
+        return Set.of();
+    }
+
     default MetricDistribution queryDistribution(String metricCode, int periodHours,
-            java.time.LocalDateTime firstStart, java.time.LocalDateTime lastStart)
+            java.time.LocalDateTime firstStart, java.time.LocalDateTime lastStart, BigDecimal minSample)
     {
         return MetricDistribution.notConfigured();
     }

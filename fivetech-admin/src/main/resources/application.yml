@@ -143,10 +143,15 @@ notification:
 
 # 仪表板查询配置
 dashboard:
+  # 站点以库为准（2026-10-28，monitor_site_setting 兼作站点表，后台「系统管理 · 站点管理」新增 / 修改）：下面的 default-site、
+  # default-uds-site、site-name、sites 只在还没有站点时（首次启动）导入一次，之后改这里不再生效；
+  # 站点列还没加（没执行 sql/alter_monitor_site_setting_site_postgresql.sql）时仍按这里
   # 默认站点，一期单站点
   default-site: ${DASHBOARD_SITE:SITE-IN}
   # 默认站点在 UDS 的站点标识（X-Uds-Site），每次请求都带；为空用 default-site
   default-uds-site: ${DASHBOARD_DEFAULT_UDS_SITE:SITE-IN}
+  # 配置热加载：每隔多少秒查一次 dashboard_metric_card、monitor_site_setting 的版本，后台「指标管理」「站点管理」改了之后其他实例跟着重载；0 = 关闭
+  config-refresh-seconds: ${DASHBOARD_CONFIG_REFRESH_SECONDS:60}
   # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
   site-name: ${DASHBOARD_SITE_NAME:uWin}
   # 默认站点之外的其他站点（多站点一期）。前端在请求头 X-Site-Code 里带站点编码，不带 = 默认站点；
@@ -157,7 +162,7 @@ dashboard:
   sites:
     - code: ${DASHBOARD_SITE_JITO_CODE:JITO}
       name: ${DASHBOARD_SITE_JITO_NAME:jito}
-      uds-site: ${DASHBOARD_SITE_JITO_UDS_SITE:SITE-B}
+      uds-site: ${DASHBOARD_SITE_JITO_UDS_SITE:JITO}
       # 站点时区（IANA 时区 ID），getInfo 的 sites[].timezone 返回它；留空用下面的 dashboard.timezone
       timezone: ${DASHBOARD_SITE_JITO_TIMEZONE:}
   # 统计时区，日切与环比同比都依此时区
@@ -349,6 +354,8 @@ dashboard:
       # 后端不再统计（UDS 20 指标四值联调文档，2026-10-26）。
       # period_code 默认 1→H1、4→H4、6→H6、12→H12、24→DAY；列名默认 p5 / p95 / min / max / min_at / max_at / valid_point_count（columns 可覆盖）。
       # 比率 0～1、时长秒，与 overview 数据集一样由 MetricValueNormalizer 换算。name 置空 = 不接入，平时水平返回空。
+      # 2026-10-27（FY-26 告警分布联调文档）：规则最小样本量 > 0 时加 sample_basis GTE 门槛（列名 sample-field 可覆盖），0 / 未设不加；
+      # 跌幅类返回的是较基准的跌幅（小数），后端 ×100 只用 p95 / max。
       distribution:
         name: ${UDS_DISTRIBUTION_DATASET:metric_distribution_v1}
         time-dimension: period_start

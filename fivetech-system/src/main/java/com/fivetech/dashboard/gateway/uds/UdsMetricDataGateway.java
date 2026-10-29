@@ -105,6 +105,94 @@ public class UdsMetricDataGateway implements MetricDataGateway
     /** dataset -> 上游自报的水位（meta.freshness.watermark），只前进不后退 */
     private final Map<String, LocalDateTime> reportedWatermarks = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * 本站不提供的指标（UDS meta.omitted）：站点 → 「数据集名|指标编码」→ 是否省略。每次查询响应都按请求里的指标刷新，
+     * UDS 后续补齐某个指标、或站点包升级后，下一次查询就会更新，不需要重启。
+     */
+    private final Map<String, Map<String, Boolean>> omitted = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static String siteKey(String site)
+    {
+        return site == null ? "" : site.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** 记下这次响应里本站省略的指标：请求了、但在 meta.omitted 里（或整个数据集省略）的记为省略，其余记为提供 */
+    private void trackOmitted(String datasetName, UdsProperties.Dataset d, java.util.Collection<String> requestedFields,
+            UdsQueryResult result)
+    {
+        if (d == null || result == null || requestedFields == null)
+        {
+            return;
+        }
+        String site = com.fivetech.common.utils.SiteContext.code();
+        if (site == null || site.isBlank())
+        {
+            site = dashboard.getDefaultSite();
+        }
+        Map<String, Boolean> m = omitted.computeIfAbsent(siteKey(site), k -> new java.util.concurrent.ConcurrentHashMap<>());
+        for (Map.Entry<String, String> e : d.getMetrics().entrySet())
+        {
+            if (e.getValue() != null && requestedFields.contains(e.getValue()))
+            {
+                boolean gone = result.isDatasetOmitted() || result.getOmittedMetrics().contains(e.getValue());
+                m.put(datasetName + "|" + e.getKey(), gone);
+            }
+        }
+    }
+
+    /** 批量查询：按请求体里的 dataset 找到配置再记 */
+    @SuppressWarnings("unchecked")
+    private void trackOmitted(Map<String, Object> body, UdsQueryResult result)
+    {
+        Object name = body.get("dataset");
+        Object fields = body.get("metrics");
+        if (!(name instanceof String) || !(fields instanceof java.util.Collection))
+        {
+            return;
+        }
+        for (Map.Entry<String, UdsProperties.Dataset> e : properties.getDatasets().entrySet())
+        {
+            if (name.equals(nameOf(e.getKey(), e.getValue())))
+            {
+                trackOmitted((String) name, e.getValue(), (java.util.Collection<String>) fields, result);
+            }
+        }
+    }
+
+    @Override
+    public Set<String> omittedMetrics(String siteCode, java.util.Collection<String> codes)
+    {
+        Map<String, Boolean> m = omitted.get(siteKey(siteCode));
+        Set<String> out = new LinkedHashSet<>();
+        if (m == null || m.isEmpty() || codes == null)
+        {
+            return out;
+        }
+        for (String code : codes)
+        {
+            List<String> ops = composedOps(code);
+            boolean gone = ops != null ? isOmitted(m, ops.get(0)) || isOmitted(m, ops.get(1)) : isOmitted(m, code);
+            if (gone)
+            {
+                out.add(code);
+            }
+        }
+        return out;
+    }
+
+    /** 任一数据集说本站不提供即算不提供（同一指标在小时 / 金额 / 日数据集里的缺口一致） */
+    private static boolean isOmitted(Map<String, Boolean> m, String code)
+    {
+        for (Map.Entry<String, Boolean> e : m.entrySet())
+        {
+            if (Boolean.TRUE.equals(e.getValue()) && e.getKey().endsWith("|" + code))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 水位按「站点 + 数据集」分开记：不同站点（X-Uds-Site）的数据进度互不影响 */
     private static String watermarkKey(String dataset)
     {
@@ -632,6 +720,10 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             results.addAll(client.queryBatch(bodies.subList(i, Math.min(bodies.size(), i + MAX_BATCH))));
         }
+        for (int i = 0; i < bodies.size() && i < results.size(); i++)
+        {
+            trackOmitted(bodies.get(i), results.get(i));
+        }
         return results;
     }
 
@@ -812,11 +904,13 @@ public class UdsMetricDataGateway implements MetricDataGateway
     /**
      * 回测预览「平时水平」：metric_distribution 数据集按指标 + 周期取 p5 / p95 / min / max / min_at / max_at / valid_point_count。
      * <p>单指标查询：不带 dimensions，在 filters.and 里同时以 EQ 固定 metric_code 和 period_code（UDS 要求，
-     * 漏掉会 4001）。只发一次，未就绪（4403）返回 notReady，不退避。没有有效周期时 UDS 不返回行 → empty，不补 0。</p>
+     * 漏掉会 4001）。规则设了最小样本量（&gt; 0）时再加 sample_basis GTE 门槛；没设或为 0 时不加（不能传 GTE 0，
+     * 否则没有样本量来源的周期会被排除）。只发一次，未就绪（4403）返回 notReady，不退避。
+     * 没有有效周期时 UDS 返回 valid_point_count = 0、其余为 null（或不返回行）→ empty，不补 0。</p>
      */
     @Override
     public com.fivetech.dashboard.gateway.MetricDistribution queryDistribution(String metricCode, int periodHours,
-            LocalDateTime firstStart, LocalDateTime lastStart)
+            LocalDateTime firstStart, LocalDateTime lastStart, BigDecimal minSample)
     {
         UdsProperties.Distribution cfg = properties.getDistribution();
         String udsMetric = cfg == null ? null : cfg.getMetrics().get(metricCode);
@@ -825,7 +919,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             return com.fivetech.dashboard.gateway.MetricDistribution.notConfigured();
         }
-        Map<String, Object> body = distributionBody(cfg, udsMetric, periodCode, firstStart, lastStart);
+        Map<String, Object> body = distributionBody(cfg, udsMetric, periodCode, firstStart, lastStart, minSample);
         com.fivetech.dashboard.gateway.MetricDistribution out = new com.fivetech.dashboard.gateway.MetricDistribution();
         out.setConfigured(true);
         UdsQueryResult result;
@@ -848,9 +942,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return out;
     }
 
-    /** 请求体（联调文档第 2 节单指标写法）；包内可见供测试 */
+    /** 请求体（FY-26 告警分布联调文档：单指标、单周期、带门槛）；包内可见供测试 */
     static Map<String, Object> distributionBody(UdsProperties.Distribution cfg, String udsMetric, String periodCode,
-            LocalDateTime firstStart, LocalDateTime lastStart)
+            LocalDateTime firstStart, LocalDateTime lastStart, BigDecimal minSample)
     {
         List<String> metrics = new ArrayList<>();
         for (String column : cfg.getColumns().values())
@@ -868,6 +962,14 @@ public class UdsMetricDataGateway implements MetricDataGateway
         List<Map<String, Object>> and = new ArrayList<>();
         and.add(eq(cfg.getMetricField(), udsMetric));
         and.add(eq(cfg.getPeriodField(), periodCode));
+        if (minSample != null && minSample.signum() > 0 && StringUtils.isNotEmpty(cfg.getSampleField()))
+        {
+            Map<String, Object> gte = new LinkedHashMap<>();
+            gte.put("field", cfg.getSampleField());
+            gte.put("op", "GTE");
+            gte.put("value", plainNumber(minSample));
+            and.add(gte);
+        }
         Map<String, Object> filters = new LinkedHashMap<>();
         filters.put("and", and);
 
@@ -884,6 +986,24 @@ public class UdsMetricDataGateway implements MetricDataGateway
         options.putIfAbsent("channel", "ONLINE");
         body.put("options", options);
         return body;
+    }
+
+    /** 整数传整数（30、50000），有小数的保留原值；避免 BigDecimal 序列化成 5E+4 */
+    static Object plainNumber(BigDecimal v)
+    {
+        BigDecimal s = v.stripTrailingZeros();
+        if (s.scale() <= 0)
+        {
+            try
+            {
+                return s.longValueExact();
+            }
+            catch (ArithmeticException e)
+            {
+                return new BigDecimal(s.toPlainString());
+            }
+        }
+        return new BigDecimal(s.toPlainString());
     }
 
     private static Map<String, Object> eq(String field, String value)
@@ -1039,6 +1159,11 @@ public class UdsMetricDataGateway implements MetricDataGateway
             }
         }
 
+        if (main.isDatasetOmitted())
+        {
+            // 多站点：本站没有实现这个数据集（UDS 200 空数据 + meta.omitted 数据集级原因）
+            return BreakdownResult.omitted();
+        }
         BreakdownResult result = new BreakdownResult();
         result.setConfigured(true);
         result.setWatermark(main.getWatermark());
@@ -1628,7 +1753,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         java.time.ZoneId zone;
         try
         {
-            zone = java.time.ZoneId.of(dashboard.getTimezone());
+            zone = dashboard.currentZone();
         }
         catch (Exception e)
         {
@@ -2096,6 +2221,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
             try
             {
                 UdsQueryResult result = client.queryWithMeta(body);
+                trackOmitted(body, result);
                 // 只记上游自报的水位。本次请求的上界是我们自己填进去的参数，不是水位，不记
                 rememberReportedWatermark(datasetName, result);
                 remember(datasetName, result);

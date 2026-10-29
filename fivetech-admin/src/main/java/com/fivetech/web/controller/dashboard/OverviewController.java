@@ -168,8 +168,15 @@ public class OverviewController extends BaseController
     {
         com.fivetech.dashboard.domain.vo.overview.RegChannelVO vo = sectionService.regChannels(query);
         // 分析区展示精度：占比 1 位小数（导出直接调 service，保留两位）
-        vo.getGroups().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelGroupVO::applyViewScale);
-        vo.getChannels().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelItemVO::applyViewScale);
+        // 本站不提供（omitted）时渠道、分组为 null
+        if (vo.getGroups() != null)
+        {
+            vo.getGroups().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelGroupVO::applyViewScale);
+        }
+        if (vo.getChannels() != null)
+        {
+            vo.getChannels().forEach(com.fivetech.dashboard.domain.vo.overview.RegChannelItemVO::applyViewScale);
+        }
         return AjaxResult.success(vo);
     }
 

@@ -46,9 +46,13 @@ public interface MonitorRuleMapper
     int deleteRuleLogically(@Param("scope") MonitorScope scope, @Param("ruleId") Long ruleId,
             @Param("updateBy") String updateBy, @Param("updateTime") LocalDateTime updateTime);
 
-    /** 规则暂停 / 删除时，未恢复事件改为 stopped，end_hour = 最近一个已判定小时 */
+    /**
+     * 规则暂停 / 删除 / 修改判定条件时，未恢复事件改为 stopped，end_hour = 最近一个已判定小时。
+     *
+     * @param reason pause 暂停 / delete 删除 / update 修改了阈值、检测周期或注意升级（MON-28 / MON-29）
+     */
     int stopOpenEvents(@Param("scope") MonitorScope scope, @Param("ruleId") Long ruleId,
-            @Param("endHour") LocalDateTime endHour, @Param("now") LocalDateTime now);
+            @Param("endHour") LocalDateTime endHour, @Param("now") LocalDateTime now, @Param("reason") String reason);
 
     /** 清掉规则运行状态：连续计数从 0 重新累计（判定任务读不到时按新规则起算） */
     int deleteRuleState(@Param("scope") MonitorScope scope, @Param("ruleId") Long ruleId);

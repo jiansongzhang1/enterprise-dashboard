@@ -21,7 +21,7 @@ class MonitorTemplateRendererTest
         v.put("currentValue", "₹12,340");
         v.put("judgeText", "跌幅超過嚴重閾值 20%");
         v.put("ruleCode", "R-006");
-        v.put("triggerTime", "2026-10-22 14:00（IST）");
+        v.put("triggerTime", "2026-10-22 14:00");
         v.put("owner", "jackson@fivetech.co.jp");
         return v;
     }
@@ -30,7 +30,7 @@ class MonitorTemplateRendererTest
     void defaultTemplateIsFy30Format()
     {
         String expected = "【uWin】Yata 告警 · 嚴重\n指標：GGR ₹12,340\n判定：跌幅超過嚴重閾值 20% · R-006\n"
-            + "時間：2026-10-22 14:00（IST）\n負責人：jackson@fivetech.co.jp";
+            + "時間：2026-10-22 14:00\n負責人：jackson@fivetech.co.jp";
         assertEquals(expected, MonitorTemplateRenderer.render(DEFAULT, values()));
         assertTrue(MonitorTemplateRenderer.validate(DEFAULT).isEmpty(), "内置默认模板本身要能通过校验");
         assertTrue(MonitorTemplateRenderer.validate(com.fivetech.monitor.domain.MonitorNotifyTemplate.LEGACY_CONTENT).isEmpty() == false,
@@ -46,8 +46,8 @@ class MonitorTemplateRendererTest
         assertEquals("跌幅超過嚴重閾值 20%", MonitorMessageBuilder.judgeText("MONEY", f.drop(), false));
         assertEquals("超出嚴重區間 2.00% – 8.00%", MonitorMessageBuilder.judgeText("PCT", f.band(), false));
         java.time.LocalDateTime t = java.time.LocalDateTime.of(2026, 10, 22, 14, 0);
-        assertEquals("2026-10-22 14:00（IST）", MonitorMessageBuilder.triggerTime(t, 1));
-        assertEquals("2026-10-22 12:00 – 24:00（IST）", MonitorMessageBuilder.triggerTime(t.withHour(12), 12));
+        assertEquals("2026-10-22 14:00", MonitorMessageBuilder.triggerTime(t, 1), "不写时区");
+        assertEquals("2026-10-22 12:00 – 24:00", MonitorMessageBuilder.triggerTime(t.withHour(12), 12));
         assertEquals("2026-10-22 全天", MonitorMessageBuilder.triggerTime(t.withHour(0), 24));
     }
 

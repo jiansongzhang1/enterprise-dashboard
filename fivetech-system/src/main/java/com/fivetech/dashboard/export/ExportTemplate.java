@@ -38,7 +38,7 @@ import com.fivetech.dashboard.config.DashboardProperties;
  *   <li>第 1 行即表头，第 2 行起为数据；表头上方、表格下方不加说明行；表头冻结、加粗、浅灰底；</li>
  *   <li>工作表名与表头用界面文案（本期繁体）；表头带单位：(INR)、(%)、(分鐘)、(倍)、(小時)；</li>
  *   <li>金额、比率写纯数值，无符号与千分位；百分比存百分数值（92.12）；空值为空单元格；</li>
- *   <li>时间写 Excel 日期时间值（IST）：明细 YYYY-MM-DD HH:mm:ss，统计起止 YYYY-MM-DD HH:mm，分群日 YYYY-MM-DD；</li>
+ *   <li>时间写 Excel 日期时间值（站点时区）：明细 YYYY-MM-DD HH:mm:ss，统计起止 YYYY-MM-DD HH:mm，分群日 YYYY-MM-DD；</li>
  *   <li>「口径说明」每列一行（工作表 / 列 / 口径 / 单位格式），「导出说明」只写本次导出特有的信息。</li>
  * </ul>
  *
@@ -148,6 +148,12 @@ public final class ExportTemplate
 
         private final Map<String, CellStyle> formats = new HashMap<>();
 
+        /** 当前站点的币种代码；为空或 INR 时不替换 */
+        private String currency;
+
+        /** 当前站点时区的简写（IST、UTC+8…）；为空或 IST 时不替换 */
+        private String zoneLabel;
+
         public Book(boolean streaming)
         {
             if (streaming)
@@ -175,6 +181,45 @@ public final class ExportTemplate
             wrap.setWrapText(true);
         }
 
+        /**
+         * 按站点改写模板文案：模板的表头、口径说明按默认站点写（金额「(INR)」「INR，…」、时间「（IST）」），
+         * 写入时换成当前站点的币种和时区（站点表 monitor_site_setting）。
+         *
+         * @param currency  站点币种代码，如 CNY
+         * @param zoneLabel 站点时区简写，如 UTC+8（{@link DashboardProperties#siteZoneLabel}）
+         */
+        public Book site(String currency, String zoneLabel)
+        {
+            this.currency = currency;
+            this.zoneLabel = zoneLabel;
+            return this;
+        }
+
+        /** 站点为 DashboardProperties 的当前站点（请求的 X-Site-Code；导出任务在站点上下文里执行） */
+        public Book site(DashboardProperties properties)
+        {
+            String code = properties.currentSite();
+            return site(properties.siteCurrency(code), properties.siteZoneLabel(code));
+        }
+
+        String localize(String s)
+        {
+            if (s == null)
+            {
+                return null;
+            }
+            String out = s;
+            if (currency != null && !currency.isEmpty() && !"INR".equals(currency))
+            {
+                out = out.replace("(INR)", "(" + currency + ")").replace("INR，", currency + "，");
+            }
+            if (zoneLabel != null && !zoneLabel.isEmpty() && !"IST".equals(zoneLabel))
+            {
+                out = out.replace("（IST）", "（" + zoneLabel + "）");
+            }
+            return out;
+        }
+
         /** 新建工作表：冻结表头 */
         public Sheet sheet(String name)
         {
@@ -190,7 +235,7 @@ public final class ExportTemplate
             for (int i = 0; i < cols.size(); i++)
             {
                 Cell c = row.createCell(i);
-                c.setCellValue(cols.get(i).header);
+                c.setCellValue(localize(cols.get(i).header));
                 c.setCellStyle(head);
                 sheet.setColumnWidth(i, Math.min(255, cols.get(i).width) * 256);
             }
@@ -273,7 +318,12 @@ public final class ExportTemplate
             int r = header(sheet, cols);
             for (String[] line : lines)
             {
-                row(sheet, r++, cols, java.util.Arrays.asList((Object[]) line));
+                Object[] cells = new Object[line.length];
+                for (int i = 0; i < line.length; i++)
+                {
+                    cells[i] = localize(line[i]);
+                }
+                row(sheet, r++, cols, java.util.Arrays.asList(cells));
             }
         }
 
@@ -285,7 +335,7 @@ public final class ExportTemplate
             int r = header(sheet, cols);
             for (Map.Entry<String, String> e : items.entrySet())
             {
-                row(sheet, r++, cols, List.of(e.getKey(), e.getValue() == null ? "" : e.getValue()));
+                row(sheet, r++, cols, List.of(e.getKey(), e.getValue() == null ? "" : localize(e.getValue())));
             }
         }
 
@@ -359,7 +409,7 @@ public final class ExportTemplate
     {
         try
         {
-            return LocalDateTime.now(ZoneId.of(properties.getTimezone()));
+            return LocalDateTime.now(properties.currentZone());
         }
         catch (Exception e)
         {
@@ -548,19 +598,23 @@ public final class ExportTemplate
         return sb.toString();
     }
 
-    /** 常用的三行公共口径 */
-    public static List<String[]> commonNotes(boolean detail)
+    /**
+     * 常用的三行公共口径
+     *
+     * @param zoneText 站点时区的写法（{@link DashboardProperties#siteZoneText}），如「IST（UTC+5:30）」「Asia/Shanghai（UTC+8）」
+     */
+    public static List<String[]> commonNotes(boolean detail, String zoneText)
     {
         List<String[]> l = new ArrayList<>();
         if (detail)
         {
-            l.add(new String[] { "（全部）", "時間", "時區 IST（UTC+5:30）", "YYYY-MM-DD HH:mm:ss" });
+            l.add(new String[] { "（全部）", "時間", "時區 " + zoneText, "YYYY-MM-DD HH:mm:ss" });
             l.add(new String[] { "（全部）", "空值", "空單元格表示無值或不適用，不是 0", "" });
         }
         else
         {
             l.add(new String[] { "（全部）", "時間",
-                "統計時區 IST（UTC+5:30）；「開始」含、「結束」不含（00:00–01:00 即 0 點這一小時）；今日的「結束」為資料截至時刻",
+                "統計時區 " + zoneText + "；「開始」含、「結束」不含（00:00–01:00 即 0 點這一小時）；今日的「結束」為資料截至時刻",
                 "YYYY-MM-DD HH:mm" });
             l.add(new String[] { "（全部）", "空值", "空單元格表示無值或不適用，不是 0", "" });
             l.add(new String[] { "（全部）", "比率", "百分數值：92.12 表示 92.12%", "" });

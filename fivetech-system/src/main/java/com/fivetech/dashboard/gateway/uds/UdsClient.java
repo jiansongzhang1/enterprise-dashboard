@@ -185,6 +185,26 @@ public class UdsClient
             firstText(meta, "dataVersion", "data_version", "version"),
             stale,
             parseWatermark(freshness));
+        // 多站点（UDS 公共契约，2026-10-28）：本站不提供的指标不返回这一列，原因写在 meta.omitted；
+        // 带 metric 的是按列省略，带 dataset 不带 metric 的是整个数据集本站未实现
+        JsonNode omitted = meta.path("omitted");
+        if (omitted.isArray() && omitted.size() > 0)
+        {
+            java.util.Set<String> fields = new java.util.LinkedHashSet<>();
+            for (JsonNode o : omitted)
+            {
+                String metric = firstText(o, "metric");
+                if (metric != null && !metric.isBlank())
+                {
+                    fields.add(metric.trim());
+                }
+                else if (firstText(o, "dataset") != null)
+                {
+                    result.setDatasetOmitted(true);
+                }
+            }
+            result.setOmittedMetrics(fields);
+        }
         if (stale)
         {
             // 上游自己说数据过期了，这是运营会看到错数的直接原因，必须留痕

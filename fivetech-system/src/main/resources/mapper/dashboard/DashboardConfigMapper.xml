@@ -75,4 +75,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		 order by sort_no, group_code
 	</select>
 
+	<select id="selectMetricCardVersion" resultType="string">
+		select count(*) || ':' || coalesce(to_char(max(coalesce(update_time, create_time)), 'YYYYMMDDHH24MISSUS'), '')
+		  from dashboard_metric_card
+	</select>
+
 </mapper>

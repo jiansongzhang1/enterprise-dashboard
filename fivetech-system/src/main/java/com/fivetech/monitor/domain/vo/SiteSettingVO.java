@@ -19,8 +19,15 @@ public class SiteSettingVO
     /** 是否默认站点（不带 X-Site-Code 时用它） */
     private boolean defaultSite;
 
-    /** 是否在 dashboard.sites 配置里；false = 数据库里有设置行但配置已去掉，只读 */
+    /** 是否站点（monitor_site_setting.site_name 不为空）；false = 只有设置行（包网 / 规则号）的历史数据，可在页面「配置为站点」 */
     private boolean configured;
+
+    /** 排序号：站点列表、登录后的站点下拉按它从小到大（相同按编码）；页面可改 */
+    private Integer sortNo;
+
+    public Integer getSortNo() { return sortNo; }
+
+    public void setSortNo(Integer sortNo) { this.sortNo = sortNo; }
 
     /** 所属包网；为空表示未设置 */
     private String packageNetwork;
@@ -32,6 +39,48 @@ public class SiteSettingVO
 
     /** yyyy-MM-dd HH:mm */
     private String updateTime;
+
+    /** 站点表里设置的时区（IANA）；没设置为 null（用 dashboard.timezone） */
+    private String timezone;
+
+    /** 实际使用的时区：站点设置的，没设置用 dashboard.timezone；dashboard 各接口、UDS 统计都按它 */
+    private String effectiveTimezone;
+
+    /** 站点表里设置的币种代码；没设置为 null */
+    private String currency;
+
+    /** 站点表里设置的币种符号；没设置为 null */
+    private String currencySymbol;
+
+    /** 实际使用的币种：站点设置的，或 dashboard.currency */
+    private String effectiveCurrency;
+
+    /** 实际使用的币种符号：站点设置的，或按币种推导 */
+    private String effectiveCurrencySymbol;
+
+    public String getCurrency() { return currency; }
+
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    public String getCurrencySymbol() { return currencySymbol; }
+
+    public void setCurrencySymbol(String currencySymbol) { this.currencySymbol = currencySymbol; }
+
+    public String getEffectiveCurrency() { return effectiveCurrency; }
+
+    public void setEffectiveCurrency(String effectiveCurrency) { this.effectiveCurrency = effectiveCurrency; }
+
+    public String getEffectiveCurrencySymbol() { return effectiveCurrencySymbol; }
+
+    public void setEffectiveCurrencySymbol(String effectiveCurrencySymbol) { this.effectiveCurrencySymbol = effectiveCurrencySymbol; }
+
+    public String getTimezone() { return timezone; }
+
+    public void setTimezone(String timezone) { this.timezone = timezone; }
+
+    public String getEffectiveTimezone() { return effectiveTimezone; }
+
+    public void setEffectiveTimezone(String effectiveTimezone) { this.effectiveTimezone = effectiveTimezone; }
 
     public String getSiteCode()
     {

@@ -142,7 +142,8 @@ public class MonitorTestAlertService
 
         List<BigDecimal[]> recent = new ArrayList<>();
         recent.add(new BigDecimal[] { point.getValue(), point.getBaseline() });
-        Map<String, String> values = messages.alertValues(rule, judge, false, period[0], recent, now);
+        Map<String, String> values = messages.alertValues(rule, judge, false, period[0], recent,
+            messages.siteTime(scope.getSiteCode(), now));
         MonitorNotifyTemplateService.Rendered rendered = templates.render(scope.getSiteCode(), MonitorNotifyTemplate.ALERT_NEW, values);
         String content = TEST_PREFIX + rendered.getContent();
 
@@ -359,6 +360,7 @@ public class MonitorTestAlertService
         DryRun out = new DryRun();
         RunState state = null;
         String eventLevel = null;
+        boolean eventEscalated = false;
         LocalDateTime eventStart = null;
         LocalDateTime eventTrigger = null;
         Set<String> sentTypes = new HashSet<>();
@@ -376,15 +378,22 @@ public class MonitorTestAlertService
             {
                 case OPEN:
                     eventLevel = r.getEventLevel();
+                    eventEscalated = r.isEscalated();
                     eventStart = r.getStartHour();
                     eventTrigger = r.getTriggerHour();
                     sentTypes.clear();
                     break;
                 case UPDATE:
-                    eventLevel = r.getEventLevel();
+                    // 与线上一致：事件等级只升不降（FY-23 R23 / MON-01）
+                    if (!Levels.CRIT.equals(eventLevel))
+                    {
+                        eventEscalated = r.isEscalated();
+                    }
+                    eventLevel = Levels.higher(eventLevel, r.getEventLevel());
                     break;
                 case RESOLVE:
                     eventLevel = null;
+                    eventEscalated = false;
                     eventStart = null;
                     eventTrigger = null;
                     sentTypes.clear();
@@ -394,10 +403,12 @@ public class MonitorTestAlertService
             }
             boolean opened = r.getAction() == StepResult.Action.OPEN;
             boolean becameCrit = r.getAction() == StepResult.Action.UPDATE && !Levels.CRIT.equals(before);
-            if ((opened || becameCrit) && Levels.CRIT.equals(eventLevel))
+            // 与线上一致：严重事件回落到注意后再次越过严重线 → 再发一次「新触发」（静默期照常）
+            boolean reCrit = Levels.CRIT.equals(before) && MonitorJudge.reCrossedCrit(judge, state, r);
+            if ((opened || becameCrit || reCrit) && Levels.CRIT.equals(eventLevel))
             {
-                type = r.isEscalated() ? MonitorNotifyTemplate.ALERT_ESCALATED : MonitorNotifyTemplate.ALERT_NEW;
-                if (sentTypes.contains(type))
+                type = reCrit || !eventEscalated ? MonitorNotifyTemplate.ALERT_NEW : MonitorNotifyTemplate.ALERT_ESCALATED;
+                if (!reCrit && (sentTypes.contains(type) || sentTypes.contains(MonitorNotifyTemplate.ALERT_NEW)))
                 {
                     reason = "同一事件已發過這類通知，不再發送";
                 }
@@ -409,7 +420,7 @@ public class MonitorTestAlertService
                 else
                 {
                     decision = "SEND";
-                    reason = opened ? "新觸發嚴重" : r.isEscalated() ? "注意持續，升級為嚴重" : "越過嚴重線，由注意變為嚴重";
+                    reason = opened ? "新觸發嚴重" : reCrit ? "回落注意後再次越過嚴重線" : eventEscalated ? "注意持續，升級為嚴重" : "越過嚴重線，由注意變為嚴重";
                     sentTypes.add(type);
                     lastNotified = p.getTo();
                 }
@@ -445,7 +456,7 @@ public class MonitorTestAlertService
                 out.level = r.getLevel();
                 out.action = r.getAction();
                 out.eventLevel = eventLevel;
-                out.escalated = eventLevel != null && r.isEscalated();
+                out.escalated = eventLevel != null && eventEscalated;
                 out.startHour = eventStart;
                 out.triggerHour = eventTrigger;
                 out.decision = decision;

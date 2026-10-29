@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -63,7 +62,7 @@ public class TimeRangeResolver
         {
             return freshness;
         }
-        LocalDateTime now = LocalDateTime.now(zone());
+        LocalDateTime now = LocalDateTime.now(properties.siteZone(siteCode));
         LocalDateTime asOf = now.truncatedTo(ChronoUnit.HOURS);
         return DataFreshness.of(asOf, asOf);
     }
@@ -164,8 +163,9 @@ public class TimeRangeResolver
     {
         QueryContext context = new QueryContext();
         context.setSiteCode(siteCode);
-        context.setTimezone(properties.getTimezone());
-        context.setCurrency(properties.getCurrency());
+        // 时区、币种按站点（站点表 monitor_site_setting）；UDS 该站点的数据也按这个时区统计
+        context.setTimezone(properties.siteTimezone(siteCode));
+        context.setCurrency(properties.siteCurrency(siteCode));
         context.setRegistryVersion(properties.getRegistryVersion());
         if (!main.isUnbounded())
         {
@@ -212,10 +212,6 @@ public class TimeRangeResolver
         return LocalDate.parse(properties.getLaunchDate(), DATE);
     }
 
-    private ZoneId zone()
-    {
-        return ZoneId.of(properties.getTimezone());
-    }
 
     private LocalDate parseDate(String value, String field)
     {

@@ -67,6 +67,21 @@ class SiteSettingServiceTest
     }
 
     @Test
+    void returnsSortNoForSitesAndOrphans()
+    {
+        mapper.put("SITE-IN", null, 1);
+        mapper.put("OLD", null, 1);
+        mapper.rows.get("SITE-IN").setSortNo(0);
+        mapper.rows.get("OLD").setSortNo(7);
+
+        List<SiteSettingVO> list = service.list(null);
+
+        assertEquals(0, list.get(0).getSortNo(), "站点的排序号");
+        assertNull(list.get(1).getSortNo(), "还没有设置行：没有排序号");
+        assertEquals(7, list.get(2).getSortNo(), "未配置行也返回排序号（列表里仍排最后）");
+    }
+
+    @Test
     void filtersByPackageNetworkOrUnset()
     {
         mapper.put("SITE-IN", "包網A", 1);

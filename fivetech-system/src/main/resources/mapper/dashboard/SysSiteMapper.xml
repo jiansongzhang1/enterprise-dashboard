@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  站点存在 monitor_site_setting（2026-10-28 起兼作站点表）：site_name 不为空的行是站点；
+  site_name 为空的行是早期按需补的设置行或已去掉的站点留下的数据（站点管理页显示「未配置」）。
+-->
+<mapper namespace="com.fivetech.dashboard.mapper.SysSiteMapper">
+
+	<resultMap type="com.fivetech.dashboard.domain.SysSite" id="SysSiteResult">
+		<result property="siteCode"    column="site_code"    />
+		<result property="siteName"    column="site_name"    />
+		<result property="udsSite"     column="uds_site"     />
+		<result property="timezone"    column="timezone"     />
+		<result property="currency"       column="currency"        />
+		<result property="currencySymbol" column="currency_symbol" />
+		<result property="defaultSite" column="is_default"   />
+		<result property="sortNo"      column="sort_no"      />
+		<result property="updateBy"    column="update_by"    />
+		<result property="updateTime"  column="update_time"  />
+	</resultMap>
+
+	<sql id="cols">
+		select site_code, site_name, uds_site, timezone, currency, currency_symbol, is_default, sort_no, update_by, update_time
+		  from monitor_site_setting
+	</sql>
+
+	<select id="selectAll" resultMap="SysSiteResult">
+		<include refid="cols"/>
+		 where site_name is not null
+		 order by sort_no, site_code
+	</select>
+
+	<select id="countAll" resultType="int">
+		select count(*) from monitor_site_setting where site_name is not null
+	</select>
+
+	<select id="countCodeIgnoreCase" resultType="int">
+		select count(*) from monitor_site_setting
+		 where site_name is not null
+		   and upper(site_code) = upper(#{code})
+		<if test="excludeCode != null and excludeCode != ''">
+		   and upper(site_code) &lt;&gt; upper(#{excludeCode})
+		</if>
+	</select>
+
+	<select id="selectByCodeIgnoreCase" resultMap="SysSiteResult">
+		<include refid="cols"/>
+		 where site_name is not null and upper(site_code) = upper(#{code})
+	</select>
+
+	<!-- 不是站点的设置行（site_name 为空）里与 code 相同（不区分大小写）的编码；没有返回 null -->
+	<select id="selectOrphanCode" resultType="string">
+		select site_code from monitor_site_setting
+		 where site_name is null and upper(site_code) = upper(#{code})
+		 limit 1
+	</select>
+
+	<!-- 新增站点 / 首次启动导入：行不存在时新建（规则号从 1 开始）；已有设置行但还不是站点时补上站点字段（保留包网、规则号）。
+	     排序号不传时取最大值 + 1，站点列表按它从小到大，即创建先后 -->
+	<insert id="insert">
+		insert into monitor_site_setting (site_code, next_rule_no, site_name, uds_site, timezone, currency, currency_symbol,
+		                                  is_default, sort_no, update_by, update_time)
+		values (#{site.siteCode}, 1, #{site.siteName}, #{site.udsSite}, #{site.timezone}, #{site.currency},
+		        #{site.currencySymbol}, #{site.defaultSite},
+		        coalesce(#{site.sortNo}, (select coalesce(max(sort_no), 0) + 1 from monitor_site_setting)),
+		        #{site.updateBy}, localtimestamp)
+		on conflict (site_code) do update
+		   set site_name   = excluded.site_name,
+		       uds_site    = excluded.uds_site,
+		       timezone    = excluded.timezone,
+		       currency    = excluded.currency,
+		       currency_symbol = excluded.currency_symbol,
+		       is_default  = excluded.is_default,
+		       sort_no     = excluded.sort_no,
+		       update_by   = excluded.update_by,
+		       update_time = excluded.update_time
+		 where monitor_site_setting.site_name is null
+	</insert>
+
+	<update id="update">
+		update monitor_site_setting
+		   set site_name   = #{site.siteName},
+		       uds_site    = #{site.udsSite},
+		       timezone    = #{site.timezone},
+		       currency    = #{site.currency},
+		       currency_symbol = #{site.currencySymbol},
+		       sort_no     = coalesce(#{site.sortNo}, sort_no),
+		<if test="newCode != null and newCode != ''">
+		       site_code   = #{newCode},
+		</if>
+		       update_by   = #{site.updateBy},
+		       update_time = localtimestamp
+		 where site_name is not null and upper(site_code) = upper(#{oldCode})
+	</update>
+
+	<select id="selectVersion" resultType="string">
+		select count(*) filter (where site_name is not null) || ':'
+		       || coalesce(to_char(max(update_time), 'YYYYMMDDHH24MISSUS'), '')
+		  from monitor_site_setting
+	</select>
+
+	<!-- 改编码时要级联更新的表：当前 schema 里带 site_code 列的普通表（站点表 monitor_site_setting 自己单独改） -->
+	<select id="selectSiteCodeTables" resultType="string">
+		select c.table_name
+		  from information_schema.columns c
+		  join information_schema.tables t
+		    on t.table_schema = c.table_schema and t.table_name = c.table_name and t.table_type = 'BASE TABLE'
+		 where c.table_schema = current_schema()
+		   and c.column_name = 'site_code'
+		   and c.table_name &lt;&gt; 'monitor_site_setting'
+		 order by c.table_name
+	</select>
+
+	<!-- table 来自 selectSiteCodeTables，调用方再按 [a-z0-9_] 校验，不接受外部输入 -->
+	<select id="countSiteCode" resultType="int">
+		select count(*) from ${table} where upper(site_code) = upper(#{code})
+	</select>
+
+	<update id="renameSiteCode">
+		update ${table} set site_code = #{newCode} where upper(site_code) = upper(#{oldCode})
+	</update>
+
+</mapper>

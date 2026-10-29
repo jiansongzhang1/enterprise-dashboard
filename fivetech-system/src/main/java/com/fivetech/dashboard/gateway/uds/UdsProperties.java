@@ -74,6 +74,9 @@ public class UdsProperties
         /** 周期列名 */
         private String periodField = "period_code";
 
+        /** 样本量列名：规则设了最小样本量时按 GTE 过滤（FY-26 R1，样本量不足的周期不计入） */
+        private String sampleField = "sample_basis";
+
         /** 本系统指标编码 → UDS metric_code */
         private Map<String, String> metrics = new LinkedHashMap<>();
 
@@ -121,6 +124,10 @@ public class UdsProperties
         public String getPeriodField() { return periodField; }
 
         public void setPeriodField(String periodField) { this.periodField = periodField; }
+
+        public String getSampleField() { return sampleField; }
+
+        public void setSampleField(String sampleField) { this.sampleField = sampleField; }
 
         public Map<String, String> getMetrics() { return metrics; }
 

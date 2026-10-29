@@ -351,6 +351,7 @@ public class MetricRegistry
                 definition.setChartType(card.getChartType());
                 definition.setGaugeMin(card.getGaugeMin());
                 definition.setGaugeMax(card.getGaugeMax());
+                definition.setRemark(card.getRemark());
                 definitions.put(card.getMetricCode(), definition);
                 if (card.isShowAsCard())
                 {

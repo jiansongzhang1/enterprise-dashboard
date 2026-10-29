@@ -21,6 +21,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="endHour"       column="end_hour"        />
 		<result property="lastPeriodEnd" column="last_period_end" />
 		<result property="stoppedAt"     column="stopped_at"      />
+		<result property="stopReason"    column="stop_reason"     />
 		<result property="currentValue"  column="current_value"   />
 		<result property="baselineValue" column="baseline_value"  />
 		<result property="ruleSnapshot"  column="rule_snapshot"   />
@@ -43,19 +44,19 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<!--
 	  负责人按规则的 owner_user_id（规则逻辑删除后仍保留，已删除规则的事件按删除时的负责人筛）。
-	  通知群：该事件最近一条发送记录的群；还没有发送记录时用规则当前的群。发送失败的原因取最近一条发送记录的 error_msg。
+	  通知群：该事件最近一条发送记录的群；还没有发送记录时用触发时规则快照里的群（MON-32），老事件没有快照再用规则当前的群。发送失败的原因取最近一条发送记录的 error_msg。
 	  range（trigger_hour 区间）不影响异常中的事件。
 	-->
 	<select id="selectEventList" resultMap="EventRowResult">
 		select e.event_id, e.rule_id, r.rule_no, coalesce(r.del_flag = '2', false) as rule_deleted,
 		       e.metric_code, coalesce(c.metric_name, e.metric_code) as metric_name, c.value_format,
-		       e.level, e.escalated, e.status, e.start_hour, e.trigger_hour, e.end_hour, e.last_period_end, e.stopped_at,
+		       e.level, e.escalated, e.status, e.start_hour, e.trigger_hour, e.end_hour, e.last_period_end, e.stopped_at, e.stop_reason,
 		       e.current_value, e.baseline_value, e.rule_snapshot::text as rule_snapshot,
 		       r.owner_user_id, ou.email as owner_email,
 		       e.notify_status, e.notified_at, e.mute_sent_at, e.mute_hours,
 		       case when e.notify_status = 'failed' then nl.error_msg end as notify_error,
-		       coalesce(nl.chat_id, r.notify_chat_id) as chat_id,
-		       coalesce(ch.name, r.notify_chat_name) as chat_name, ch.status as chat_status,
+		       coalesce(nl.chat_id, nullif(e.rule_snapshot->>'notifyChatId', ''), r.notify_chat_id) as chat_id,
+		       coalesce(ch.name, nullif(e.rule_snapshot->>'notifyChatName', ''), r.notify_chat_name) as chat_name, ch.status as chat_status,
 		       e.handle_status, e.handle_note,
 		       coalesce(nullif(hu.email, ''), hu.user_name) as handled_by, e.handled_at, e.handle_reset
 		  from monitor_event e
@@ -70,7 +71,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		         order by n.id desc
 		         limit 1) nl on true
 		  left join monitor_lark_chat ch    on ch.site_code = e.site_code
-		                                   and ch.chat_id = coalesce(nl.chat_id, r.notify_chat_id)
+		                                   and ch.chat_id = coalesce(nl.chat_id, nullif(e.rule_snapshot->>'notifyChatId', ''), r.notify_chat_id)
 		 where e.event_type = 'alert'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="e"/>
@@ -91,10 +92,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   and (e.status = 'open' or (e.trigger_hour &gt;= #{q.rangeFrom}
 		        <if test="q.rangeTo != null">and e.trigger_hour &lt; #{q.rangeTo}</if>))
 		</if>
+		 <!-- FY-27 R2 / MON-30：异常中的排最前；再按触发时间从新到旧，同一时间按指标 -->
 		 order by case when e.status = 'open' then 0 else 1 end,
-		          case when e.status = 'open' and e.level = 'CRIT' then 0 else 1 end,
-		          case when e.status = 'open' then e.start_hour end asc,
 		          e.trigger_hour desc,
+		          e.metric_code asc,
 		          e.event_id desc
 	</select>
 

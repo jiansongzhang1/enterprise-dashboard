@@ -81,10 +81,10 @@ UPDATE dashboard_metric_card AS c
     -- 上限
     ('dT',     'hi',   'dOk',   20,      FALSE),  -- 平均到帐时间：存款成功笔数 ≥ 20（R-002）
     ('wT',     'hi',   'wOk',   15,      FALSE),  -- 平均出款时间：提款成功笔数 ≥ 15（R-004）
-    -- 区间（投注人数 betU 尚未入本表，见下方说明）
-    ('killR',  'band', 'betU',  50,      FALSE),  -- 平均杀率（R-005）
-    ('bonusR', 'band', 'betU',  50,      FALSE),  -- 赠金比（R-006）
-    ('turnX',  'band', 'betU',  50,      FALSE),  -- 流水倍数（R-007）
+    -- 区间：样本量看投注人数 = 活跃人数 active（有投注行为的去重会员数，原型 MINNL「投注人數」；2026-10-27 MON-34）
+    ('killR',  'band', 'active',  50,      FALSE),  -- 平均杀率（R-005）
+    ('bonusR', 'band', 'active',  50,      FALSE),  -- 赠金比（R-006）
+    ('turnX',  'band', 'active',  50,      FALSE),  -- 流水倍数（R-007）
     -- 跌幅
     ('reg',    'drop', 'base',  15,      FALSE),  -- 注册人数：基准 ≥ 15 人（R-012）
     ('ftd',    'drop', 'base',  5,       FALSE),  -- 首存人数：基准 ≥ 5 人
@@ -102,7 +102,7 @@ UPDATE dashboard_metric_card AS c
 
 -- 说明：
 -- 1. 区间类的样本量口径是「投注人数」（需求文档 R-005～R-007），本表目前没有这个原子量，
---    暂记为 betU。判定引擎上线前需与 UDS 确认字段，并补一行 betU（show_as_card = FALSE）。
+--    用 active（活跃人数 = 有投注行为的去重会员数，与原型一致；2026-10-27 起，原来记为 betU，UDS 没有该字段，样本量不生效）。
 -- 2. 默认样本量来自需求文档预置规则与原型；量级较小的站点在新建 / 预置规则时自行调整，
 --    这里只是新建规则表单的默认值，不影响已建规则。
 

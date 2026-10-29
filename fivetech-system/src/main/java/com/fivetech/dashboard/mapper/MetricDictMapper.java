@@ -45,4 +45,10 @@ public interface MetricDictMapper
 
     /** 删除仅登记的指标 */
     int deleteRegistered(@Param("metricCode") String metricCode);
+
+    /** 已接入指标改名称、英文名、分组、数值格式（方向、更新频率不改） */
+    int updateLiveBasic(@Param("item") MetricDictItem item);
+
+    /** 引用该指标的告警规则数（含暂停，不含已删除），所有站点 */
+    int countRules(@Param("metricCode") String metricCode);
 }

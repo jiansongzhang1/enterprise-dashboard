@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -15,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -123,13 +123,31 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         fillCommon(vo, query, slot(from.format(SLOT), to.format(SLOT), granularity.name()));
         Map<String, BigDecimal> totals = totals(query, from, to, granularity, notices, "bonus", "bet");
 
-        vo.setBonus(buildBonus(totals.get("bonus"), breakdown(OverviewBreakdowns.BONUS_ITEMS, from, to,
-            "贈金項目構成", notices), notices));
-        vo.setGames(buildGames(totals.get("bet"), topN, breakdown(OverviewBreakdowns.HOT_GAMES, from, to,
-            "熱銷遊戲", notices)));
+        // 多站点：本站不提供的子块（UDS meta.omitted：数据集未实现，或赠金 / 投注指标本站没有）返回 null，记进 omittedBlocks
+        Set<String> omittedMetrics = gateway.omittedMetrics(site(query), List.of("bonus", "bet"));
+        BreakdownResult bonusBd = breakdown(OverviewBreakdowns.BONUS_ITEMS, from, to, "贈金項目構成", notices);
+        if ((bonusBd != null && bonusBd.isOmitted()) || omittedMetrics.contains("bonus"))
+        {
+            vo.getOmittedBlocks().add("bonus");
+        }
+        else
+        {
+            vo.setBonus(buildBonus(totals.get("bonus"), bonusBd, notices));
+        }
+        BreakdownResult gamesBd = breakdown(OverviewBreakdowns.HOT_GAMES, from, to, "熱銷遊戲", notices);
+        if ((gamesBd != null && gamesBd.isOmitted()) || omittedMetrics.contains("bet"))
+        {
+            vo.getOmittedBlocks().add("games");
+        }
+        else
+        {
+            vo.setGames(buildGames(totals.get("bet"), topN, gamesBd));
+        }
+        vo.setOmitted(vo.getBonus() == null && vo.getGames() == null);
 
-        vo.setEmpty(vo.getBonus().getItems().isEmpty() && vo.getGames().getItems().isEmpty()
-            && totals.get("bonus") == null && totals.get("bet") == null);
+        vo.setEmpty((vo.getBonus() == null || vo.getBonus().getItems().isEmpty())
+            && (vo.getGames() == null || vo.getGames().getItems().isEmpty())
+            && (vo.getBonus() == null || totals.get("bonus") == null) && (vo.getGames() == null || totals.get("bet") == null));
         refreshAsOf(vo, query);
         return vo;
     }
@@ -365,18 +383,37 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_RETENTION, "投注留存率", "FIRST_BET_DATE",
                 "投注日", "投注人數", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
-            vo.setRetention(t);
-            vo.setRetentionColumns(new ArrayList<>(OverviewBreakdowns.RETENTION_COLUMNS.keySet()));
-            any |= hasBase(t);
+            if (t == null)
+            {
+                // 本站不提供：整张表为 null，不返回空行矩阵
+                vo.getOmittedBlocks().add("retention");
+                vo.setRetentionColumns(null);
+            }
+            else
+            {
+                vo.setRetention(t);
+                vo.setRetentionColumns(new ArrayList<>(OverviewBreakdowns.RETENTION_COLUMNS.keySet()));
+                any |= hasBase(t);
+            }
         }
         if (!"RETENTION".equals(type))
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_LTV, "LTV", "FIRST_DEPOSIT_DATE",
                 "首存日", "首存人數", "MONEY", OverviewBreakdowns.LTV_COLUMNS, from, end, lastDay, true, notices);
-            vo.setLtv(t);
-            vo.setLtvColumns(new ArrayList<>(OverviewBreakdowns.LTV_COLUMNS.keySet()));
-            any |= hasBase(t);
+            if (t == null)
+            {
+                vo.getOmittedBlocks().add("ltv");
+                vo.setLtvColumns(null);
+            }
+            else
+            {
+                vo.setLtv(t);
+                vo.setLtvColumns(new ArrayList<>(OverviewBreakdowns.LTV_COLUMNS.keySet()));
+                any |= hasBase(t);
+            }
         }
+        // 请求的表全部本站不提供
+        vo.setOmitted(!vo.getOmittedBlocks().isEmpty() && vo.getRetention() == null && vo.getLtv() == null);
         vo.setEmpty(!any);
         return vo;
     }
@@ -397,6 +434,10 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         }
         // TODO：队列数据集的时间维度是否就是分群日、DAY 粒度的 to 写法，待 UDS 提供数据集后确认
         BreakdownResult bd = breakdown(key, from.atStartOfDay(), end.atStartOfDay(), title, notices);
+        if (bd != null && bd.isOmitted())
+        {
+            return null;    // 本站不提供：调用方把这张表置为 null，记进 omittedBlocks
+        }
         Map<String, BreakdownResult.Row> byDate = new HashMap<>();
         if (bd != null && bd.isReady())
         {
@@ -474,6 +515,16 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         fillCommon(vo, query, slot(from.format(SLOT), to.format(SLOT), null));
 
         BreakdownResult bd = breakdown(OverviewBreakdowns.REG_CHANNELS, from, to, "註冊渠道", notices);
+        if (bd != null && bd.isOmitted())
+        {
+            // 本站不提供：渠道、分组为 null，不返回空结构
+            vo.setOmitted(true);
+            vo.setChannels(null);
+            vo.setGroups(null);
+            vo.setEmpty(true);
+            refreshAsOf(vo, query);
+            return vo;
+        }
         boolean ready = bd != null && bd.isReady();
 
         // 渠道：上游一行一个渠道。TODO：0 注册的渠道需要渠道维表补齐，上游只回有注册的渠道时这些渠道会缺席
@@ -585,8 +636,9 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
     private void fillCommon(OverviewSectionVO vo, OverviewSectionQuery query, SectionSlotVO slot)
     {
         vo.setSlot(slot);
-        vo.setCurrency(properties.getCurrency());
-        vo.setTimezone(properties.getTimezone());
+        // 币种、时区按当前站点（站点表 monitor_site_setting）
+        vo.setCurrency(properties.currentCurrency());
+        vo.setTimezone(properties.currentTimezone());
         refreshAsOf(vo, query);
     }
 
@@ -608,6 +660,11 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         try
         {
             BreakdownResult r = gateway.queryBreakdown(key, from, to);
+            if (r.isOmitted())
+            {
+                // 本站不提供：不是故障，不出提示，由板块返回 omitted
+                return r;
+            }
             if (!r.isConfigured())
             {
                 notices.add(OverviewNoticeVO.warn("DATA_NOT_CONNECTED", label + "資料待接入",
@@ -734,7 +791,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
 
     private LocalDate today()
     {
-        return LocalDate.now(ZoneId.of(properties.getTimezone()));
+        return LocalDate.now(properties.currentZone());
     }
 
     /** 接受 yyyy-MM-dd HH:mm 或 yyyy-MM-dd（按 00:00） */

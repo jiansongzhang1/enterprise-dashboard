@@ -196,6 +196,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   set status      = 'stopped',
 		       end_hour    = coalesce(last_period_end, #{endHour,jdbcType=TIMESTAMP}),
 		       stopped_at  = #{now},
+		       stop_reason = #{reason},
 		       update_time = #{now}
 		 where rule_id = #{ruleId}
 		   and site_code = #{scope.siteCode}

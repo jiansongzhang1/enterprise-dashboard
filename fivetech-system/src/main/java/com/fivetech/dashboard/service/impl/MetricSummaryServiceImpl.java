@@ -102,6 +102,15 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         Map<String, List<BigDecimal>> series = new java.util.LinkedHashMap<>();
         gateway.querySeries(slotRequest(siteCode, main, columns))
             .forEach((code, values) -> series.put(code, normalizer.normalizeSeries(code, values)));
+        // 多站点：本站不提供的指标（UDS meta.omitted）不返回给前端——列、行里的值、合计、排序都去掉，
+        // 例如请求 20 个指标、本站 8 个不提供，只返回 12 列
+        java.util.Set<String> omitted = gateway.omittedMetrics(siteCode, columns);
+        if (!omitted.isEmpty())
+        {
+            columns = new ArrayList<>(columns);
+            columns.removeAll(omitted);
+            series.keySet().removeAll(omitted);
+        }
         fill(rows, series);
 
         // 5. 排序与分页

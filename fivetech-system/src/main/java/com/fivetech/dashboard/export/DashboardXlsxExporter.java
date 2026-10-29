@@ -177,7 +177,7 @@ public class DashboardXlsxExporter
         metrics.forEach(m -> cols.add(Col.num(m.header(), m.format)));
 
         int rows = vo.getPage().getRows().size();
-        try (Book book = new Book(false))
+        try (Book book = new Book(false).site(properties))
         {
             Sheet sheet = book.sheet(PAGE_SUMMARY);
             int r = book.header(sheet, cols);
@@ -190,7 +190,7 @@ public class DashboardXlsxExporter
             book.row(sheet, r, cols, summaryLine("區間值", ctx == null ? null : ctx.getSpanFrom(),
                 ctx == null ? null : ctx.getSpanTo(), metricCols, vo.getTotalRow()));
 
-            List<String[]> notes = ExportTemplate.commonNotes(false);
+            List<String[]> notes = ExportTemplate.commonNotes(false, properties.siteZoneText(siteOf(ctx, query)));
             notes.add(new String[] { PAGE_SUMMARY, "類型", "「時間片」為一行一個時間片；最後一行「區間值」為整個區間的值", "" });
             notes.add(new String[] { PAGE_SUMMARY, "開始 / 結束", "時間片或區間的起止；粒度按頁面「粒度」設定", "YYYY-MM-DD HH:mm" });
             notes.add(new String[] { PAGE_SUMMARY, "區間值",
@@ -448,7 +448,7 @@ public class DashboardXlsxExporter
         fields.forEach(f -> cols.add(f.col));
         List<T> rows = vo.getPage().getRows();
         boolean truncated = vo.getPage().isTruncated();
-        try (Book book = new Book(true))
+        try (Book book = new Book(true).site(properties))
         {
             Sheet sheet = book.sheet(page);
             int r = book.header(sheet, cols);
@@ -461,7 +461,7 @@ public class DashboardXlsxExporter
                 }
                 book.row(sheet, r++, cols, line);
             }
-            List<String[]> notes = ExportTemplate.commonNotes(true);
+            List<String[]> notes = ExportTemplate.commonNotes(true, properties.siteZoneText(siteOf(vo.getContext(), null)));
             if (extraNotes != null)
             {
                 notes.addAll(extraNotes);

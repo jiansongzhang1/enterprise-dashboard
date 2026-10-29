@@ -81,6 +81,31 @@ public class MetricValueNormalizer
     }
 
     /**
+     * 只换算单位、不按展示位数取整（判定用，MON-06）：比率 ×100、时长秒 → 分钟，其余原样。
+     * 例如跌幅类基准 43.5 不能先取成 44 再算跌幅；展示时再按指标格式取整。
+     *
+     * @param raw UDS 原始值；null 原样返回 null
+     */
+    public BigDecimal toDisplayUnit(String code, BigDecimal raw)
+    {
+        if (raw == null)
+        {
+            return null;
+        }
+        MetricDefinition definition = metricRegistry.get(code);
+        String format = definition == null || definition.getFormat() == null ? "" : definition.getFormat().toUpperCase();
+        switch (format)
+        {
+            case "PCT":
+                return raw.multiply(HUNDRED);
+            case "MIN":
+                return raw.divide(SECONDS_PER_MINUTE, 6, RoundingMode.HALF_UP);
+            default:
+                return raw;
+        }
+    }
+
+    /**
      * 换算一整条序列。保持长度不变——缺的位置仍是 null，
      * 数组长度是前端对齐时间片标签的契约。
      */

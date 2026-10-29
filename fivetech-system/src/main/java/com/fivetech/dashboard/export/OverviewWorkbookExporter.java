@@ -3,7 +3,6 @@ package com.fivetech.dashboard.export;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -146,7 +145,7 @@ public class OverviewWorkbookExporter
         CohortQuery cq = cohortQuery(query);
         Part<CohortVO> cohort = fetch("留存與 LTV", () -> sectionService.cohort(cq));
 
-        try (Book book = new Book(false))
+        try (Book book = new Book(false).site(properties))
         {
             book.info(S_INFO, info(query, cq, core, reg, ranking, cohort));
             writeSnapshot(book, core);
@@ -200,7 +199,7 @@ public class OverviewWorkbookExporter
                 notes.add(line);
             }
         }
-        try (Book book = new Book(false))
+        try (Book book = new Book(false).site(properties))
         {
             book.info(S_INFO, ExportTemplate.exportInfo(properties, q.getSiteCode(), filter.toString(), extra));
             writeGames(book, q, part);
@@ -305,7 +304,7 @@ public class OverviewWorkbookExporter
             from = slotFrom.toLocalDate();
             to = slotTo.toLocalTime().equals(java.time.LocalTime.MIDNIGHT)
                 ? slotTo.toLocalDate() : slotTo.toLocalDate().plusDays(1);
-            LocalDate today = LocalDate.now(ZoneId.of(properties.getTimezone()));
+            LocalDate today = LocalDate.now(properties.currentZone());
             if (!from.isBefore(today))
             {
                 to = today;
@@ -480,8 +479,10 @@ public class OverviewWorkbookExporter
         for (MetricCardVO c : cards(vo))
         {
             ExportMetricText.M m = text(c);
+            // 单位：金额按当前站点币种
+            String unit = "INR".equals(m.unit) ? properties.currentCurrency() : m.unit;
             book.row(sheet, r++, cols, Arrays.asList(from, to, cmpFrom, cmpTo, m.label, m.group, c.getValue(),
-                m.unit, c.getPrevValue(), ExportTemplate.changePct(c.getValue(), c.getPrevValue()), m.note));
+                unit, c.getPrevValue(), ExportTemplate.changePct(c.getValue(), c.getPrevValue()), m.note));
         }
     }
 
@@ -566,7 +567,8 @@ public class OverviewWorkbookExporter
             Col.text("渠道", 22), Col.num("註冊人數", null), Col.num("佔總註冊(%)", "0.00"), Col.num("佔分組(%)", "0.00"));
         int r = book.header(sheet, cols);
         RegChannelVO vo = part.data;
-        if (vo == null)
+        // 本站不提供（omitted）：渠道、分组为 null，只留表头
+        if (vo == null || vo.getGroups() == null || vo.getChannels() == null)
         {
             return;
         }
@@ -722,14 +724,14 @@ public class OverviewWorkbookExporter
         {
             return asOf.toLocalDate().minusDays(1);
         }
-        return LocalDate.now(ZoneId.of(properties.getTimezone())).minusDays(1);
+        return LocalDate.now(properties.currentZone()).minusDays(1);
     }
 
     // ===================== 口徑說明 =====================
 
     private List<String[]> notes(CohortVO cohort)
     {
-        List<String[]> l = ExportTemplate.commonNotes(false);
+        List<String[]> l = ExportTemplate.commonNotes(false, properties.siteZoneText(properties.currentSite()));
         String slotUnit = "YYYY-MM-DD HH:mm";
         l.add(new String[] { S_SNAPSHOT, "統計開始 / 統計結束", "當前值的統計區間", slotUnit });
         l.add(new String[] { S_SNAPSHOT, "對比開始 / 對比結束", "上期值的統計區間，按頁面「對比」設定（上一週期 / 去年同期 / 自訂）", slotUnit });

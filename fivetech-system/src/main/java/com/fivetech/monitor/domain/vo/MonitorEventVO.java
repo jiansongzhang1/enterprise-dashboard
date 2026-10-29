@@ -17,6 +17,7 @@ public class MonitorEventVO
     private boolean ruleDeleted;
     private String metricCode;
     private String metricName;
+    /** 单位：金额为 "money"（前端按当前站点币种显示符号），其余为 % / x / min / 空 */
     private String unit;
     private String level;
     private boolean escalated;

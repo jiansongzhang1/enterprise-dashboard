@@ -197,7 +197,8 @@ class MonitorLarkChatServiceTest
         assertTrue(json.contains("**機器人**：Yata 告警 · 一組"), json);
         assertTrue(json.contains("**群**：運營群"), json);
         assertTrue(json.contains("**發送人**：ops@yata.demo"), json);
-        assertTrue(json.contains("（IST）"), json);
+        assertFalse(json.contains("（IST）"), "時間不写时区：" + json);
+        assertTrue(json.matches("(?s).*\\*\\*時間\\*\\*：\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}[^（\\d].*"), json);
         assertFalse(json.contains("button"), "群连接测试没有按钮");
     }
 
@@ -244,7 +245,7 @@ class MonitorLarkChatServiceTest
         lark.sendNext = LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "timeout", 0);
         MonitorException e = assertThrows(MonitorException.class, () -> service.testChat(SITE, "oc_a", "ops@yata.demo"));
         assertEquals(MonitorErrorCode.LARK_SEND_FAILED, e.getCode());
-        assertTrue(e.getMessage().startsWith("測試消息發送失敗："));
+        assertTrue(e.getMessage().startsWith("測試訊息發送失敗："));
         lark.sendNext = LarkResult.fail(LarkErrorCategory.TARGET_INVALID, 230002, "The bot can not be outside the group.", 400);
         assertEquals(MonitorErrorCode.CHAT_DEAD,
                 assertThrows(MonitorException.class, () -> service.testChat(SITE, "oc_a", "ops@yata.demo")).getCode());

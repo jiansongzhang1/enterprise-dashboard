@@ -18,7 +18,8 @@ import com.fivetech.monitor.domain.vo.SiteSettingVO;
 import com.fivetech.monitor.mapper.MonitorSiteMapper;
 
 /**
- * 系统管理 · 站点管理：站点来自配置（默认站点 + dashboard.sites），站点级设置（所属包网、规则号）存 monitor_site_setting。
+ * 系统管理 · 站点管理：站点来自 monitor_site_setting 里 site_name 不为空的行（经 {@link com.fivetech.dashboard.service.SiteRegistry} 加载；表不可用时为 application.yml），
+ * 站点级设置（所属包网、规则号）存 monitor_site_setting。新增、修改站点见 {@link com.fivetech.dashboard.service.SiteManageService}。
  * <p>一个包网可对应多个站点，一个站点只属于一个包网：包网直接存在站点设置行上，同名（去掉首尾空白）即同一包网。</p>
  *
  * @author fivetech
@@ -42,7 +43,7 @@ public class SiteSettingService
     }
 
     /**
-     * 全部站点：先默认站点，再按配置顺序列出 dashboard.sites；数据库里有设置行、但配置已去掉的站点排在最后（configured = false）。
+     * 全部站点：按创建先后（排序号 sort_no 从小到大，新增站点取最大值 + 1）；数据库里有设置行、但不是站点的排在最后（configured = false）。
      *
      * @param packageNetwork 按包网筛选（精确匹配）；为空不筛选，传「-」只看未设置的
      */
@@ -54,15 +55,8 @@ public class SiteSettingService
             rows.put(row.getSiteCode().toUpperCase(), row);
         }
         List<SiteSettingVO> list = new ArrayList<>();
-        List<String> codes = new ArrayList<>();
-        codes.add(dashboard.getDefaultSite());
-        for (DashboardProperties.Site site : dashboard.getSites())
-        {
-            if (StringUtils.isNotEmpty(site.getCode()) && !codes.contains(site.getCode()))
-            {
-                codes.add(site.getCode());
-            }
-        }
+        // 按创建先后（站点表加载后为排序号从小到大）；不是站点的设置行排在最后
+        List<String> codes = dashboard.allSiteCodes();
         for (String code : codes)
         {
             list.add(toVO(code, true, rows.remove(code.toUpperCase())));
@@ -139,11 +133,33 @@ public class SiteSettingService
         vo.setDefaultSite(configured && code.equalsIgnoreCase(dashboard.getDefaultSite()));
         vo.setSiteName(configured ? dashboard.siteName(code) : code);
         vo.setUdsSite(configured ? dashboard.udsSite(code) : null);
+        vo.setEffectiveTimezone(configured ? dashboard.siteTimezone(code) : null);
+        vo.setEffectiveCurrency(configured ? dashboard.siteCurrency(code) : null);
+        vo.setEffectiveCurrencySymbol(configured ? dashboard.siteCurrencySymbol(code) : null);
+        if (configured && vo.isDefaultSite())
+        {
+            vo.setTimezone(StringUtils.isEmpty(dashboard.getDefaultSiteTimezone()) ? null : dashboard.getDefaultSiteTimezone().trim());
+            vo.setCurrency(StringUtils.isEmpty(dashboard.getDefaultSiteCurrency()) ? null : dashboard.getDefaultSiteCurrency());
+            vo.setCurrencySymbol(StringUtils.isEmpty(dashboard.getDefaultSiteCurrencySymbol()) ? null : dashboard.getDefaultSiteCurrencySymbol());
+        }
+        if (configured && !vo.isDefaultSite())
+        {
+            for (DashboardProperties.Site s : dashboard.getSites())
+            {
+                if (code.equalsIgnoreCase(s.getCode()))
+                {
+                    vo.setTimezone(StringUtils.isEmpty(s.getTimezone()) ? null : s.getTimezone().trim());
+                    vo.setCurrency(StringUtils.isEmpty(s.getCurrency()) ? null : s.getCurrency().trim());
+                    vo.setCurrencySymbol(StringUtils.isEmpty(s.getCurrencySymbol()) ? null : s.getCurrencySymbol().trim());
+                }
+            }
+        }
         vo.setNextRuleNo(1);
         if (row != null)
         {
             vo.setPackageNetwork(row.getPackageNetwork());
             vo.setNextRuleNo(row.getNextRuleNo() == null ? 1 : row.getNextRuleNo());
+            vo.setSortNo(row.getSortNo());
             vo.setUpdateBy(row.getUpdateBy());
             vo.setUpdateTime(row.getUpdateTime() == null ? null : row.getUpdateTime().format(MINUTE));
         }

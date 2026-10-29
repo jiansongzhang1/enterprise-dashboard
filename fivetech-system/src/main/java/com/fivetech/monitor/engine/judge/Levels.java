@@ -21,6 +21,16 @@ public final class Levels
         return WARN.equals(level) || CRIT.equals(level);
     }
 
+    /** 事件等级只升不降（FY-23 R23）：两者取高；CRIT > WARN，null 视为没有 */
+    public static String higher(String a, String b)
+    {
+        if (CRIT.equals(a) || CRIT.equals(b))
+        {
+            return CRIT;
+        }
+        return a != null ? a : b;
+    }
+
     private Levels()
     {
     }

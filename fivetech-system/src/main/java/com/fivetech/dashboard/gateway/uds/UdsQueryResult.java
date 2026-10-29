@@ -39,6 +39,32 @@ public class UdsQueryResult
         this.watermark = watermark;
     }
 
+    /** 本站不提供的指标字段（meta.omitted 里带 metric 的项，UDS 字段名）；按列省略，不在 data.columns 里 */
+    private java.util.Set<String> omittedMetrics = java.util.Set.of();
+
+    /** 整个数据集本站未实现（meta.omitted 里带 dataset、不带 metric 的项）：200 空数据 */
+    private boolean datasetOmitted;
+
+    public java.util.Set<String> getOmittedMetrics()
+    {
+        return omittedMetrics;
+    }
+
+    public void setOmittedMetrics(java.util.Set<String> omittedMetrics)
+    {
+        this.omittedMetrics = omittedMetrics == null ? java.util.Set.of() : omittedMetrics;
+    }
+
+    public boolean isDatasetOmitted()
+    {
+        return datasetOmitted;
+    }
+
+    public void setDatasetOmitted(boolean datasetOmitted)
+    {
+        this.datasetOmitted = datasetOmitted;
+    }
+
     public List<UdsRow> getRows()
     {
         return rows;

@@ -39,6 +39,22 @@ public class OverviewSectionVO implements Serializable
     /** 区间内没有任何数据 */
     private boolean empty = false;
 
+    /**
+     * 本站不提供整个板块（多站点：UDS 对本站返回 meta.omitted）。为 true 时板块内容为 null / 空，前端整块隐藏或写「本站暂未提供」
+     */
+    private boolean omitted = false;
+
+    /** 本站不提供的子块（bonus / games / retention / ltv），这些子块返回 null；全部不提供时 omitted = true */
+    private List<String> omittedBlocks = new ArrayList<>();
+
+    public boolean isOmitted() { return omitted; }
+
+    public void setOmitted(boolean omitted) { this.omitted = omitted; }
+
+    public List<String> getOmittedBlocks() { return omittedBlocks; }
+
+    public void setOmittedBlocks(List<String> omittedBlocks) { this.omittedBlocks = omittedBlocks == null ? new ArrayList<>() : omittedBlocks; }
+
     /** 提示，前端必须渲染 */
     private List<OverviewNoticeVO> notices = new ArrayList<>();
 
