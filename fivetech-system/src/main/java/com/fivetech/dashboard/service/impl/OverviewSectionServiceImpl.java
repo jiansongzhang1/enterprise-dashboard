@@ -317,6 +317,9 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             g.setRank(items.size() + 1);
             // 游戏名：上游（属性补全）没有值时用 game_id 填充，保证榜单每行都有可读的名称
             g.setName(StringUtils.isEmpty(r.dim("name")) ? r.dim("gameId") : r.dim("name"));
+            // 中英文名：游戏榜数据集 dashboard_game_ranking 的 game_name_cn / game_name_en（breakdowns.hot_games.text-metrics）
+            g.setGameNameCn(StringUtils.trimToNull(r.dim("gameNameCn")));
+            g.setGameNameEn(StringUtils.trimToNull(r.dim("gameNameEn")));
             g.setPlatformCode(r.dim("platformCode"));
             g.setVendorName(r.dim("vendorName"));
             g.setGameId(r.dim("gameId"));
@@ -382,7 +385,7 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (!"LTV".equals(type))
         {
             CohortTableVO t = cohortTable(OverviewBreakdowns.COHORT_RETENTION, "投注留存率", "FIRST_BET_DATE",
-                "投注日", "投注人數", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
+                "首次投注日", "首投人數", "PCT", OverviewBreakdowns.RETENTION_COLUMNS, from, end, lastDay, false, notices);
             if (t == null)
             {
                 // 本站不提供：整张表为 null，不返回空行矩阵

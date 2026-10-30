@@ -2,7 +2,7 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `01_release_monitor_p1_postgresql.sql` | 上线：本次监控管理新增和修改的全部 DDL、数据、菜单（19 个脚本按顺序原样拼接 + 前置检查 + 回滚用备份 + 汇总自检）。可重复执行 |
+| `01_release_monitor_p1_postgresql.sql` | 上线：本次监控管理新增和修改的全部 DDL、数据、菜单（23 个脚本按顺序原样拼接 + 前置检查 + 回滚用备份 + 汇总自检）。可重复执行 |
 | `02_rollback_monitor_p1_postgresql.sql` | 回滚：撤销 01 的全部改动，回到执行 01 之前的状态。需要显式确认，一个事务 |
 
 ## 01 包含的 17 段（顺序不能换）
@@ -28,6 +28,10 @@
 | ⑰ | alter_metric_card_caliber_traditional | 运营总览口径以库为准：⑫ 写入的简体口径换成页面显示的繁体口径（备份表 dashboard_metric_card_remark_bak_20261028） |
 | ⑱ | alter_monitor_site_setting_currency | 站点币种、币种符号（monitor_site_setting.currency / currency_symbol，为空用 dashboard.currency / 按币种推导），后台站点管理可改；JITO 的 UDS 站点标识 SITE-B → JITO（只改还是 SITE-B 的行） |
 | ⑲ | alter_monitor_site_setting_zone_currency | 站点时区、币种以站点表为准：空值补成 Asia/Kolkata / INR（生产 DASHBOARD_TIMEZONE / CURRENCY 不同时先改值）；dashboard 各接口的 timezone / currency 和时间计算按当前站点取，默认站点时区也可在站点管理改 |
+| ⑳ | alter_metric_card_avg_time_divide | 平均到账时间 / 平均出款时间改为后端计算：sum(耗时合计) ÷ nullif(sum(单数), 0)（dep_time_sum / dep_time_count、wd_time_sum / wd_time_count），指标字典不再登记 dT_seconds / wT_seconds |
+| ㉑ | alter_monitor_sample_bet_users | 平均杀率 / 赠金比 / 流水倍数的最小样本量改为投注人数 active（MON-34），指标配置和已建规则一起改 |
+| ㉒ | alter_monitor_event_stop_reason | 事件停止原因 stop_reason（pause / delete / update，MON-28 / MON-29）；新 JAR 启动前必须有 |
+| ㉓ | fix_monitor_event_level_peak | 到过严重的事件等级改回严重（MON-01）；新 JAR 上线后再执行一次 |
 
 01 开头的「0.5 回滚用备份」只在**第一次**执行时记录：`dashboard_metric_card` 整表（含旧告警字段的值）、约束、索引、默认值、注释，以及 `sys_role.site_code` 原本是否存在。02 依赖这份记录。
 

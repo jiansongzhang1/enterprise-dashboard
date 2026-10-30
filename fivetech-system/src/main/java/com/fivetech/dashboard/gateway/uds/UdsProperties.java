@@ -250,6 +250,22 @@ public class UdsProperties
             this.add = add == null ? new LinkedHashMap<>() : add;
         }
 
+        /**
+         * 指标编码 → [分子, 分母]（UDS 返回的指标代码），后端相除组装：同一时间片 / 区间内 SUM(分子) ÷ SUM(分母)，
+         * 分母为 0 或任一为 NULL 时结果为 NULL（nullif）。如平均到账时间 dT = dep_time_sum ÷ dep_time_count（秒）。
+         */
+        private Map<String, java.util.List<String>> divide = new LinkedHashMap<>();
+
+        public Map<String, java.util.List<String>> getDivide()
+        {
+            return divide;
+        }
+
+        public void setDivide(Map<String, java.util.List<String>> divide)
+        {
+            this.divide = divide == null ? new LinkedHashMap<>() : divide;
+        }
+
         public java.util.List<String> getSingleDayFromDay()
         {
             return singleDayFromDay;
@@ -401,6 +417,12 @@ public class UdsProperties
         /** 本系统指标编码 → UDS 指标名 */
         private Map<String, String> metrics = new LinkedHashMap<>();
 
+        /**
+         * 文本类指标：本系统编码 → UDS 指标名（如游戏中英文名 game_name_cn / game_name_en）。
+         * 和 metrics 一起放进排名查询的 metrics，按字符串读进行的 dims；不参与全量（合计）查询
+         */
+        private Map<String, String> textMetrics = new LinkedHashMap<>();
+
         /** 固定 options，如 { "channel": "ONLINE" } */
         private Map<String, Object> options = new LinkedHashMap<>();
 
@@ -548,6 +570,16 @@ public class UdsProperties
         public void setMetrics(Map<String, String> metrics)
         {
             this.metrics = metrics == null ? new LinkedHashMap<>() : metrics;
+        }
+
+        public Map<String, String> getTextMetrics()
+        {
+            return textMetrics;
+        }
+
+        public void setTextMetrics(Map<String, String> textMetrics)
+        {
+            this.textMetrics = textMetrics == null ? new LinkedHashMap<>() : textMetrics;
         }
 
         public Map<String, Object> getOptions()

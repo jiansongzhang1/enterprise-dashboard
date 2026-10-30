@@ -346,6 +346,10 @@ public class MetricDictService
         {
             assemble = ov.getAdd().get(code).get(0) + " + " + ov.getAdd().get(code).get(1);
         }
+        else if (ov != null && ov.getDivide() != null && ov.getDivide().get(code) != null && ov.getDivide().get(code).size() == 2)
+        {
+            assemble = "sum(" + ov.getDivide().get(code).get(0) + ") ÷ sum(" + ov.getDivide().get(code).get(1) + ")";
+        }
         m.put("assemble", assemble);
         return m;
     }

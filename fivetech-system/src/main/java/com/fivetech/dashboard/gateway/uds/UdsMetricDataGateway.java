@@ -292,7 +292,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return result;
     }
 
-    /** 后端组装指标（overview.subtract / overview.add）的两个操作数；不是组装指标返回 null */
+    /** 后端组装指标（overview.subtract / overview.add / overview.divide）的两个操作数；不是组装指标返回 null */
     private List<String> composedOps(String code)
     {
         UdsProperties.Overview ov = properties.getOverview();
@@ -301,17 +301,33 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             ops = ov.getAdd().get(code);
         }
+        if (ops == null)
+        {
+            ops = ov.getDivide().get(code);
+        }
         return ops != null && ops.size() == 2 ? ops : null;
     }
 
-    /** 按 overview.subtract（a − b）或 overview.add（a + b）组装；任一为 NULL 则 NULL */
+    /**
+     * 按 overview.subtract（a − b）、overview.add（a + b）或 overview.divide（a ÷ b）组装；任一为 NULL 则 NULL。
+     * 相除时 a、b 是同一时间片 / 区间的合计（SUM），分母为 0 返回 NULL（sum(a) / nullif(sum(b), 0)）
+     */
     private BigDecimal compose(String code, BigDecimal a, BigDecimal b)
+    {
+        return compose(properties.getOverview(), code, a, b);
+    }
+
+    static BigDecimal compose(UdsProperties.Overview ov, String code, BigDecimal a, BigDecimal b)
     {
         if (a == null || b == null)
         {
             return null;
         }
-        return properties.getOverview().getSubtract().containsKey(code) ? a.subtract(b) : a.add(b);
+        if (ov.getDivide().containsKey(code))
+        {
+            return b.signum() == 0 ? null : a.divide(b, 6, java.math.RoundingMode.HALF_UP);
+        }
+        return ov.getSubtract().containsKey(code) ? a.subtract(b) : a.add(b);
     }
 
     /** 把需要后端相减 / 相加的指标展开成操作数，其余原样保留 */
@@ -502,6 +518,11 @@ public class UdsMetricDataGateway implements MetricDataGateway
                     composed.set(i, compose(code, a == null ? null : a.get(i), b == null ? null : b.get(i)));
                 }
                 out.put(code, composed);
+                if (properties.getOverview().getDivide().containsKey(code))
+                {
+                    // 多小时周期要用合计后的分子 ÷ 分母重算（MonitorPeriodBuilder），不能平均各小时的商
+                    out.putRatio(code, ops.get(0), ops.get(1));
+                }
             }
             else if (raw.containsKey(code))
             {
@@ -1096,10 +1117,14 @@ public class UdsMetricDataGateway implements MetricDataGateway
         dataset.setTimeDimension(bd.getTimeDimension());
         dataset.setTimeFormat(bd.getTimeFormat());
         dataset.setGrain(bd.getGrain());
-        dataset.setMetrics(new LinkedHashMap<>(bd.getMetrics()));
+        Map<String, String> allMetrics = new LinkedHashMap<>(bd.getMetrics());
+        allMetrics.putAll(bd.getTextMetrics());
+        dataset.setMetrics(allMetrics);
         dataset.setOptions(new LinkedHashMap<>(bd.getOptions()));
 
-        List<String> codes = new ArrayList<>(bd.getMetrics().keySet());
+        // 排名查询带上文本类指标（如游戏中英文名）；全量（合计）查询只要数值指标
+        List<String> codes = new ArrayList<>(allMetrics.keySet());
+        List<String> totalCodes = new ArrayList<>(bd.getMetrics().keySet());
         List<String> dims = new ArrayList<>(bd.getDimensions().values());
         Map<String, Object> extras = new LinkedHashMap<>();
         extras.put("filters", null);
@@ -1128,7 +1153,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
             {
                 List<UdsQueryResult> results = client.queryBatch(List.of(
                     baseBody(bd.getDataset(), dataset, codes, from, end, bd.getGrain(), dims, limit, extras),
-                    baseBody(bd.getDataset(), dataset, codes, from, end, bd.getGrain(), new ArrayList<>(), 1, totalExtras)));
+                    baseBody(bd.getDataset(), dataset, totalCodes, from, end, bd.getGrain(), new ArrayList<>(), 1, totalExtras)));
                 main = results.get(0);
                 total = results.get(1);
                 rememberReportedWatermark(bd.getDataset(), main);
@@ -1154,7 +1179,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
             if (bd.isWithTotal())
             {
                 // 第二次会夹到第一次记下的水位，两次查询的时间范围一致
-                total = queryRetreating(bd.getDataset(), dataset, codes, from, to, bd.getGrain(),
+                total = queryRetreating(bd.getDataset(), dataset, totalCodes, from, to, bd.getGrain(),
                     new ArrayList<>(), 1, totalExtras);
             }
         }
@@ -1172,6 +1197,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
             BreakdownResult.Row row = new BreakdownResult.Row();
             bd.getDimensions().forEach((code, field) -> row.getDims().put(code, raw.str(field)));
             bd.getMetrics().forEach((code, metric) -> row.getValues().put(code, scaled(bd, code, raw.num(metric))));
+            // 文本类指标按字符串读，和维度一样用 row.dim(code) 取
+            bd.getTextMetrics().forEach((code, metric) -> row.getDims().put(code, raw.str(metric)));
             result.getRows().add(row);
         }
         if (bd.getEnrich().isConfigured() && !result.getRows().isEmpty())

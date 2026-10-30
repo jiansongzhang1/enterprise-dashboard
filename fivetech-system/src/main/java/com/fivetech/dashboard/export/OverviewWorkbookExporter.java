@@ -153,7 +153,7 @@ public class OverviewWorkbookExporter
             writeReg(book, query, reg);
             writeBonus(book, query, ranking);
             writeGames(book, query, ranking);
-            writeCohort(book, S_RETENTION, "投注日", "投注人數", "(%)", "0.00", cohort,
+            writeCohort(book, S_RETENTION, "首次投注日", "首投人數", "(%)", "0.00", cohort,
                 cohort.data == null ? null : cohort.data.getRetention(),
                 cohort.data == null ? null : cohort.data.getRetentionColumns());
             writeCohort(book, S_LTV, "首存日", "首存人數", "(INR)", "0.00", cohort,
@@ -650,7 +650,7 @@ public class OverviewWorkbookExporter
     {
         Sheet sheet = book.sheet(S_GAMES);
         List<Col> cols = List.of(Col.slot("統計開始"), Col.slot("統計結束"), Col.num("序", null), Col.text("遊戲名稱", 24),
-            Col.text("平台廠商名", 16), Col.text("遊戲平台Code", 14), Col.text("遊戲類型", 10), Col.text("遊戲ID", 18),
+            Col.text("遊戲中文名", 20), Col.text("遊戲英文名", 24), Col.text("平台廠商名", 16), Col.text("遊戲平台Code", 14), Col.text("遊戲類型", 10), Col.text("遊戲ID", 18),
             Col.num("投注額(INR)", "0.00"), Col.num("盈利率(%)", "0.00"), Col.num("投注額佔比(%)", "0.00"));
         int r = book.header(sheet, cols);
         RankingBoardVO vo = part.data;
@@ -662,7 +662,9 @@ public class OverviewWorkbookExporter
         for (GameItemVO g : vo.getGames().getItems())
         {
             String type = StringUtils.isNotEmpty(g.getGameType()) ? g.getGameType() : g.getGameTypeCode();
-            book.row(sheet, r++, cols, Arrays.asList(s[0], s[1], g.getRank(), g.getName(), g.getVendorName(),
+            // 中英文名原样导出（UDS game_name_cn / game_name_en），不做繁简转换
+            book.row(sheet, r++, cols, Arrays.asList(s[0], s[1], g.getRank(), g.getName(), g.getGameNameCn(),
+                g.getGameNameEn(), g.getVendorName(),
                 g.getPlatformCode(), ExportTemplate.t(type), g.getGameId(), g.getBetAmount(),
                 ExportTemplate.toDecimal(g.getProfitRate()), ExportTemplate.toDecimal(g.getRateForBetAmount())));
         }
@@ -758,12 +760,13 @@ public class OverviewWorkbookExporter
         l.add(new String[] { S_GAMES, "統計開始 / 統計結束", sectionSpan, slotUnit });
         l.add(new String[] { S_GAMES, "序", "按投注額取前 20 的名次", "" });
         l.add(new String[] { S_GAMES, "遊戲名稱 … 遊戲ID", "遊戲與所屬平台、類型的識別資訊；遊戲名稱查不到時以遊戲ID填充", "" });
+        l.add(new String[] { S_GAMES, "遊戲中文名 / 遊戲英文名", "遊戲榜資料集的 game_name_cn / game_name_en，上游沒有時為空", "" });
         l.add(new String[] { S_GAMES, "投注額(INR)", "統計區間內該遊戲的投注金額加總", "INR，純數值" });
         l.add(new String[] { S_GAMES, "盈利率(%)", "該遊戲 GGR ÷ 該遊戲投注額 × 100，可為負", "百分數值，1 位小數" });
         l.add(new String[] { S_GAMES, "投注額佔比(%)", "該遊戲投注額 ÷ 全站投注總額 × 100；20 行相加不等於 100", "百分數值，1 位小數" });
-        l.add(new String[] { S_RETENTION, "投注日", "分群日：當日有投注的用戶為一群", "YYYY-MM-DD" });
+        l.add(new String[] { S_RETENTION, "首次投注日", "分群日：首次投注日在當日的用戶為一群", "YYYY-MM-DD" });
         l.add(new String[] { S_RETENTION, "資料截至", "每日計算（T+1），資料截至昨日", "YYYY-MM-DD" });
-        l.add(new String[] { S_RETENTION, "投注人數", "分群日有投注的去重用戶數", "人數，整數" });
+        l.add(new String[] { S_RETENTION, "首投人數", "當日首次投注的去重用戶數", "人數，整數" });
         l.add(new String[] { S_RETENTION, "D+1 … D+30(%)", "該群第 N 日仍有投注的比例；分群日 + N 天晚於資料截至時為空（未到觀察期），不是 0", "百分數值，1 位小數" });
         l.add(new String[] { S_LTV, "首存日", "分群日：當日完成首存的用戶為一群", "YYYY-MM-DD" });
         l.add(new String[] { S_LTV, "資料截至", "每日計算（T+1），資料截至昨日", "YYYY-MM-DD" });

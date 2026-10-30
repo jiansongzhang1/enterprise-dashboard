@@ -1036,6 +1036,12 @@ public class OverviewServiceImpl implements IOverviewService
         {
             return ops.get(0) + "+" + ops.get(1);
         }
+        // 后端相除组装的指标（dT = dep_time_sum / dep_time_count）
+        ops = udsProperties.getOverview().getDivide().get(code);
+        if (ops != null && ops.size() == 2)
+        {
+            return ops.get(0) + "/" + ops.get(1);
+        }
         for (UdsProperties.Dataset dataset : udsProperties.getDatasets().values())
         {
             String name = dataset.getMetrics().get(code);

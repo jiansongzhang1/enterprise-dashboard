@@ -55,6 +55,21 @@ public class HourlyFetch
         series.put(key, values);
     }
 
+    /** 后端相除组装的指标 → [分子 key, 分母 key]（分子、分母的逐小时值也在 series 里） */
+    private final Map<String, String[]> ratios = new LinkedHashMap<>();
+
+    /** 登记后端相除组装的指标（如平均到账时间 = dep_time_sum ÷ dep_time_count） */
+    public void putRatio(String code, String numeratorKey, String denominatorKey)
+    {
+        ratios.put(code, new String[] { numeratorKey, denominatorKey });
+    }
+
+    /** 后端相除组装的指标的 [分子 key, 分母 key]；不是返回 null */
+    public String[] ratio(String code)
+    {
+        return ratios.get(code);
+    }
+
     /** 已取到的字段（指标编码、附加列 key） */
     public java.util.Set<String> keys()
     {

@@ -64,11 +64,11 @@ UPDATE dashboard_metric_card c
 备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
     ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+    ('dT', NULL, NULL, NULL, NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+    ('wT', NULL, NULL, NULL, NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
 备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),
@@ -124,11 +124,11 @@ UPDATE dashboard_metric_card c
 备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
     ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+    ('dT', NULL, NULL, NULL, NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+    ('wT', NULL, NULL, NULL, NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
 备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),

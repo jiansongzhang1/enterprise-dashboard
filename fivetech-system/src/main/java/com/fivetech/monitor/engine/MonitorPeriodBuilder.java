@@ -20,7 +20,8 @@ import com.fivetech.monitor.engine.judge.PeriodPoint;
  * <ul>
  *   <li>1 小时周期：直接取该小时的值。</li>
  *   <li>多小时周期：比率类（calc_type = DIVIDE）用合计后的分子 ÷ 分母重算；金额、笔数等可加的取合计；
- *       平均时长（AVG_WEIGHTED）按样本量指标（成功笔数）加权；去重人数类取各小时平均（不能跨小时相加）。</li>
+ *       平均到账 / 出款时间（后端相除组装：耗时合计 ÷ 单数）同样按合计重算；其余平均时长（AVG_WEIGHTED）按样本量指标加权；
+ *       去重人数类取各小时平均（不能跨小时相加）。</li>
  *   <li>周期内任一小时值为空：整个周期标记缺数据，不判定。</li>
  *   <li>跌幅基准由 UDS 提供，按同样口径聚合（可加的取合计，其余取平均）。</li>
  * </ul>
@@ -96,10 +97,12 @@ public class MonitorPeriodBuilder
     private BigDecimal aggregate(MetricDefinition def, MonitorEngineRule rule, HourlyFetch data,
             List<LocalDateTime> hours, List<BigDecimal> values)
     {
-        if ("DIVIDE".equalsIgnoreCase(def.getCalcType()))
+        // 后端相除组装的指标（平均到账 / 出款时间 = 耗时合计 ÷ 单数）和比率类一样：时段内分子合计 ÷ 分母合计
+        String[] ratio = data.ratio(def.getCode());
+        if (ratio != null || "DIVIDE".equalsIgnoreCase(def.getCalcType()))
         {
-            List<BigDecimal> num = series(data, def.getLeftCode(), hours);
-            List<BigDecimal> den = series(data, def.getRightCode(), hours);
+            List<BigDecimal> num = series(data, ratio != null ? ratio[0] : def.getLeftCode(), hours);
+            List<BigDecimal> den = series(data, ratio != null ? ratio[1] : def.getRightCode(), hours);
             BigDecimal n = BigDecimal.ZERO;
             BigDecimal d = BigDecimal.ZERO;
             boolean any = false;

@@ -144,6 +144,9 @@ class MetricDictServiceTest
         Map<String, List<String>> sub = new LinkedHashMap<>();
         sub.put("net", List.of("dep", "wd"));
         ov.setSubtract(sub);
+        Map<String, List<String>> div = new LinkedHashMap<>();
+        div.put("dT", List.of("dep_time_sum", "dep_time_count"));
+        ov.setDivide(div);
         uds.setOverview(ov);
         Map<String, UdsProperties.Dataset> ds = new LinkedHashMap<>();
         ds.put("overview_hour", dataset("dashboard_overview_hour_v2", "reg", "reg", "dep", "dep", "wd", "wd", "dOk", "dep_ok"));
@@ -212,6 +215,9 @@ class MetricDictServiceTest
         assertEquals("wd_baseline", find("wd").getConfig().get("udsBaselineField"));
         assertEquals("dep − wd", find("net").getConfig().get("assemble"), "后端组装的指标显示组装方式");
         assertTrue(find("net").getConfigMismatch().isEmpty(), "组装指标没有 UDS 字段，表里也为空");
+        // 平均到账时间：后端相除组装（2026-10-29），不再登记 dT_seconds
+        assertEquals("sum(dep_time_sum) ÷ sum(dep_time_count)", service.liveConfig("dT").get("assemble"));
+        assertEquals(null, service.liveConfig("dT").get("udsHourField"));
         Map<String, Object> out = service.list(null, null, null);
         assertEquals("dashboard_overview_hour_v2", ((Map<?, ?>) out.get("datasets")).get("udsHourField"));
     }

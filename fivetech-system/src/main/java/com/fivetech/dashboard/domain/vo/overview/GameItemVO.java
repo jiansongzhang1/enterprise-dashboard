@@ -18,6 +18,12 @@ public class GameItemVO implements Serializable
     /** 游戏名称 */
     private String name;
 
+    /** 游戏中文名（UDS dashboard_game_ranking.game_name_cn）；没有为 null */
+    private String gameNameCn;
+
+    /** 游戏英文名（UDS dashboard_game_ranking.game_name_en）；没有为 null */
+    private String gameNameEn;
+
     /** 游戏平台 Code */
     private String platformCode;
 
@@ -69,6 +75,26 @@ public class GameItemVO implements Serializable
     public void setName(String name)
     {
         this.name = name;
+    }
+
+    public String getGameNameCn()
+    {
+        return gameNameCn;
+    }
+
+    public void setGameNameCn(String gameNameCn)
+    {
+        this.gameNameCn = gameNameCn;
+    }
+
+    public String getGameNameEn()
+    {
+        return gameNameEn;
+    }
+
+    public void setGameNameEn(String gameNameEn)
+    {
+        this.gameNameEn = gameNameEn;
     }
 
     public String getPlatformCode()

@@ -1,7 +1,7 @@
 -- ============================================================================
--- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-29（10-23 版 + ⑪～⑲）
+-- 监控管理 · 一期 · 生产上线 SQL 汇总（dashboard_db）· 2026-10-29（10-23 版 + ⑪～㉓）
 --
--- 开头是前置检查（0）和回滚用备份（0.5），之后由以下 19 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
+-- 开头是前置检查（0）和回滚用备份（0.5），之后由以下 23 个脚本按执行顺序原样拼接（内容未改动），每段前标出来源文件：
 --   ① alter_sys_role_site                 sys_role.site_code（新 JAR 启动前必须有）
 --   ② alter_metric_card_monitor           指标监控属性；删除 dashboard_metric_card 4 个旧告警字段（需审批、先备份）
 --   ③ monitor_schema                      7 张 monitor 表 + SITE-IN 站点设置
@@ -21,6 +21,10 @@
 --   ⑰ alter_metric_card_caliber_traditional 运营总览口径以库为准：⑫ 的简体口径换成页面显示的繁体口径（2026-10-28）
 --   ⑱ alter_monitor_site_setting_currency 站点币种、币种符号（后台站点管理可改）；JITO 的 UDS 站点标识 SITE-B → JITO（2026-10-28，必须在 ⑯ 之后）
 --   ⑲ alter_monitor_site_setting_zone_currency 站点时区、币种以站点表为准：补齐空值（Asia/Kolkata / INR），dashboard 各接口按站点取（2026-10-29）
+--   ⑳ alter_metric_card_avg_time_divide 平均到账 / 出款时间改为后端相除（耗时合计 ÷ 单数），指标字典不再登记 dT_seconds / wT_seconds（2026-10-29）
+--   ㉑ alter_monitor_sample_bet_users      区间类指标（killR / bonusR / turnX）样本量改为投注人数 active（2026-10-27 MON-34）
+--   ㉒ alter_monitor_event_stop_reason     事件停止原因 stop_reason（2026-10-27 MON-28 / MON-29，新 jar 启动前必须有）
+--   ㉓ fix_monitor_event_level_peak        到过严重的事件等级改回严重（2026-10-27 MON-01；新 jar 上线后再执行一次本文件或该脚本即可）
 --
 -- 执行方式（用 psql，不要用 DBeaver 等图形客户端整段执行）：
 --   psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f 01_release_monitor_p1_postgresql.sql
@@ -1083,11 +1087,11 @@ UPDATE dashboard_metric_card c
 备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
     ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+    ('dT', NULL, NULL, NULL, NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+    ('wT', NULL, NULL, NULL, NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
 备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),
@@ -1143,11 +1147,11 @@ UPDATE dashboard_metric_card c
 备注：业务参考区间 9.5 – 12.5；检测周期大于 1 小时时按 Σ投注总额 ÷ Σ存款总额 重算。'),
     ('dOkR', 'dOkR', NULL, 'dOkR', NULL, '口径：存款成功笔数 ÷ 存款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('dT', 'dT_seconds', NULL, 'dT_seconds', NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
+    ('dT', NULL, NULL, NULL, NULL, '口径：存款自提交到入账的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('wOkR', 'wOkR', NULL, 'wOkR', NULL, '口径：出款成功笔数 ÷ 出款总尝试笔数 × 100%。
 备注：UDS 比率为 0～1，页面 ×100。'),
-    ('wT', 'wT_seconds', NULL, 'wT_seconds', NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
+    ('wT', NULL, NULL, NULL, NULL, '口径：提款自申请到拨款完成的平均耗时，按成功笔数加权（分钟）。
 备注：UDS 字段单位为秒，页面 ÷60 显示分钟。'),
     ('active', 'active_hour', 'active_day', NULL, 'active_hour_baseline', '口径：有投注行为的去重会员数；按小时／日去重，跨时段不可相加，仅支持查看单日数据。
 备注：小时取 active_hour，整日取 active_day；区间在一个自然日内时取日数据集当天的值。'),
@@ -1738,6 +1742,138 @@ SELECT site_code, site_name, is_default, timezone, currency, currency_symbol FRO
 
 
 -- ############################################################################
+-- ## 20. alter_metric_card_avg_time_divide_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 平均到账时间 / 平均出款时间改为后端计算（2026-10-29）· PostgreSQL（dashboard_db）· 可重复执行
+--
+-- dT、wT 不再取 UDS 的均值字段 dT_seconds / wT_seconds，改为取耗时合计与单数，后端相除：
+--   平均到账时间 dT = sum(dep_time_sum) / nullif(sum(dep_time_count), 0)
+--     dep_time_sum   到账耗时合计（秒），源字段 deposit_arrival_seconds_total
+--     dep_time_count 计入耗时的到账成功单数，源字段 deposit_arrival_cnt
+--   平均出款时间 wT = sum(wd_time_sum) / nullif(sum(wd_time_count), 0)
+--     wd_time_sum    出款耗时合计（秒），源字段 withdraw_seconds_total
+--     wd_time_count  出款耗时的单数，源字段 withdraw_seconds_cnt
+-- 取数以 application.yml 为准（datasets.overview_hour / overview_amount 的 metrics 与 overview.divide）；
+-- 本脚本只把指标字典里登记的 UDS 字段改成和线上配置一致（与 net / ngr / pay 一样不登记单一字段），
+-- 否则「系统管理 · 指标管理」的「對照」会显示不一致。
+--
+-- 执行顺序：在 ⑫ alter_metric_card_dictionary 之后。
+-- 执行：psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f sql/alter_metric_card_avg_time_divide_postgresql.sql
+-- 回滚：UPDATE dashboard_metric_card SET uds_hour_field = metric_code || '_seconds', uds_amount_field = metric_code || '_seconds'
+--         WHERE metric_code IN ('dT', 'wT');（同时把 application.yml 改回 dT_seconds / wT_seconds）
+-- ============================================================================
+
+BEGIN;
+
+UPDATE dashboard_metric_card
+   SET uds_hour_field = NULL, uds_amount_field = NULL, update_by = 'admin', update_time = CURRENT_TIMESTAMP
+ WHERE metric_code IN ('dT', 'wT')
+   AND (uds_hour_field IN ('dT_seconds', 'wT_seconds') OR uds_amount_field IN ('dT_seconds', 'wT_seconds'));
+
+COMMIT;
+
+-- 自检：dT、wT 不再登记单一 UDS 字段（应为 0 行）
+SELECT metric_code, uds_hour_field, uds_day_field, uds_amount_field FROM dashboard_metric_card
+ WHERE metric_code IN ('dT', 'wT') AND coalesce(uds_hour_field, uds_day_field, uds_amount_field) IS NOT NULL;
+
+
+-- ############################################################################
+-- ## 21. alter_monitor_sample_bet_users_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 区间类指标的最小样本量改为投注人数（活跃人数 active）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- MON-34：平均杀率 killR、赠金比 bonusR、流水倍数 turnX 的样本量口径原来记为 betU，UDS 没有这个字段，
+-- 取不到样本量时按「样本足够」处理，最小样本量（默认 50）完全不生效，凌晨一两个人的小时也参与判定。
+-- 原型（Yata-V0.2 MINNL）这三个指标的样本量用 active「投注人數」：活跃人数的口径就是有投注行为的去重会员数。
+-- 本脚本：指标配置 + 已建规则一起改成 active；后端同时改为取不到样本量 = 样本不足、不判定。
+-- 已建规则的最小样本量数值不变（默认 50）。
+-- ============================================================================
+BEGIN;
+
+UPDATE dashboard_metric_card
+   SET min_sample_key = 'active'
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX')
+   AND min_sample_key = 'betU';
+
+UPDATE monitor_rule
+   SET min_sample_key = 'active'
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX')
+   AND min_sample_key = 'betU';
+
+COMMIT;
+
+-- 自检：应都为 active
+SELECT metric_code, min_sample_key, min_sample_default FROM dashboard_metric_card WHERE metric_code IN ('killR', 'bonusR', 'turnX') ORDER BY 1;
+SELECT site_code, rule_no, metric_code, min_sample_key, min_sample_value FROM monitor_rule
+ WHERE metric_code IN ('killR', 'bonusR', 'turnX') AND del_flag = '0' ORDER BY 1, 2;
+
+
+-- ############################################################################
+-- ## 22. alter_monitor_event_stop_reason_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 事件停止原因（MON-28 / MON-29）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- 2026-10-27 与产品确认：修改规则的阈值、检测周期或注意升级后，异常中的事件标为「已停止判定」，按新规则重新起算
+-- （不再按新阈值直接结束旧事件、也不会按新升级时长立刻升级推送）。
+-- monitor_event + stop_reason：pause 暂停 / delete 删除 / update 修改判定条件；之前停止的事件为空（悬停按暂停 / 删除写）。
+-- 「持續」列悬停：update →「10:40 規則修改，之後按新規則重新判定」。
+-- ============================================================================
+BEGIN;
+
+ALTER TABLE monitor_event ADD COLUMN IF NOT EXISTS stop_reason VARCHAR(10);
+ALTER TABLE monitor_event DROP CONSTRAINT IF EXISTS ck_monitor_event_stop_reason;
+ALTER TABLE monitor_event ADD CONSTRAINT ck_monitor_event_stop_reason
+    CHECK (stop_reason IS NULL OR stop_reason IN ('pause', 'delete', 'update'));
+COMMENT ON COLUMN monitor_event.stop_reason IS '事件停止原因（status = stopped）：pause 规则暂停 / delete 规则删除 / update 修改了阈值、检测周期或注意升级';
+
+-- 老数据：规则已删除的补 delete，其余已停止的补 pause
+UPDATE monitor_event e
+   SET stop_reason = CASE WHEN r.del_flag = '2' THEN 'delete' ELSE 'pause' END
+  FROM monitor_rule r
+ WHERE r.rule_id = e.rule_id AND r.site_code = e.site_code
+   AND e.status = 'stopped' AND e.stop_reason IS NULL;
+
+COMMIT;
+
+SELECT stop_reason, count(*) FROM monitor_event WHERE status = 'stopped' GROUP BY 1;
+
+
+-- ############################################################################
+-- ## 23. fix_monitor_event_level_peak_postgresql.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 监控管理 · 修正已被「降级」的事件等级（MON-01 / MON-04）· PostgreSQL（dashboard_db）。可重复执行。
+--
+-- 修复前，事件到过严重后只要有一个周期回到注意范围，monitor_event.level 就被改成 WARN（peak_level 仍记着 CRIT）。
+-- 新代码只升不降；本脚本把历史数据改回：到过严重的事件 level = CRIT。
+-- 判定基准（threshold.against）、提醒条、指标卡都按 level 显示，随之恢复为严重线。
+-- 不改 escalated、通知记录和处理状态；当前值（MON-03）历史上已被覆盖为最近一期，无法还原，新事件起按触发周期记录。
+-- 和新 jar 一起执行（先停旧 jar 的判定也可以不停：旧 jar 可能再次降级，新 jar 上线后再执行一次即可）。
+-- ============================================================================
+BEGIN;
+
+-- 执行前看一下会改哪些
+SELECT event_id, site_code, rule_id, metric_code, level, peak_level, status, trigger_hour
+  FROM monitor_event
+ WHERE event_type = 'alert' AND peak_level = 'CRIT' AND level <> 'CRIT'
+ ORDER BY site_code, event_id;
+
+UPDATE monitor_event
+   SET level = 'CRIT',
+       update_time = (now() AT TIME ZONE 'Asia/Kolkata')
+ WHERE event_type = 'alert' AND peak_level = 'CRIT' AND level <> 'CRIT';
+
+COMMIT;
+
+
+-- ############################################################################
 -- ## 汇总自检（只查询）
 -- ############################################################################
 
@@ -1755,7 +1891,7 @@ SELECT menu_id, menu_name, parent_id, perms FROM sys_menu
 SELECT count(*) AS name_backup_rows FROM dashboard_metric_card_name_bak_20261027;
 -- 卡片图形不再有 BAR：0
 SELECT count(*) AS bar_left FROM dashboard_metric_card WHERE chart_type = 'BAR';
--- 指标字典：28 行全部有口径（⑰ 之后为繁体「口徑：」），UDS 字段已填（net / ngr / pay 由后端组装，没有字段）
+-- 指标字典：28 行全部有口径（⑰ 之后为繁体「口徑：」），UDS 字段已填（net / ngr / pay / dT / wT 由后端组装，没有字段）
 SELECT count(*) AS total, count(*) FILTER (WHERE remark LIKE '口径：%' OR remark LIKE '口徑：%') AS with_definition,
        count(*) FILTER (WHERE coalesce(uds_hour_field, uds_day_field, uds_amount_field) IS NOT NULL) AS with_uds_field
   FROM dashboard_metric_card;
@@ -1763,5 +1899,7 @@ SELECT count(*) AS total, count(*) FILTER (WHERE remark LIKE '口径：%' OR rem
 SELECT column_name FROM information_schema.columns
  WHERE table_name = 'monitor_site_setting'
    AND column_name IN ('site_name', 'uds_site', 'timezone', 'is_default', 'sort_no', 'currency', 'currency_symbol') ORDER BY 1;
+-- ㉒ 事件停止原因列存在（1 行）
+SELECT column_name FROM information_schema.columns WHERE table_name = 'monitor_event' AND column_name = 'stop_reason';
 -- sys_role.site_code 存在
 SELECT column_name FROM information_schema.columns WHERE table_name = 'sys_role' AND column_name = 'site_code';
