@@ -3,7 +3,7 @@
 --
 -- 撤销 01_release_monitor_p1_postgresql.sql 做的全部改动，数据库回到执行 01 之前的状态：
 --   1. 删除菜单与授权：监控管理 160–167（monitor:event:* / monitor:rule:*）、手动触发测试告警 monitor:rule:test、
---      系统管理 · 通知模板 system:notifyTpl:*、站点管理 system:site:*、指标管理 system:metric:*
+--      系统管理 · 通知模板 system:notifyTpl:*、站点管理 system:site:*、指标管理 system:metric:*、订阅简报 system:subscription:*
 --   2. 删除 8 张 monitor_* 表（规则、事件、发送记录、通知模板、Lark 群缓存、站点设置等，数据一并删除）
 --   3. dashboard_metric_card 按 01 第 0.5 节的备份恢复：去掉新增列（监控属性、uds_*_field），加回旧告警字段
 --      alert_* / tolerance_*，全部数据（口径 remark、source_table / source_field、chart_type 等）、CHECK 约束、索引、
@@ -44,6 +44,7 @@ CREATE TEMP TABLE _p1_menu ON COMMIT DROP AS
 SELECT menu_id FROM sys_menu
  WHERE perms LIKE 'monitor:event:%' OR perms LIKE 'monitor:rule:%'
     OR perms LIKE 'system:notifyTpl:%' OR perms LIKE 'system:site:%' OR perms LIKE 'system:metric:%'
+    OR perms LIKE 'system:subscription:%'
     OR (menu_id = 160 AND coalesce(route_name, '') = 'monitor');
 DELETE FROM sys_role_menu WHERE menu_id IN (SELECT menu_id FROM _p1_menu);
 DELETE FROM sys_menu_i18n WHERE menu_id IN (SELECT menu_id FROM _p1_menu);
@@ -167,6 +168,24 @@ BEGIN
         RAISE NOTICE 'sys_role.site_code 上线前就存在，保留';
     END IF;
 END $$;
+
+-- 01 ㉔ 按站点的指标排列（各站点回到全站默认）
+DROP TABLE IF EXISTS dashboard_page_metric_site;
+-- 01 ㉖ 登录账号长度改回执行 01 之前的长度（没有记录按 30）；有账号超过原长度时保留 50，免得截断或报错
+DO $$
+DECLARE orig INT := coalesce((SELECT value::int FROM monitor_p1_rollback_info WHERE item = 'sys_user.user_name.length'), 30);
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys_user WHERE length(user_name) > orig) THEN
+        RAISE NOTICE '有超过 % 个字符的登录账号，sys_user.user_name 保留现在的长度', orig;
+    ELSIF (SELECT character_maximum_length FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'sys_user' AND column_name = 'user_name') > orig THEN
+        EXECUTE format('ALTER TABLE sys_user ALTER COLUMN user_name TYPE VARCHAR(%s)', orig);
+    END IF;
+END $$;
+
+-- 01 ㉕ 订阅简报（订阅与发送记录一并删除）
+DROP TABLE IF EXISTS dashboard_subscription_log;
+DROP TABLE IF EXISTS dashboard_subscription;
 
 -- ---------- 5. 01 建的备份表 ----------
 DROP TABLE IF EXISTS dashboard_metric_card_name_bak_20261027;

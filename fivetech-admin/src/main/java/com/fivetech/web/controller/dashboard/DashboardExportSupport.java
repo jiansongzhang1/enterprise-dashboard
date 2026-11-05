@@ -43,6 +43,20 @@ final class DashboardExportSupport
         return ResponseEntity.ok().headers(headers).body(body);
     }
 
+    private static final MediaType CSV = MediaType.parseMediaType("text/csv;charset=UTF-8");
+
+    /** 推广分析导出：xlsx，生成失败时为 csv；带 export-summary 头（天数、推广渠道数、行数） */
+    static ResponseEntity<byte[]> promo(com.fivetech.promo.analysis.PromoFile file)
+    {
+        HttpHeaders headers = fileHeaders(file.getFileName(), file.isCsv() ? CSV : XLSX);
+        headers.setContentLength(file.getContent().length);
+        if (file.getSummary() != null)
+        {
+            headers.set("export-summary", file.getSummary());
+        }
+        return ResponseEntity.ok().headers(headers).body(file.getContent());
+    }
+
     private static HttpHeaders fileHeaders(String fileName, MediaType type)
     {
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");

@@ -152,6 +152,19 @@ dashboard:
   default-uds-site: ${DASHBOARD_DEFAULT_UDS_SITE:SITE-IN}
   # 配置热加载：每隔多少秒查一次 dashboard_metric_card、monitor_site_setting 的版本，后台「指标管理」「站点管理」改了之后其他实例跟着重载；0 = 关闭
   config-refresh-seconds: ${DASHBOARD_CONFIG_REFRESH_SECONDS:60}
+  # 订阅简报（系统管理 · 订阅简报）：每天按站点时区的整点把运营总览指标发到 Lark 群 / 个人；用 monitor.lark 的机器人
+  subscription:
+    # 定时发送总开关；关闭后管理后台仍可增删改、立即发送
+    enabled: ${DASHBOARD_SUBSCRIPTION_ENABLED:true}
+    # 检查到期订阅的频率（到期按各站点时区判断）
+    cron: ${DASHBOARD_SUBSCRIPTION_CRON:0 */5 * * * *}
+    # 整点后再等多少分钟才发（给 UDS 落上一小时的数据留时间）
+    send-delay-minutes: ${DASHBOARD_SUBSCRIPTION_DELAY_MINUTES:10}
+    # 过了发送时刻多少小时内还补发（取数失败、服务重启）
+    grace-hours: ${DASHBOARD_SUBSCRIPTION_GRACE_HOURS:3}
+    # 卡片「在 Yata 中查看」的地址（运营总览页）；为空不显示按钮
+    overview-url: ${DASHBOARD_SUBSCRIPTION_OVERVIEW_URL:}
+    max-receivers: ${DASHBOARD_SUBSCRIPTION_MAX_RECEIVERS:20}
   # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
   site-name: ${DASHBOARD_SITE_NAME:uWin}
   # 默认站点之外的其他站点（多站点一期）。前端在请求头 X-Site-Code 里带站点编码，不带 = 默认站点；
@@ -169,7 +182,7 @@ dashboard:
   timezone: ${DASHBOARD_TIMEZONE:Asia/Kolkata}
   # 币别，一期单币别不做汇率折算
   currency: ${DASHBOARD_CURRENCY:INR}
-  # 站点上线日，所有时间选择的下界
+  # 站点上线日：请求没带时间时，UDS 必填的 time 用「上线日 ~ 当前整点」补齐（不限制前端可选的时间范围）
   launch-date: ${DASHBOARD_LAUNCH_DATE:2026-03-01}
   # 指标口径版本
   registry-version: ${DASHBOARD_REGISTRY_VERSION:v1.3}
@@ -450,6 +463,11 @@ dashboard:
             status: { "0": "0", "1": "1" }
             userType: { "0": "0", "1": "1", "2": "2" }
             level: { "0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" }
+          # 用户明细 · 终端与推广筛选（FY-55，推广分析下钻也用）：UDS 提供注册终端、注册推广渠道字段后取消注释并填字段名（Q28）。
+          # 没映射时带 terminals / agents / channels 查询会直接报「暫時不能按它篩選」，不会静默忽略
+          # filter-fields:
+          #   registerTerminal: register_terminal
+          #   registerChannel: register_channel_id
         deposit:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
           dataset: dashboard_deposit_snapshot_v3
@@ -613,7 +631,8 @@ dashboard:
           time-dimension: india_bet_dt
           time-format: DATE
           grain: DAY
-          limit: 90                       # UDS 分群查询最多 90 个日期（超出返回 4001），offset 必须为 0
+          # 不再限制 90 个分群日（2026-11-02）：一天一行，查询区间最长 365 天；1000 = UDS 单次查询行数上限，offset 为 0
+          limit: 1000
           dimensions: { cohortDate: india_bet_dt }
           metrics: { base: bet_player_cnt, d1: d1_retention, d2: d2_retention, d3: d3_retention, d4: d4_retention,
                      d5: d5_retention, d6: d6_retention, d7: d7_retention, d15: d15_retention, d30: d30_retention }
@@ -627,7 +646,8 @@ dashboard:
           time-dimension: India_FD_dt
           time-format: DATE
           grain: DAY
-          limit: 90                       # UDS 分群查询最多 90 个日期（超出返回 4001），offset 必须为 0
+          # 不再限制 90 个分群日（2026-11-02）：一天一行，查询区间最长 365 天；1000 = UDS 单次查询行数上限，offset 为 0
+          limit: 1000
           dimensions: { cohortDate: India_FD_dt }
           metrics: { base: first_deposit_player_cnt, d0: Pre_D0_LTV, d1: D1_LTV, d2: D2_LTV, d3: D3_LTV, d4: D4_LTV,
                      d5: D5_LTV, d6: D6_LTV, d7: D7_LTV, d15: D15_LTV, d30: D30_LTV }
@@ -756,6 +776,27 @@ monitor:
       ngr: ngr_baseline                    # NGR（= GGR − 赠金，UDS 按每小时 NGR 取中位数）
 
 # token配置
+# Yata Copilot（AI 能力）：目前用于订阅简报的「AI 摘要」。
+# API Key 只从环境变量 ANTHROPIC_API_KEY 读；为空时不调用模型，订阅照常发送（不带摘要）。
+copilot:
+  enabled: ${COPILOT_ENABLED:true}
+  # 页面不选模型时用这个
+  default-model: ${COPILOT_DEFAULT_MODEL:claude-haiku-5-5}
+  # 页面上可选的模型；id 以 Anthropic GET /v1/models 返回的为准，加模型前先用它确认
+  models:
+    - id: claude-haiku-5-5
+      label: Claude Haiku 5.5
+  anthropic:
+    base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+    api-key: ${ANTHROPIC_API_KEY:}
+    version: 2023-06-01
+    timeout-seconds: ${COPILOT_TIMEOUT_SECONDS:60}
+    retries: 2
+  brief:
+    # 每天最多调用几次（全部站点；定时、立即发送、测试、预览合计），用完后当天的简报不带摘要
+    daily-limit: ${COPILOT_BRIEF_DAILY_LIMIT:20}
+    max-tokens: 800
+
 token:
   # 令牌自定义标识return userId != null && 1L == userId;
   header: Authorization

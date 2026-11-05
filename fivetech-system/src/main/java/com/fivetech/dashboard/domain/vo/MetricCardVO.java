@@ -373,4 +373,53 @@ public class MetricCardVO implements Serializable
         this.udsMetric = udsMetric;
     }
 
+    // ---------- 推广分析（scene = PROMO）新增；运营总览不返回这些字段 ----------
+
+    /** OK / NA（选了终端后不适用）/ NO_SPEND（没有有效格子）；value 为 null 时前端按它显示 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String state;
+
+    /** 悬停说明（繁体），如「消耗不按終端拆分」 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String note;
+
+    /** DAILY_ONLY：该指标没有小时数据，按小时看时 series 全为 null */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String seriesUnavailable;
+
+    /** 只在消耗卡、本期含今天且不只今天时：{from, to, prevFrom, prevTo, days}（MM-dd） */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private java.util.Map<String, Object> spendCompare;
+
+    /** 趋势点能否下钻名单（日粒度的注册人数、首存人数、复存人数、首存金额）；运营总览为 null 不返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private Boolean drillable;
+
+    /** 变化归因；只在请求带 attribution、且指标可歸因时返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private java.util.Map<String, Object> attribution;
+
+    public String getState() { return state; }
+
+    public void setState(String state) { this.state = state; }
+
+    public String getNote() { return note; }
+
+    public void setNote(String note) { this.note = note; }
+
+    public String getSeriesUnavailable() { return seriesUnavailable; }
+
+    public void setSeriesUnavailable(String seriesUnavailable) { this.seriesUnavailable = seriesUnavailable; }
+
+    public java.util.Map<String, Object> getSpendCompare() { return spendCompare; }
+
+    public void setSpendCompare(java.util.Map<String, Object> spendCompare) { this.spendCompare = spendCompare; }
+
+    public Boolean getDrillable() { return drillable; }
+
+    public void setDrillable(Boolean drillable) { this.drillable = drillable; }
+
+    public java.util.Map<String, Object> getAttribution() { return attribution; }
+
+    public void setAttribution(java.util.Map<String, Object> attribution) { this.attribution = attribution; }
 }

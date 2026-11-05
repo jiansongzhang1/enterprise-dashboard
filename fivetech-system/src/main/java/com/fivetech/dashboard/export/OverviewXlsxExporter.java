@@ -54,6 +54,14 @@ public class OverviewXlsxExporter
      */
     public byte[] export(OverviewVO vo)
     {
+        return export(vo, null);
+    }
+
+    /**
+     * 同 {@link #export(OverviewVO)}，口径说明 sheet 额外写几行（推广分析概览写推广筛选）。
+     */
+    public byte[] export(OverviewVO vo, java.util.Map<String, String> extraNotes)
+    {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream())
         {
             Styles styles = new Styles(wb);
@@ -66,7 +74,7 @@ public class OverviewXlsxExporter
                 writeSeries(wb, styles, vo, metrics);
             }
             // 口径说明永远写：导出的文件会脱离页面流转，看到数的人多半没看过顶栏的提示
-            writeNotes(wb, styles, vo);
+            writeNotes(wb, styles, vo, extraNotes);
 
             wb.write(out);
             return out.toByteArray();
@@ -80,9 +88,15 @@ public class OverviewXlsxExporter
     /** 文件名带上区间与粒度，导出多次之后还能分清哪个是哪个 */
     public String fileName(OverviewVO vo)
     {
+        return fileName(vo, "运营总览");
+    }
+
+    /** 同 {@link #fileName(OverviewVO)}，指定前缀（推广分析概览用「推廣分析概覽」） */
+    public String fileName(OverviewVO vo, String prefix)
+    {
         String from = vo.getSlot() == null ? "" : safe(vo.getSlot().getFrom());
         String to = vo.getSlot() == null ? "" : safe(vo.getSlot().getTo());
-        return "运营总览_" + from + "_" + to + ".xlsx";
+        return prefix + "_" + from + "_" + to + ".xlsx";
     }
 
     private static String safe(String text)
@@ -123,7 +137,10 @@ public class OverviewXlsxExporter
             number(row, c++, card.getDelta(), styles.of(card.getValueFormat(), card.getDecimals()));
             number(row, c++, card.getDeltaPct(), styles.decimal2);
             number(row, c++, card.getDeltaPt(), styles.decimal2);
-            text(row, c, card.getExpression(), styles.body);
+            // 推广分析：不适用的卡（state = NA）把说明写在口径后面
+            String caliber = card.getNote() == null ? card.getExpression()
+                : (card.getExpression() == null ? "" : card.getExpression() + "　") + "（" + card.getNote() + "）";
+            text(row, c, caliber, styles.body);
         }
         autoSize(sheet, head.length);
     }
@@ -182,10 +199,17 @@ public class OverviewXlsxExporter
 
     // ===================== sheet 3 口径说明 =====================
 
-    private void writeNotes(Workbook wb, Styles styles, OverviewVO vo)
+    private void writeNotes(Workbook wb, Styles styles, OverviewVO vo, java.util.Map<String, String> extraNotes)
     {
         Sheet sheet = wb.createSheet(SHEET_NOTES);
         int r = 0;
+        if (extraNotes != null)
+        {
+            for (java.util.Map.Entry<String, String> e : extraNotes.entrySet())
+            {
+                r = kv(sheet, styles, r, e.getKey(), e.getValue());
+            }
+        }
 
         r = kv(sheet, styles, r, "统计区间", slotText(vo));
         r = kv(sheet, styles, r, "时间语义", "左闭右开，末端时间片不含在内");

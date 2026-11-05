@@ -104,6 +104,8 @@ public class ResourcesConfig implements WebMvcConfigurer
         // 暴露下载响应头，否则前端拿不到 CSV 的文件名
         config.addExposedHeader("Content-Disposition");
         config.addExposedHeader("download-filename");
+        // 推广分析导出的摘要（天数、推广渠道数、行数），前端拼完成提示
+        config.addExposedHeader("export-summary");
         // 有效期 1800秒
         config.setMaxAge(1800L);
         // 添加映射路径，拦截一切请求

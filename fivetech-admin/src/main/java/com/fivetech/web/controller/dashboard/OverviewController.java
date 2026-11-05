@@ -80,13 +80,19 @@ public class OverviewController extends BaseController
     /**
      * 查询指标墙；{@code export=true} 时下载 xlsx。
      *
-     * <p>查询需要 {@code dashboard:overview:metrics}；能查询就能导出，{@code export=true} 时只校验导出总开关，
-     * 并写入操作日志审计。</p>
+     * <p>查询需要 {@code dashboard:overview:metrics}；{@code scene = PROMO}（推广分析概览）需要 {@code dashboard:promo:view}。
+     * 能查询就能导出，{@code export=true} 时只校验导出总开关，并写入操作日志审计。</p>
      */
-    @PreAuthorize("@ss.hasPermi('dashboard:overview:metrics')")
+    @PreAuthorize("@ss.hasAnyPermi('dashboard:overview:metrics,dashboard:promo:view')")
     @PostMapping("/overview")
     public ResponseEntity<?> overview(@Validated @RequestBody OverviewQuery query)
     {
+        // 注解放宽为任一权限，这里按 scene 校验：推广分析要 dashboard:promo:view，运营总览要 dashboard:overview:metrics
+        String need = query.isPromo() ? "dashboard:promo:view" : "dashboard:overview:metrics";
+        if (!SecurityUtils.hasPermi(need))
+        {
+            throw new org.springframework.security.access.AccessDeniedException("没有权限：" + need);
+        }
         if (query.isExport())
         {
             checkExportEnabled();
@@ -99,9 +105,23 @@ public class OverviewController extends BaseController
             return ResponseEntity.ok(AjaxResult.success(data));
         }
 
-        byte[] file = xlsxExporter.export(data);
+        byte[] file;
+        if (query.isPromo())
+        {
+            java.util.Map<String, String> notes = new java.util.LinkedHashMap<>();
+            notes.put("页面", "推广分析 · 概览");
+            notes.put("推广商", query.getAgents().isEmpty() ? "全部" : String.join("、", query.getAgents()));
+            notes.put("推广渠道", query.getChannels().isEmpty() ? "全部" : String.join("、", query.getChannels()));
+            notes.put("终端", query.getTerminal() == null || query.getTerminal().isBlank() ? "all" : query.getTerminal());
+            file = xlsxExporter.export(data, notes);
+        }
+        else
+        {
+            file = xlsxExporter.export(data);
+        }
         audit(query, file.length);
-        return DashboardExportSupport.xlsx(xlsxExporter.fileName(data), file);
+        return DashboardExportSupport.xlsx(query.isPromo() ? xlsxExporter.fileName(data, "推廣分析概覽")
+            : xlsxExporter.fileName(data), file);
     }
 
 
@@ -217,8 +237,10 @@ public class OverviewController extends BaseController
      */
     private void audit(OverviewQuery query, int bytes)
     {
-        audit("运营总览导出", "/dashboard/metrics/overview", "slot=" + query.getSlotFrom() + "~" + query.getSlotTo()
-            + ", granularity=" + query.getGranularity() + ", blocks=" + query.getBlocks(), bytes);
+        String scope = query.isPromo() ? ", scene=PROMO, agents=" + query.getAgents() + ", channels=" + query.getChannels()
+            + ", terminal=" + query.getTerminal() : "";
+        audit(query.isPromo() ? "推广分析概览导出" : "运营总览导出", "/dashboard/metrics/overview", "slot=" + query.getSlotFrom() + "~" + query.getSlotTo()
+            + ", granularity=" + query.getGranularity() + ", blocks=" + query.getBlocks() + scope, bytes);
     }
 
     private void audit(String title, String url, String param, int bytes)

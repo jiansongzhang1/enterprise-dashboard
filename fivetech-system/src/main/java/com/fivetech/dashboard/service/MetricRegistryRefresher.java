@@ -12,7 +12,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
 /**
- * 指标配置的热加载：每隔 {@code dashboard.config-refresh-seconds} 秒（默认 60，0 = 关闭）查一次 dashboard_metric_card 的版本
+ * 指标配置的热加载：每隔 {@code dashboard.config-refresh-seconds} 秒（默认 60，0 = 关闭）查一次 dashboard_metric_card 与站点指标顺序 dashboard_page_metric_site 的版本
  * （行数 + 最后修改时间），变了就重载 {@link MetricRegistry}。
  *
  * <p>后台「指标管理」改名称、分组、格式时，处理请求的实例当场重载；多实例部署时其他实例靠这里在一分钟内跟上。
@@ -35,11 +35,22 @@ public class MetricRegistryRefresher
 
     private ScheduledExecutorService executor;
 
+    /** 站点自定义的页面指标顺序（dashboard_page_metric_site）：它变了也要重载；为 null 时不看 */
+    private final com.fivetech.dashboard.mapper.SitePageMetricMapper siteMapper;
+
+    public MetricRegistryRefresher(MetricRegistry registry, DashboardConfigMapper mapper, int seconds)
+    {
+        this(registry, mapper, null, seconds);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public MetricRegistryRefresher(MetricRegistry registry, DashboardConfigMapper mapper,
+            com.fivetech.dashboard.mapper.SitePageMetricMapper siteMapper,
             @Value("${dashboard.config-refresh-seconds:60}") int seconds)
     {
         this.registry = registry;
         this.mapper = mapper;
+        this.siteMapper = siteMapper;
         this.seconds = seconds;
     }
 
@@ -92,12 +103,29 @@ public class MetricRegistryRefresher
     {
         try
         {
-            return mapper.selectMetricCardVersion();
+            return mapper.selectMetricCardVersion() + "|" + siteLayoutVersion();
         }
         catch (RuntimeException e)
         {
             log.warn("[dashboard-config] 读取指标配置版本失败：{}", e.getMessage());
             return null;
+        }
+    }
+
+    /** 站点指标顺序的版本；表还不存在时为空串（不影响指标配置本身的热刷新） */
+    private String siteLayoutVersion()
+    {
+        if (siteMapper == null)
+        {
+            return "";
+        }
+        try
+        {
+            return String.valueOf(siteMapper.selectVersion());
+        }
+        catch (RuntimeException e)
+        {
+            return "";
         }
     }
 }

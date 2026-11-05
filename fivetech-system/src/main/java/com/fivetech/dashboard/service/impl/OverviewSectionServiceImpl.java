@@ -75,9 +75,6 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
 
     private static final int MAX_SPAN_DAYS = 365;
 
-    /** 留存与 LTV 一次最多 90 个分群日：UDS 分群查询的硬上限，超出整单返回 4001 */
-    private static final int COHORT_MAX_DAYS = 90;
-
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     /** 游戏榜固定 Top 20 */
@@ -361,12 +358,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
 
         LocalDate from = parseDate(query.getSlotFrom(), "slotFrom");
         LocalDate to = parseDate(query.getSlotTo(), "slotTo");
+        // 不再单独限制分群日个数（原最多 90 天，2026-11-02 去掉）；只受通用的区间校验约束
         checkRange(from.atStartOfDay(), to.atStartOfDay());
-        // slotTo 右开，分群日个数 = 两者相差的天数
-        if (ChronoUnit.DAYS.between(from, to) > COHORT_MAX_DAYS)
-        {
-            throw new ServiceException("留存与 LTV 最多查询 " + COHORT_MAX_DAYS + " 天", 4001);
-        }
         ignoreGranularity(query, notices);
         ignoreCompare(query, notices);
 
@@ -773,22 +766,6 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         if (ChronoUnit.DAYS.between(from, to) > MAX_SPAN_DAYS)
         {
             throw new ServiceException("查询区间不得超过 " + MAX_SPAN_DAYS + " 天", 4001);
-        }
-        if (to.toLocalDate().isBefore(launchDate()))
-        {
-            throw new ServiceException("区间不能早于站点上线日 " + properties.getLaunchDate(), 4001);
-        }
-    }
-
-    private LocalDate launchDate()
-    {
-        try
-        {
-            return LocalDate.parse(properties.getLaunchDate(), YMD);
-        }
-        catch (Exception e)
-        {
-            return LocalDate.MIN;
         }
     }
 

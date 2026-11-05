@@ -39,6 +39,14 @@ public class RecordQueryController extends BaseController
 {
     private final IRecordQueryService recordQueryService;
 
+    private com.fivetech.promo.analysis.MemberPromoFilter memberPromoFilter;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setMemberPromoFilter(com.fivetech.promo.analysis.MemberPromoFilter memberPromoFilter)
+    {
+        this.memberPromoFilter = memberPromoFilter;
+    }
+
     private final DashboardXlsxExporter xlsxExporter;
 
     private final IDashboardExportService exportService;
@@ -67,6 +75,14 @@ public class RecordQueryController extends BaseController
     /**
      * 会员明细；export_csv=true 时下载 XLSX
      */
+    /** 用户明细的筛选可选项：终端（最后一项为未識別）、推广商与推广渠道（FY-55） */
+    @PreAuthorize("@ss.hasPermi('dashboard:record:member')")
+    @org.springframework.web.bind.annotation.GetMapping("/member/options")
+    public AjaxResult memberOptions()
+    {
+        return AjaxResult.success(memberPromoFilter.options());
+    }
+
     @PreAuthorize("@ss.hasPermi('dashboard:record:member')")
     @PostMapping("/member")
     public ResponseEntity<?> member(@Validated @RequestBody MemberRecordQuery query)

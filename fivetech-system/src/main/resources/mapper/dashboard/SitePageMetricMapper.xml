@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.dashboard.mapper.SitePageMetricMapper">
+
+	<resultMap type="com.fivetech.dashboard.domain.SitePageMetric" id="SitePageMetricResult">
+		<result property="siteCode"   column="site_code"   />
+		<result property="pageCode"   column="page_code"   />
+		<result property="metricCode" column="metric_code" />
+		<result property="displayType" column="display_type" />
+		<result property="sortNo"     column="sort_no"     />
+		<result property="visible"    column="visible"     />
+		<result property="updateBy"   column="update_by"   />
+		<result property="updateTime" column="update_time" />
+	</resultMap>
+
+	<select id="selectAll" resultMap="SitePageMetricResult">
+		select site_code, page_code, display_type, metric_code, sort_no, visible, update_by, update_time
+		  from dashboard_page_metric_site
+		 order by site_code, page_code, display_type, sort_no, metric_code
+	</select>
+
+	<select id="selectVersion" resultType="string">
+		select count(*) || ':' || coalesce(to_char(max(update_time), 'YYYYMMDDHH24MISSUS'), '')
+		  from dashboard_page_metric_site
+	</select>
+
+	<delete id="deleteBySitePage">
+		delete from dashboard_page_metric_site
+		 where upper(site_code) = upper(#{siteCode}) and page_code = #{pageCode} and display_type = #{displayType}
+	</delete>
+
+	<insert id="insertBatch">
+		insert into dashboard_page_metric_site (site_code, page_code, display_type, metric_code, sort_no, visible, update_by, update_time)
+		values
+		<foreach collection="rows" item="r" separator=",">
+			(#{r.siteCode}, #{r.pageCode}, #{r.displayType}, #{r.metricCode}, #{r.sortNo}, #{r.visible}, #{r.updateBy}, localtimestamp)
+		</foreach>
+	</insert>
+</mapper>

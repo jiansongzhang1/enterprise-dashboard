@@ -91,9 +91,6 @@ public class OverviewWorkbookExporter
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    /** 留存与 LTV 一次最多 90 个分群日（UDS 分群查询上限） */
-    private static final int COHORT_MAX_DAYS = 90;
-
     private final IOverviewService overviewService;
 
     private final IOverviewSectionService sectionService;
@@ -286,9 +283,9 @@ public class OverviewWorkbookExporter
 
     /**
      * 留存与 LTV 的分群日区间（左闭右开，日期）：传了 cohortFrom / cohortTo 就用它们；否则取 slot 的日期；
-     * 没有已完结的分群日时改为截至昨天的最近 30 天；超过 90 天时保留最近 90 天。
+     * 没有已完结的分群日时改为截至昨天的最近 30 天。不限分群日个数（原最多 90 天，2026-11-02 去掉）。
      */
-    private CohortQuery cohortQuery(OverviewExportQuery q)
+    CohortQuery cohortQuery(OverviewExportQuery q)
     {
         LocalDate from;
         LocalDate to;
@@ -310,10 +307,6 @@ public class OverviewWorkbookExporter
                 to = today;
                 from = today.minusDays(30);
             }
-        }
-        if (ChronoUnit.DAYS.between(from, to) > COHORT_MAX_DAYS)
-        {
-            from = to.minusDays(COHORT_MAX_DAYS);
         }
         CohortQuery c = new CohortQuery();
         c.setSiteCode(q.getSiteCode());
@@ -438,8 +431,8 @@ public class OverviewWorkbookExporter
 
     // ===================== 指標快照 / 時間序列 =====================
 
-    /** 指标卡按模板顺序排列；模板之外的指标排在后面 */
-    private static List<MetricCardVO> cards(OverviewVO vo)
+    /** 指标卡按站点顺序（卡片 sortNo，与页面一致）排列；没有 sortNo 的按模板顺序排在后面 */
+    static List<MetricCardVO> cards(OverviewVO vo)
     {
         if (vo == null || !(vo.getBlocks().get("METRICS") instanceof MetricsBlockVO))
         {
@@ -447,10 +440,11 @@ public class OverviewWorkbookExporter
         }
         List<MetricCardVO> cards = new ArrayList<>(((MetricsBlockVO) vo.getBlocks().get("METRICS")).getItems());
         List<String> order = ExportMetricText.order();
-        cards.sort(Comparator.comparingInt(c -> {
-            int i = order.indexOf(c.getCode());
-            return i < 0 ? Integer.MAX_VALUE : i;
-        }));
+        cards.sort(Comparator.comparingInt((MetricCardVO c) -> c.getSortNo() == null ? Integer.MAX_VALUE : c.getSortNo())
+            .thenComparingInt(c -> {
+                int i = order.indexOf(c.getCode());
+                return i < 0 ? Integer.MAX_VALUE : i;
+            }));
         return cards;
     }
 

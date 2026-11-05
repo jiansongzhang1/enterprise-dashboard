@@ -51,4 +51,8 @@ public interface MetricDictMapper
 
     /** 引用该指标的告警规则数（含暂停，不含已删除），所有站点 */
     int countRules(@Param("metricCode") String metricCode);
+
+    /** 指标管理「可歸因」开关：所有状态的指标都能改 */
+    int updateAttributable(@Param("metricCode") String metricCode, @Param("attributable") boolean attributable,
+        @Param("updateBy") String updateBy);
 }

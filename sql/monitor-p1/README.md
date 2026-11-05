@@ -2,7 +2,7 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `01_release_monitor_p1_postgresql.sql` | 上线：本次监控管理新增和修改的全部 DDL、数据、菜单（23 个脚本按顺序原样拼接 + 前置检查 + 回滚用备份 + 汇总自检）。可重复执行 |
+| `01_release_monitor_p1_postgresql.sql` | 上线：本次监控管理新增和修改的全部 DDL、数据、菜单（26 个脚本按顺序原样拼接 + 前置检查 + 回滚用备份 + 汇总自检）。可重复执行 |
 | `02_rollback_monitor_p1_postgresql.sql` | 回滚：撤销 01 的全部改动，回到执行 01 之前的状态。需要显式确认，一个事务 |
 
 ## 01 包含的 17 段（顺序不能换）
@@ -32,6 +32,9 @@
 | ㉑ | alter_monitor_sample_bet_users | 平均杀率 / 赠金比 / 流水倍数的最小样本量改为投注人数 active（MON-34），指标配置和已建规则一起改 |
 | ㉒ | alter_monitor_event_stop_reason | 事件停止原因 stop_reason（pause / delete / update，MON-28 / MON-29）；新 JAR 启动前必须有 |
 | ㉓ | fix_monitor_event_level_peak | 到过严重的事件等级改回严重（MON-01）；新 JAR 上线后再执行一次 |
+| ㉔ | add_dashboard_page_metric_site | 按站点调整运营总览 / 指标汇总的指标顺序与显示（表 dashboard_page_metric_site，后台「站点管理 › 指標配置」维护；没配置的站点按全站默认） |
+| ㉕ | add_dashboard_subscription | 订阅简报：表 dashboard_subscription / dashboard_subscription_log + 菜单「系统管理 › 订阅简报」（system:subscription:list / add / edit / remove，授给超级管理员）；每日定时把运营总览指标发到 Lark 群 / 个人 |
+| ㉖ | alter_sys_user_name_length | 用户管理：登录账号 sys_user.user_name 长度上限 30 → 50（只放宽，不改数据；回滚时没有超过 30 字的账号才改回） |
 
 01 开头的「0.5 回滚用备份」只在**第一次**执行时记录：`dashboard_metric_card` 整表（含旧告警字段的值）、约束、索引、默认值、注释，以及 `sys_role.site_code` 原本是否存在。02 依赖这份记录。
 

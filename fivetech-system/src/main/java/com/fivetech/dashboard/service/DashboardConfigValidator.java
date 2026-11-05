@@ -287,8 +287,9 @@ public class DashboardConfigValidator
                 result.getErrors().add("页面 " + page + " 引用了不存在的指标 " + relation.getMetricCode());
                 continue;
             }
-            // 外键只管 DELETE，管不住 status 改成 '1'——这是最可能真实发生的一种
-            if (!card.isEnabled())
+            // 外键只管 DELETE，管不住 status 改成 '1'——这是最可能真实发生的一种。
+            // 推广分析的指标在 UDS 接入前就是「仅登记」，允许挂在 PROMO 页面上（推广分析不经注册表取数）
+            if (!card.isEnabled() && !DashboardPage.PROMO.name().equals(page))
             {
                 result.getErrors().add("页面 " + page + " 挂着已停用的指标 "
                     + relation.getMetricCode() + "（" + card.getMetricName() + "）");
@@ -317,15 +318,17 @@ public class DashboardConfigValidator
         for (DashboardPage page : DashboardPage.values())
         {
             Set<String> used = usedByPage.get(page.name());
+            // 推广分析是新页面：没执行 release_next ⑤ 时只告警，不挡运营总览启动
+            List<String> sink = page == DashboardPage.PROMO ? result.getWarnings() : result.getErrors();
             if (used == null || used.isEmpty())
             {
-                result.getErrors().add("页面 " + page.name() + " 没有任何可用指标，页面会是空的");
+                sink.add("页面 " + page.name() + " 没有任何可用指标，页面会是空的");
                 continue;
             }
             Set<String> defaults = defaultsByPage.get(page.name());
             if (defaults == null || defaults.isEmpty())
             {
-                result.getErrors().add("页面 " + page.name() + " 没有任何默认列，打开就是空表");
+                sink.add("页面 " + page.name() + " 没有任何默认列，打开就是空表");
             }
         }
 

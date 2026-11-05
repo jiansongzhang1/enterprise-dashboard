@@ -21,7 +21,13 @@ public enum DashboardPage
     OVERVIEW("dashboard:overview:view"),
 
     /** 指标汇总表。21 个指标全部可选，默认选中 8 个核心指标 */
-    SUMMARY("dashboard:summary:view");
+    SUMMARY("dashboard:summary:view"),
+
+    /**
+     * 推广分析 · 概览（FY-46）。指标在 UDS 接入前是「仅登记」（status = '1'），不进注册表的取数快照，
+     * 由 {@code PromoMetricCatalog} 每次读库；is_default = 打开页面默认显示的卡。
+     */
+    PROMO("dashboard:promo:view");
 
     private final String permission;
 

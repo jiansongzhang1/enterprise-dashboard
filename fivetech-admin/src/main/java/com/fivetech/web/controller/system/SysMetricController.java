@@ -61,7 +61,7 @@ public class SysMetricController extends BaseController
         return success(Map.of("metricCode", metricDictService.create(body, getUsername())));
     }
 
-    /** 修改口径与取数说明；仅登记的指标还能改名称、分组、格式、方向、更新频率 */
+    /** 修改口径与取数说明；仅登记的指标还能改名称、分组、格式、方向、更新频率；attributable（可歸因）所有指标都能改 */
     @PreAuthorize("@ss.hasPermi('system:metric:edit')")
     @Log(title = "指标管理", businessType = BusinessType.UPDATE)
     @PostMapping("/{metricCode}/update")

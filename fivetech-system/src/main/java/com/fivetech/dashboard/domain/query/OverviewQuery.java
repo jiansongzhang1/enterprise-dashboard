@@ -83,6 +83,97 @@ public class OverviewQuery implements Serializable
      */
     private String exportFormat = "XLSX";
 
+    // ---------- 推广分析（scene = PROMO）；运营总览忽略 ----------
+
+    /** OPS 运营总览（默认）/ PROMO 推广分析概览：决定取哪组指标、哪组数据、校验哪个权限 */
+    private String scene;
+
+    /** 推广商编码（渠道字典的推广商 ID），与 channels 取并集；都为空 = 全部 */
+    private List<String> agents = new ArrayList<>();
+
+    /** 推广渠道编码（渠道字典的推广渠道 ID），可与推广商混选 */
+    private List<String> channels = new ArrayList<>();
+
+    /** 终端编码（PROMO_TERMINALS）或 all；为空 = all */
+    private String terminal;
+
+    /** 变化归因：{ "dimension": "agent" | "channel" | "terminal" }；传了才算 */
+    private Attribution attribution;
+
+    /** 变化归因请求 */
+    public static class Attribution implements Serializable
+    {
+        private static final long serialVersionUID = 1L;
+
+        private String dimension;
+
+        public String getDimension()
+        {
+            return dimension;
+        }
+
+        public void setDimension(String dimension)
+        {
+            this.dimension = dimension;
+        }
+    }
+
+    /** scene = PROMO（不区分大小写） */
+    public boolean isPromo()
+    {
+        return scene != null && "PROMO".equalsIgnoreCase(scene.trim());
+    }
+
+    public String getScene()
+    {
+        return scene;
+    }
+
+    public void setScene(String scene)
+    {
+        this.scene = scene;
+    }
+
+    public List<String> getAgents()
+    {
+        return agents;
+    }
+
+    public void setAgents(List<String> agents)
+    {
+        this.agents = agents == null ? new ArrayList<>() : agents;
+    }
+
+    public List<String> getChannels()
+    {
+        return channels;
+    }
+
+    public void setChannels(List<String> channels)
+    {
+        this.channels = channels == null ? new ArrayList<>() : channels;
+    }
+
+    public String getTerminal()
+    {
+        return terminal;
+    }
+
+    public void setTerminal(String terminal)
+    {
+        this.terminal = terminal;
+    }
+
+    public Attribution getAttribution()
+    {
+        return attribution;
+    }
+
+    public void setAttribution(Attribution attribution)
+    {
+        this.attribution = attribution;
+    }
+
     public String getSiteCode()
     {
         return siteCode;

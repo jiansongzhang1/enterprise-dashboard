@@ -79,6 +79,22 @@ public class MemberRecordQuery extends BaseRecordQuery
     @Size(max = 64)
     private java.util.List<String> columns;
 
+    /** 注册终端编码（GET /dashboard/records/member/options 的 terminals[].code），可多选；unidentified = 未識別；空 = 不限 */
+    private java.util.List<String> terminals = new java.util.ArrayList<>();
+
+    /** 推广商编码，与 channels 取并集；两者都为空 = 不限 */
+    private java.util.List<String> agents = new java.util.ArrayList<>();
+
+    /** 推广渠道编码，可与推广商混选 */
+    private java.util.List<String> channels = new java.util.ArrayList<>();
+
+    public java.util.List<String> getTerminals() { return terminals; }
+    public void setTerminals(java.util.List<String> terminals) { this.terminals = terminals == null ? new java.util.ArrayList<>() : terminals; }
+    public java.util.List<String> getAgents() { return agents; }
+    public void setAgents(java.util.List<String> agents) { this.agents = agents == null ? new java.util.ArrayList<>() : agents; }
+    public java.util.List<String> getChannels() { return channels; }
+    public void setChannels(java.util.List<String> channels) { this.channels = channels == null ? new java.util.ArrayList<>() : channels; }
+
     public java.util.List<String> getColumns() { return columns; }
     public void setColumns(java.util.List<String> columns) { this.columns = columns; }
     public String getRegisterTimeFrom() { return registerTimeFrom; }

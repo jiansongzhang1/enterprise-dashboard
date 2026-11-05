@@ -32,6 +32,7 @@ import com.fivetech.monitor.exception.MonitorFieldException;
  *       有告警规则（含暂停）的指标不能改数值格式（阈值按格式的单位填写）；漲跌方向、更新频率不能改；不能删除；</li>
  *   <li>仅登记（status = '1'，后台新增的都是）：运营总览、指标汇总不加载、不能建告警规则；
  *       还能改名称、分组、格式、方向、更新频率；没有任何引用时可以删除。要接入取数需另改配置与 SQL。</li>
+ *   <li>可歸因（attributable）：所有状态都能改，只影响推广分析概览的变化归因，保存后立即生效。</li>
  * </ul>
  *
  * @author fivetech
@@ -211,6 +212,11 @@ public class MetricDictService
         }
         failIfAny(errors);
         mapper.updateDictionary(item);
+        if (body.getAttributable() != null && !body.getAttributable().equals(Boolean.TRUE.equals(existing.getAttributable())))
+        {
+            // 可歸因只影响推广分析概览（每次读库），不需要重载注册表
+            mapper.updateAttributable(existing.getMetricCode(), body.getAttributable(), operator);
+        }
         if (registered)
         {
             mapper.updateRegisteredBasic(item);

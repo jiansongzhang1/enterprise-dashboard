@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "5706850f-0b6a-5c41-9322-062dce2edec6",
 		"name": "Fivetech Dashboard API · 监控管理 · 接口全集",
-		"description": "监控管理接口全集（2026-10-29 代码）：监控规则、回测预览、测试告警、判定试运行、异常事件、Lark 群、运营总览 monitorSlots，以及系统管理的站点管理、指标管理、通知模板，共 36 个接口、217 个请求，每个请求都带断言。\n\nbaseUrl：https://d3ajrxvlugsarb.cloudfront.net/prod-api（集合变量，可在环境里覆盖）\n\n使用：\n1. 导入后在集合变量里填 username、password 的 Current value（不要填 Initial value，避免随文件导出）；运行前填 totp（GA 6 位码）；\n2. 先在该环境的库执行 doc/monitor/monitor_batch1_test_data.sql 第 1 段（oc_postman_ok / oc_postman_dead 群缓存）；当前账号要有邮箱、有 system:metric:* / system:site:* 权限；\n3. 按目录顺序整集运行（0.1 登录后 token 自动写入）；命令行：doc/monitor/run-monitor-api-test.sh -c ../../tests/monitor-management.postman_collection.json；\n4. 第 9 组需要普通用户 token（userToken），不填自动跳过；第 14 组新增站点 / 改编码 / 配置未配置行要把 siteWriteTest 设为 1 才执行（没有删除站点接口，会留下测试站点）；\n5. 第 16 组只读，需要本站有启用中的规则（最好近 30 天有事件）；可用集合变量 accRuleIds 指定；\n6. 第 17 组会把 oc_postman_ok 置为失效，放在最后；下次整集运行前重新执行测试数据 SQL 第 1 段；第 17、18 组会往机器人所在的真实群发测试消息；\n7. 测完执行测试数据 SQL 第 2 段清理。\n\n若依返回 HTTP 恒为 200，成败看 code：200 / 400（data.fields）/ 401 / 403 / 404 / 4801 指标已有规则 / 4802 Lark 應用憑證無效 / 4805 通知群已失效 / 4807 启用规则已达上限 / 4808 測試消息發送失敗。\n注意：会真实写库（建删规则、占规则号、处理事件、建删测试指标和模板、临时改站点名称 / 币种 / 排序号后改回），只在测试环境执行。",
+		"description": "监控管理接口全集（2026-10-29 代码）：监控规则、回测预览、测试告警、判定试运行、异常事件、Lark 群、运营总览 monitorSlots，以及系统管理的站点管理、指标管理、通知模板，共 36 个接口、225 个请求，每个请求都带断言。\n\nbaseUrl：https://d3ajrxvlugsarb.cloudfront.net/prod-api（集合变量，可在环境里覆盖）\n\n使用：\n1. 导入后在集合变量里填 username、password 的 Current value（不要填 Initial value，避免随文件导出）；运行前填 totp（GA 6 位码）；\n2. 先在该环境的库执行 doc/monitor/monitor_batch1_test_data.sql 第 1 段（oc_postman_ok / oc_postman_dead 群缓存）；当前账号要有邮箱、有 system:metric:* / system:site:* 权限；\n3. 按目录顺序整集运行（0.1 登录后 token 自动写入）；命令行：doc/monitor/run-monitor-api-test.sh -c ../../tests/monitor-management.postman_collection.json；\n4. 第 9 组需要普通用户 token（userToken），不填自动跳过；第 14 组新增站点 / 改编码 / 配置未配置行要把 siteWriteTest 设为 1 才执行（没有删除站点接口，会留下测试站点）；\n5. 第 16 组只读，需要本站有启用中的规则（最好近 30 天有事件）；可用集合变量 accRuleIds 指定；\n6. 第 17 组会把 oc_postman_ok 置为失效，放在最后；下次整集运行前重新执行测试数据 SQL 第 1 段；第 17、18 组会往机器人所在的真实群发测试消息；\n7. 测完执行测试数据 SQL 第 2 段清理。\n\n若依返回 HTTP 恒为 200，成败看 code：200 / 400（data.fields）/ 401 / 403 / 404 / 4801 指标已有规则 / 4802 Lark 應用憑證無效 / 4805 通知群已失效 / 4807 启用规则已达上限 / 4808 測試消息發送失敗。\n注意：会真实写库（建删规则、占规则号、处理事件、建删测试指标和模板、临时改站点名称 / 币种 / 排序号后改回），只在测试环境执行。",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"auth": {
@@ -6397,6 +6397,14 @@
 									"pm.test('口径与备注不超过 500 字', () => d.rows.forEach(r => { if (r.remark) pm.expect(r.remark.length).to.be.at.most(500); }));",
 									"const exp = { dOkR: 'lo', wOkR: 'lo', ftdr: 'lo', net: 'lo', dT: 'hi', wT: 'hi', turnX: 'band', killR: 'band', bonusR: 'band', reg: 'drop', ftd: 'drop', ftdA: 'drop', dep: 'drop', wd: 'drop', arppu: 'drop', active: 'drop', bet: 'drop', ggr: 'drop', bonus: 'drop', ngr: 'drop' };",
 									"pm.test('20 个指标的判定类型与 FY 需求一致', () => Object.entries(exp).forEach(([c, t]) => { const r = d.rows.find(x => x.metricCode === c); pm.expect(r, c).to.be.an('object'); pm.expect(r.judgeType, c).to.eql(t); }));",
+									"// 平均到账 / 出款时间后端相除（2026-10-29）：sum(耗时合计) ÷ sum(单数)，不再登记 dT_seconds / wT_seconds",
+									"pm.test('平均到账 / 出款时间：后端相除组装，不登记单一 UDS 字段', () => [['dT', 'dep_time_sum', 'dep_time_count'], ['wT', 'wd_time_sum', 'wd_time_count']].forEach(([c, a, b]) => {",
+									"  const r = d.rows.find(x => x.metricCode === c);",
+									"  pm.expect(r, c).to.be.an('object');",
+									"  pm.expect((r.config || {}).assemble, c).to.eql('sum(' + a + ') ÷ sum(' + b + ')');",
+									"  pm.expect(r.udsHourField || null, c).to.eql(null);",
+									"  pm.expect(r.udsAmountField || null, c).to.eql(null);",
+									"}));",
 									"pm.collectionVariables.set('metricGroup', (d.groups[0] || {}).groupCode || '');"
 								]
 							}
@@ -8120,6 +8128,348 @@
 									"    pm.test('getInfo.sites[] 同一时区、币种', () => { pm.expect(g.timezone).to.eql(s.effectiveTimezone); pm.expect(g.currency).to.eql(s.effectiveCurrency); });",
 									"  });",
 									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.33 指标配置：读取站点的运营总览排列（含隐藏的），记下原状",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/system/site/{{otherSiteCode}}/metrics?page=OVERVIEW"
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const d = j.data || {};",
+									"pm.test('siteCode / page / customized / items', () => {",
+									"  pm.expect(d.siteCode.toUpperCase()).to.eql(pm.collectionVariables.get('otherSiteCode').toUpperCase());",
+									"  pm.expect(d.page).to.eql('OVERVIEW');",
+									"  pm.expect(d.customized).to.be.a('boolean');",
+									"  pm.expect(d.items.length).to.be.above(1);",
+									"});",
+									"pm.test('每项有 metricCode / metricName / groupCode / core / defaultSortNo / sortNo / visible，sortNo 为 1…n', () => {",
+									"  d.items.forEach((x, i) => {",
+									"    ['metricCode', 'metricName', 'groupCode', 'core', 'defaultSortNo', 'sortNo', 'visible'].forEach(k => pm.expect(x).to.have.property(k));",
+									"    pm.expect(x.sortNo).to.eql(i + 1);",
+									"  });",
+									"});",
+									"pm.collectionVariables.set('layoutOvOrig', JSON.stringify({ customized: d.customized, items: d.items.map(x => ({ metricCode: x.metricCode, visible: x.visible })) }));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.34 [校验] 指标配置：items 为空 / 页面不对 / 全部隐藏 / 指标不在页面上 → 400，原排列不变",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/system/site/{{otherSiteCode}}/metrics",
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"page\": \"OVERVIEW\", \"items\": [] }"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('items 为空：code = 400，fields.items', () => { pm.expect(j.code).to.eql(400); pm.expect(j.data.fields).to.have.property('items'); });",
+									"const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'Content-Type': 'application/json' };",
+									"const url = pm.variables.get('baseUrl') + '/system/site/' + pm.collectionVariables.get('otherSiteCode') + '/metrics';",
+									"const orig = JSON.parse(pm.collectionVariables.get('layoutOvOrig'));",
+									"const put = (b, cb) => pm.sendRequest({ url, method: 'PUT', header: H, body: { mode: 'raw', raw: JSON.stringify(b) } }, (e, r) => cb(r.json()));",
+									"put({ page: 'HOME', items: orig.items }, r => pm.test('page = HOME：400，fields.page', () => { pm.expect(r.code).to.eql(400); pm.expect(r.data.fields).to.have.property('page'); }));",
+									"put({ page: 'OVERVIEW', items: orig.items.map(x => ({ metricCode: x.metricCode, visible: false })) },",
+									"  r => pm.test('全部隐藏：400（至少顯示 1 個）', () => { pm.expect(r.code).to.eql(400); pm.expect(r.data.fields.items).to.include('至少'); }));",
+									"put({ page: 'OVERVIEW', items: [{ metricCode: 'NO_SUCH_METRIC', visible: true }] },",
+									"  r => pm.test('不在页面上的指标：400，提示里有编码', () => { pm.expect(r.code).to.eql(400); pm.expect(r.data.fields.items).to.include('NO_SUCH_METRIC'); }));",
+									"put({ page: 'OVERVIEW', items: [orig.items[0], orig.items[0]] },",
+									"  r => pm.test('重复：400', () => pm.expect(r.code).to.eql(400)));",
+									"setTimeout(() => pm.sendRequest({ url: url + '?page=OVERVIEW', method: 'GET', header: H }, (e, r) => {",
+									"  const d = r.json().data;",
+									"  pm.test('校验失败不改原排列', () => pm.expect(d.items.map(x => x.metricCode + ':' + x.visible)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)));",
+									"}), 300);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.35 指标配置：运营总览倒序、隐藏最后一个 → 该站点 overview 按新顺序返回、sortNo 1…n、不返回隐藏的",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/system/site/{{otherSiteCode}}/metrics",
+						"body": {
+							"mode": "raw",
+							"raw": "{{layoutOvBody}}"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }",
+									"if (!pm.collectionVariables.get('otherSiteCode')) return;",
+									"const orig = JSON.parse(pm.collectionVariables.get('layoutOvOrig'));",
+									"const items = orig.items.slice().reverse().map((x, i, a) => ({ metricCode: x.metricCode, visible: i < a.length - 1 }));",
+									"pm.collectionVariables.set('layoutOvWant', JSON.stringify(items.filter(x => x.visible).map(x => x.metricCode)));",
+									"pm.collectionVariables.set('layoutOvHidden', items[items.length - 1].metricCode);",
+									"pm.collectionVariables.set('layoutOvBody', JSON.stringify({ page: 'OVERVIEW', items }));"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200，customized = true', () => { pm.expect(j.code).to.eql(200); pm.expect(j.data.customized).to.be.true; });",
+									"const want = JSON.parse(pm.collectionVariables.get('layoutOvWant'));",
+									"const hidden = pm.collectionVariables.get('layoutOvHidden');",
+									"pm.test('返回的排列 = 提交的顺序', () => pm.expect(j.data.items.filter(x => x.visible).map(x => x.metricCode)).to.eql(want));",
+									"const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': pm.collectionVariables.get('otherSiteCode'), 'Content-Type': 'application/json' };",
+									"pm.sendRequest({ url: pm.variables.get('baseUrl') + '/dashboard/metrics/overview', method: 'POST', header: H,",
+									"  body: { mode: 'raw', raw: JSON.stringify({ granularity: 'HOUR', compareType: 'NONE', slotFrom: pm.collectionVariables.get('todayStart'), slotTo: pm.collectionVariables.get('tomorrowStart'), blocks: ['METRICS'], includeSeries: false }) } }, (e, r) => {",
+									"  const items = (((r.json().data || {}).blocks || {}).METRICS || {}).items || [];",
+									"  pm.test('overview 卡片顺序 = 站点配置（跨分组）', () => pm.expect(items.map(x => x.code)).to.eql(want));",
+									"  pm.test('sortNo = 1…n', () => pm.expect(items.map(x => x.sortNo)).to.eql(want.map((_, i) => i + 1)));",
+									"  pm.test('隐藏的 ' + hidden + ' 不返回', () => pm.expect(items.map(x => x.code)).to.not.include(hidden));",
+									"  pm.sendRequest({ url: pm.variables.get('baseUrl') + '/dashboard/metrics/overview', method: 'POST', header: H,",
+									"    body: { mode: 'raw', raw: JSON.stringify({ granularity: 'HOUR', compareType: 'NONE', slotFrom: pm.collectionVariables.get('todayStart'), slotTo: pm.collectionVariables.get('tomorrowStart'), blocks: ['METRICS'], includeSeries: false, metrics: [hidden] }) } }, (e2, r2) => {",
+									"    const j2 = r2.json();",
+									"    pm.test('metrics 只传隐藏的指标：不报 4003，也不返回它', () => {",
+									"      pm.expect(j2.code).to.eql(200);",
+									"      pm.expect((((j2.data || {}).blocks || {}).METRICS || {}).items || []).to.have.lengthOf(0);",
+									"    });",
+									"  });",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.36 指标配置：其他站点（默认站点）不受影响",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Site-Code",
+								"value": "{{defSiteCode}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/dashboard/metrics/overview",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"granularity\": \"HOUR\",\n  \"compareType\": \"NONE\",\n  \"slotFrom\": \"{{todayStart}}\",\n  \"slotTo\": \"{{tomorrowStart}}\",\n  \"blocks\": [\"METRICS\"],\n  \"includeSeries\": false\n}"
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+									"const codes = (((j.data || {}).blocks || {}).METRICS || {}).items.map(x => x.code);",
+									"pm.test('默认站点不是刚才的倒序', () => pm.expect(codes).to.not.eql(JSON.parse(pm.collectionVariables.get('layoutOvWant'))));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.37 指标配置：指标汇总倒序 → 该站点 summary 的 columns 按新顺序（time 之后）",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/system/site/{{otherSiteCode}}/metrics?page=SUMMARY"
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.test('code = 200，page = SUMMARY', () => { pm.expect(j.code).to.eql(200); pm.expect(j.data.page).to.eql('SUMMARY'); });",
+									"const orig = { customized: j.data.customized, items: j.data.items.map(x => ({ metricCode: x.metricCode, visible: x.visible })) };",
+									"pm.collectionVariables.set('layoutSumOrig', JSON.stringify(orig));",
+									"const items = orig.items.slice().reverse().map(x => ({ metricCode: x.metricCode, visible: true }));",
+									"const site = pm.collectionVariables.get('otherSiteCode');",
+									"const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': site, 'Content-Type': 'application/json' };",
+									"pm.sendRequest({ url: pm.variables.get('baseUrl') + '/system/site/' + site + '/metrics', method: 'PUT', header: H,",
+									"  body: { mode: 'raw', raw: JSON.stringify({ page: 'SUMMARY', items }) } }, (e, r) => {",
+									"  pm.test('保存 200', () => pm.expect(r.json().code).to.eql(200));",
+									"  pm.sendRequest({ url: pm.variables.get('baseUrl') + '/dashboard/metrics/summary', method: 'POST', header: H,",
+									"    body: { mode: 'raw', raw: JSON.stringify({ granularity: 'HOUR', slotFrom: pm.collectionVariables.get('ystStart'), slotTo: pm.collectionVariables.get('todayStart'), pageNum: 1, pageSize: 20 }) } }, (e2, r2) => {",
+									"    const cols = (((r2.json() || {}).data || {}).columns || []).map(c => c.code).filter(c => c !== 'time');",
+									"    pm.test('summary columns 顺序 = 站点配置', () => pm.expect(cols).to.eql(items.map(x => x.metricCode)));",
+									"  });",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.38 指标配置：恢复原状（原来没自定义的 → 恢复默认 DELETE；有自定义的 → 按原样保存）",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/system/site/{{otherSiteCode}}/metrics?page=OVERVIEW"
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('otherSiteCode')) { console.log('跳过：只有一个站点'); pm.execution.skipRequest(); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('code = 200', () => pm.expect(pm.response.json().code).to.eql(200));",
+									"const site = pm.collectionVariables.get('otherSiteCode');",
+									"const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'Content-Type': 'application/json' };",
+									"const url = pm.variables.get('baseUrl') + '/system/site/' + site + '/metrics';",
+									"[['OVERVIEW', 'layoutOvOrig'], ['SUMMARY', 'layoutSumOrig']].forEach(([page, key]) => {",
+									"  const raw = pm.collectionVariables.get(key);",
+									"  if (!raw) return;",
+									"  const orig = JSON.parse(raw);",
+									"  const done = (e, r) => {",
+									"    const d = r.json().data || {};",
+									"    pm.test(page + '：customized 恢复为 ' + orig.customized, () => pm.expect(d.customized).to.eql(orig.customized));",
+									"    pm.test(page + '：顺序与显示恢复', () => pm.expect(d.items.map(x => x.metricCode + ':' + x.visible)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)));",
+									"  };",
+									"  if (orig.customized) {",
+									"    pm.sendRequest({ url, method: 'PUT', header: H, body: { mode: 'raw', raw: JSON.stringify({ page, items: orig.items }) } }, done);",
+									"  } else {",
+									"    pm.sendRequest({ url: url + '?page=' + page, method: 'DELETE', header: H }, done);",
+									"  }",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.39 [边界] 指标配置：站点不存在 → 404",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/system/site/NO-SUCH-SITE/metrics?page=OVERVIEW"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('code = 404', () => pm.expect(pm.response.json().code).to.eql(404));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "14.40 [边界] 指标配置：未登录保存 → 401",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/system/site/{{defSiteCode}}/metrics",
+						"body": {
+							"mode": "raw",
+							"raw": "{ \"page\": \"OVERVIEW\", \"items\": [] }"
+						},
+						"auth": {
+							"type": "noauth"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('code = 401', () => pm.expect(pm.response.json().code).to.eql(401));"
 								]
 							}
 						}

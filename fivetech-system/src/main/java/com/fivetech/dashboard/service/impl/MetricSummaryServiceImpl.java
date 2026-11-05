@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 import org.springframework.stereotype.Service;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.dashboard.config.DashboardProperties;
@@ -38,8 +39,7 @@ import com.fivetech.dashboard.service.TimeRangeResolver;
  * @author fivetech
  */
 @Service
-public class MetricSummaryServiceImpl implements IMetricSummaryService
-{
+public class MetricSummaryServiceImpl implements IMetricSummaryService {
     private static final DateTimeFormatter SLOT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("HH:mm");
@@ -57,9 +57,8 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     private final com.fivetech.dashboard.service.MetricValueNormalizer normalizer;
 
     public MetricSummaryServiceImpl(DashboardProperties properties, TimeRangeResolver timeResolver,
-            MetricRegistry metricRegistry, MetricDataGateway gateway,
-            com.fivetech.dashboard.service.MetricValueNormalizer normalizer)
-    {
+                                    MetricRegistry metricRegistry, MetricDataGateway gateway,
+                                    com.fivetech.dashboard.service.MetricValueNormalizer normalizer) {
         this.normalizer = normalizer;
         this.properties = properties;
         this.timeResolver = timeResolver;
@@ -68,8 +67,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     }
 
     @Override
-    public MetricSummaryVO query(MetricSummaryQuery query)
-    {
+    public MetricSummaryVO query(MetricSummaryQuery query) {
         // 站点只认 X-Site-Code（SiteContext），请求体里的 siteCode 不采信
         String siteCode = properties.currentSite();
 
@@ -77,8 +75,8 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         //    能进到这个方法就说明已通过页面维度的 @PreAuthorize
         //    onlyCore=true 时只取核心指标，后面的序列与合计查询都只带这些列，不多查
         List<String> columns = Boolean.TRUE.equals(query.getOnlyCore())
-            ? metricRegistry.resolveCoreColumns(DashboardPage.SUMMARY, query.getMetricCodes())
-            : metricRegistry.resolveColumns(DashboardPage.SUMMARY, query.getMetricCodes());
+                ? metricRegistry.resolveCoreColumns(DashboardPage.SUMMARY, query.getMetricCodes())
+                : metricRegistry.resolveColumns(DashboardPage.SUMMARY, query.getMetricCodes());
 
         // 2. 时间：解析区间与粒度，全部在服务端完成（指标汇总不做对比期）
         DataFreshness freshness = timeResolver.resolveFreshness(siteCode);
@@ -86,8 +84,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         ResolvedRange main = timeResolver.resolveMain(query, freshness.getAsOf());
         List<Granularity> available = timeResolver.availableGranularities(main);
         Granularity granularity = timeResolver.resolveGranularity(query.getGranularity(), available);
-        if (query.getGranularity() != null && query.getGranularity() != granularity)
-        {
+        if (query.getGranularity() != null && query.getGranularity() != granularity) {
             // 请求的粒度点数过多被降级，如实告知而不是默默返回别的东西
             warnings.add("GRANULARITY_DOWNGRADED");
         }
@@ -101,12 +98,11 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         // 网关保持 UDS 原始量纲（比率 0～1、时长秒），换算成展示量纲只在 normalizer 这一处，与运营总览一致
         Map<String, List<BigDecimal>> series = new java.util.LinkedHashMap<>();
         gateway.querySeries(slotRequest(siteCode, main, columns))
-            .forEach((code, values) -> series.put(code, normalizer.normalizeSeries(code, values)));
+                .forEach((code, values) -> series.put(code, normalizer.normalizeSeries(code, values)));
         // 多站点：本站不提供的指标（UDS meta.omitted）不返回给前端——列、行里的值、合计、排序都去掉，
         // 例如请求 20 个指标、本站 8 个不提供，只返回 12 列
         java.util.Set<String> omitted = gateway.omittedMetrics(siteCode, columns);
-        if (!omitted.isEmpty())
-        {
+        if (!omitted.isEmpty()) {
             columns = new ArrayList<>(columns);
             columns.removeAll(omitted);
             series.keySet().removeAll(omitted);
@@ -128,15 +124,12 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         // 6. 合计：独立重算，不是把上面的行加起来
         Map<String, BigDecimal> totalRow = new java.util.LinkedHashMap<>();
         gateway.queryTotals(slotRequest(siteCode, main, columns))
-            .forEach((code, value) -> totalRow.put(code, normalizer.normalize(code, value)));
+                .forEach((code, value) -> totalRow.put(code, normalizer.normalize(code, value)));
         // 小时粒度：去重人数类的区间值改为各小时值的平均（只平均有值的小时，未发生 / 未到的小时不计入分母），
         // 不再取日数据集的 active_day
-        if (granularity == Granularity.HOUR)
-        {
-            for (String code : HOUR_AVERAGE_CODES)
-            {
-                if (totalRow.containsKey(code))
-                {
+        if (granularity == Granularity.HOUR) {
+            for (String code : HOUR_AVERAGE_CODES) {
+                if (totalRow.containsKey(code)) {
                     totalRow.put(code, averageOfPresent(series.get(code)));
                 }
             }
@@ -145,22 +138,22 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         return vo;
     }
 
-    /** 小时粒度时区间值取「各小时平均」的指标 */
+    /**
+     * 小时粒度时区间值取「各小时平均」的指标
+     */
     private static final java.util.Set<String> HOUR_AVERAGE_CODES = java.util.Set.of("active");
 
-    /** 有值的元素求算术平均，保留 1 位小数；没有任何值返回 null */
-    private static BigDecimal averageOfPresent(List<BigDecimal> values)
-    {
-        if (values == null)
-        {
+    /**
+     * 有值的元素求算术平均，保留 1 位小数；没有任何值返回 null
+     */
+    private static BigDecimal averageOfPresent(List<BigDecimal> values) {
+        if (values == null) {
             return null;
         }
         BigDecimal sum = BigDecimal.ZERO;
         int n = 0;
-        for (BigDecimal v : values)
-        {
-            if (v != null)
-            {
+        for (BigDecimal v : values) {
+            if (v != null) {
                 sum = sum.add(v);
                 n++;
             }
@@ -169,8 +162,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
     }
 
     private MetricSlotRequest slotRequest(String siteCode, ResolvedRange range,
-            List<String> columns)
-    {
+                                          List<String> columns) {
         MetricSlotRequest request = new MetricSlotRequest();
         request.setSiteCode(siteCode);
         request.setFrom(range.getFrom());
@@ -187,34 +179,29 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
      * 周粒度的最后一周多半不满 7 天，末端要夹到区间结束，不能印出超出区间的日期。
      */
     private List<MetricSummaryRowVO> buildSlots(ResolvedRange range, Granularity granularity,
-            DataFreshness freshness)
-    {
+                                                DataFreshness freshness) {
         List<MetricSummaryRowVO> rows = new ArrayList<>();
         LocalDateTime cursor = range.getFrom();
         LocalDateTime end = range.getTo();
         boolean crossDay = cursor.toLocalDate().isBefore(end.minusMinutes(1).toLocalDate());
         LocalDateTime delayFrom = freshness == null || freshness.getAsOf() == null
-            ? null : freshness.getAsOf().minusHours(properties.getDelayWindowHours());
+                ? null : freshness.getAsOf().minusHours(properties.getDelayWindowHours());
 
-        while (cursor.isBefore(end))
-        {
+        while (cursor.isBefore(end)) {
             LocalDateTime next;
             String label;
-            switch (granularity)
-            {
+            switch (granularity) {
                 case HOUR:
                     next = cursor.plusHours(1);
-                    if (next.isAfter(end))
-                    {
+                    if (next.isAfter(end)) {
                         next = end;
                     }
                     label = (crossDay ? cursor.format(MD) + " " : "")
-                        + cursor.format(HHMM) + " – " + next.format(HHMM);
+                            + cursor.format(HHMM) + " – " + next.format(HHMM);
                     break;
                 case WEEK:
                     next = cursor.plusDays(7);
-                    if (next.isAfter(end))
-                    {
+                    if (next.isAfter(end)) {
                         next = end;
                     }
                     label = cursor.format(MD) + " – " + next.minusMinutes(1).format(MD);
@@ -222,8 +209,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
                 case DAY:
                 default:
                     next = cursor.plusDays(1);
-                    if (next.isAfter(end))
-                    {
+                    if (next.isAfter(end)) {
                         next = end;
                     }
                     label = cursor.toLocalDate().toString();
@@ -244,45 +230,37 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
      * 把序列填进行。序列长度与时间片数不一致时按短的来，缺的位置保持 null，
      * 绝不补 0——无数据和 0 在业务上不是一回事。
      */
-    private void fill(List<MetricSummaryRowVO> rows, Map<String, List<BigDecimal>> series)
-    {
-        if (series == null)
-        {
+    private void fill(List<MetricSummaryRowVO> rows, Map<String, List<BigDecimal>> series) {
+        if (series == null) {
             return;
         }
         series.forEach((code, values) -> {
-            if (values == null)
-            {
+            if (values == null) {
                 return;
             }
             int size = Math.min(rows.size(), values.size());
-            for (int i = 0; i < size; i++)
-            {
+            for (int i = 0; i < size; i++) {
                 rows.get(i).getValues().put(code, values.get(i));
             }
         });
     }
 
-    private void sort(List<MetricSummaryRowVO> rows, String sortColumn, String direction)
-    {
+    private void sort(List<MetricSummaryRowVO> rows, String sortColumn, String direction) {
         boolean asc = "asc".equalsIgnoreCase(direction);
-        if ("time".equals(sortColumn))
-        {
+        if ("time".equals(sortColumn)) {
             // 默认最新在上
-            if (!asc)
-            {
+            if (!asc) {
                 java.util.Collections.reverse(rows);
             }
             return;
         }
         Comparator<MetricSummaryRowVO> comparator = Comparator.comparing(
-            row -> row.getValues().get(sortColumn),
-            Comparator.nullsLast(Comparator.naturalOrder()));
+                row -> row.getValues().get(sortColumn),
+                Comparator.nullsLast(Comparator.naturalOrder()));
         rows.sort(asc ? comparator : comparator.reversed());
     }
 
-    private PageResultVO<MetricSummaryRowVO> paginate(List<MetricSummaryRowVO> rows, Integer pageNum, Integer pageSize)
-    {
+    private PageResultVO<MetricSummaryRowVO> paginate(List<MetricSummaryRowVO> rows, Integer pageNum, Integer pageSize) {
         int num = pageNum == null || pageNum < 1 ? 1 : pageNum;
         int size = pageSize == null || pageSize < 1 ? 20 : pageSize;
         int fromIndex = Math.min((num - 1) * size, rows.size());
@@ -290,34 +268,31 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         return PageResultVO.of(new ArrayList<>(rows.subList(fromIndex, toIndex)), rows.size(), num, size);
     }
 
-    private List<ColumnMetaVO> buildColumns(List<String> codes)
-    {
+    private List<ColumnMetaVO> buildColumns(List<String> codes) {
         List<ColumnMetaVO> columns = new ArrayList<>();
         columns.add(ColumnMetaVO.of("time", "時間", "TEXT").sortable(true));
         // 核心指标标记：前端据此给核心指标列做强调
         java.util.Set<String> core = metricRegistry.coreMetricCodes();
         // 下钻标记：前端据此决定单元格是否可点
         java.util.Set<String> drillable = properties.getSummaryDrillableMetrics() == null
-            ? java.util.Set.of() : new java.util.HashSet<>(properties.getSummaryDrillableMetrics());
-        for (String code : codes)
-        {
+                ? java.util.Set.of() : new java.util.HashSet<>(properties.getSummaryDrillableMetrics());
+        for (String code : codes) {
             MetricDefinition definition = metricRegistry.get(code);
-            if (definition == null)
-            {
+            if (definition == null) {
                 continue;
             }
             columns.add(ColumnMetaVO.of(code, com.fivetech.dashboard.service.OverviewMetricText.label(code, definition.getLabel()), definition.getFormat())
-                .group(definition.getGroup(), groupLabel(definition.getGroup())).sortable(true).core(core.contains(code))
-                .drillable(drillable.contains(code)));
+                    .group(definition.getGroup(), groupLabel(definition.getGroup())).sortable(true).core(core.contains(code))
+                    .drillable(drillable.contains(code)));
         }
         return columns;
     }
 
-    /** 分组名：与运营总览一致，读 dashboard_metric_group 并转繁体（如 獲客與轉化）；字典里没有时退回编码 */
-    private String groupLabel(String group)
-    {
-        if (group == null)
-        {
+    /**
+     * 分组名：与运营总览一致，读 dashboard_metric_group 并转繁体（如 獲客與轉化）；字典里没有时退回编码
+     */
+    private String groupLabel(String group) {
+        if (group == null) {
             return null;
         }
         com.fivetech.dashboard.domain.MetricGroupConfig config = metricRegistry.groupOf(group);
@@ -325,9 +300,10 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService
         return com.fivetech.dashboard.service.OverviewMetricText.group(name);
     }
 
-    /** 预留：供导出复用同一套时间片定义 */
-    protected Map<String, BigDecimal> emptyRow()
-    {
+    /**
+     * 预留：供导出复用同一套时间片定义
+     */
+    protected Map<String, BigDecimal> emptyRow() {
         return new LinkedHashMap<>();
     }
 }

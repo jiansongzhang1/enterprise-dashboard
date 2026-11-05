@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.dashboard.mapper.DashboardSubscriptionMapper">
+
+	<resultMap type="com.fivetech.dashboard.subscription.DashboardSubscription" id="SubscriptionResult">
+		<id     property="id"          column="id"           />
+		<result property="siteCode"    column="site_code"    />
+		<result property="name"        column="name"         />
+		<result property="description" column="description"  />
+		<result property="rangeCode"   column="range_code"   />
+		<result property="metrics"     column="metrics"      />
+		<result property="sendHour"    column="send_hour"    />
+		<result property="receivers"   column="receivers"    />
+		<result property="enabled"     column="enabled"      />
+		<result property="aiEnabled"   column="ai_enabled"   />
+		<result property="aiModel"     column="ai_model"     />
+		<result property="lastSlot"    column="last_slot"    />
+		<result property="lastRunAt"   column="last_run_at"  />
+		<result property="lastStatus"  column="last_status"  />
+		<result property="lastError"   column="last_error"   />
+		<result property="createBy"    column="create_by"    />
+		<result property="createTime"  column="create_time"  />
+		<result property="updateBy"    column="update_by"    />
+		<result property="updateTime"  column="update_time"  />
+	</resultMap>
+
+	<resultMap type="com.fivetech.dashboard.subscription.DashboardSubscriptionLog" id="LogResult">
+		<id     property="id"             column="id"              />
+		<result property="subscriptionId" column="subscription_id" />
+		<result property="siteCode"       column="site_code"       />
+		<result property="triggerType"    column="trigger_type"    />
+		<result property="period"         column="period"          />
+		<result property="receiverType"   column="receiver_type"   />
+		<result property="receiverId"     column="receiver_id"     />
+		<result property="receiverName"   column="receiver_name"   />
+		<result property="status"         column="status"          />
+		<result property="error"          column="error"           />
+		<result property="messageId"      column="message_id"      />
+		<result property="operator"       column="operator"        />
+		<result property="createTime"     column="create_time"     />
+	</resultMap>
+
+	<sql id="cols">
+		select id, site_code, name, description, range_code, metrics, send_hour, receivers, enabled, ai_enabled, ai_model,
+		       last_slot, last_run_at, last_status, last_error, create_by, create_time, update_by, update_time
+		  from dashboard_subscription
+	</sql>
+
+	<select id="selectList" resultMap="SubscriptionResult">
+		<include refid="cols"/>
+		 where del_flag = '0'
+		<if test="siteCode != null and siteCode != ''"> and upper(site_code) = upper(#{siteCode})</if>
+		<if test="enabled != null"> and enabled = #{enabled}</if>
+		 order by site_code, id
+	</select>
+
+	<select id="selectById" resultMap="SubscriptionResult">
+		<include refid="cols"/>
+		 where id = #{id} and del_flag = '0'
+	</select>
+
+	<select id="selectEnabled" resultMap="SubscriptionResult">
+		<include refid="cols"/>
+		 where del_flag = '0' and enabled = true
+		 order by id
+	</select>
+
+	<select id="countName" resultType="int">
+		select count(*) from dashboard_subscription
+		 where del_flag = '0' and upper(site_code) = upper(#{siteCode}) and lower(name) = lower(#{name})
+		<if test="excludeId != null"> and id &lt;&gt; #{excludeId}</if>
+	</select>
+
+	<insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+		insert into dashboard_subscription (site_code, name, description, range_code, metrics, send_hour, receivers, enabled,
+		                                    ai_enabled, ai_model, create_by, create_time, update_by, update_time)
+		values (#{siteCode}, #{name}, #{description}, #{rangeCode}, #{metrics}, #{sendHour}, #{receivers}, #{enabled},
+		        coalesce(#{aiEnabled}, false), #{aiModel}, #{createBy}, localtimestamp, #{createBy}, localtimestamp)
+	</insert>
+
+	<update id="update">
+		update dashboard_subscription
+		   set name = #{name}, description = #{description}, range_code = #{rangeCode}, metrics = #{metrics},
+		       send_hour = #{sendHour}, receivers = #{receivers}, enabled = #{enabled},
+		       ai_enabled = coalesce(#{aiEnabled}, false), ai_model = #{aiModel},
+		       update_by = #{updateBy}, update_time = localtimestamp
+		 where id = #{id} and del_flag = '0'
+	</update>
+
+	<update id="updateEnabled">
+		update dashboard_subscription
+		   set enabled = #{enabled}, update_by = #{updateBy}, update_time = localtimestamp
+		 where id = #{id} and del_flag = '0'
+	</update>
+
+	<update id="softDelete">
+		update dashboard_subscription
+		   set del_flag = '2', enabled = false, update_by = #{updateBy}, update_time = localtimestamp
+		 where id = #{id} and del_flag = '0'
+	</update>
+
+	<update id="markRun">
+		update dashboard_subscription
+		   set last_run_at = #{runAt}, last_status = #{status}, last_error = #{error}
+		<if test="lastSlot != null"> , last_slot = #{lastSlot}</if>
+		 where id = #{id}
+	</update>
+
+	<update id="claimSlot">
+		update dashboard_subscription
+		   set last_slot = #{slot}
+		 where id = #{id} and del_flag = '0' and enabled = true
+		   and (last_slot is null or last_slot &lt;&gt; #{slot})
+	</update>
+
+	<insert id="insertLog">
+		insert into dashboard_subscription_log (subscription_id, site_code, trigger_type, period, receiver_type, receiver_id,
+		                                        receiver_name, status, error, message_id, operator, create_time)
+		values (#{subscriptionId}, #{siteCode}, #{triggerType}, #{period}, #{receiverType}, #{receiverId},
+		        #{receiverName}, #{status}, #{error}, #{messageId}, #{operator}, localtimestamp)
+	</insert>
+
+	<select id="selectLogs" resultMap="LogResult">
+		select id, subscription_id, site_code, trigger_type, period, receiver_type, receiver_id, receiver_name,
+		       status, error, message_id, operator, create_time
+		  from dashboard_subscription_log
+		 where subscription_id = #{subscriptionId}
+		 order by id desc
+		 limit #{limit}
+	</select>
+</mapper>

@@ -56,7 +56,7 @@ public class DashboardProperties
             "INR", "₹", "CNY", "¥", "USD", "US$", "USDT", "USDT", "PHP", "₱", "THB", "฿",
             "VND", "₫", "IDR", "Rp", "BRL", "R$", "PKR", "Rs");
 
-    /** 站点上线日 yyyy-MM-dd，所有时间选择的下界 */
+    /** 站点上线日 yyyy-MM-dd：请求没带时间时补 UDS 的 time 起点；不限制可选的时间范围 */
     private String launchDate = "2026-03-01";
 
     /** 指标口径版本，随查询结果一起返回 */

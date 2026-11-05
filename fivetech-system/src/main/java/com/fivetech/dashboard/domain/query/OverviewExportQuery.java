@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Pattern;
  *
  * <p>时间参数与页面一致：{@code slotFrom} / {@code slotTo} 为 {@code yyyy-MM-dd HH:mm}，左闭右开，
  * 核心指标、注册渠道、排行榜三个 Tab 共用；留存与 LTV 是 T-1 的日分群，单独用
- * {@code cohortFrom} / {@code cohortTo}（{@code yyyy-MM-dd}，左闭右开，最多 90 天），不传时按 slot 的日期推导。</p>
+ * {@code cohortFrom} / {@code cohortTo}（{@code yyyy-MM-dd}，左闭右开，不限天数），不传时按 slot 的日期推导。</p>
  *
  * @author fivetech
  */

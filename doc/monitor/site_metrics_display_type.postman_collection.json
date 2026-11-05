@@ -1,0 +1,669 @@
+{
+  "info": {
+    "name": "站点指标配置 · 两套指标集（display_type）· 线上验证",
+    "description": "验证 GET/PUT/DELETE /system/site/{siteCode}/metrics 的 displayType（DEFAULT / REPORT）。\n\n安全：只写 REPORT 指标集（目前不影响任何取数），DEFAULT 只读；第 3 组结束时把 REPORT 恢复为执行前的原状。\n不要中途停止第 3 组；若中断，重新跑 3.3 + 3.5（需要 1.3 记下的原状）。\n\n执行前填变量：baseUrl、username、password、totp（GA 6 位码，或直接填 token 并跳过 0.1）；siteCode 不填用当前站点。\n/system/site 只能从管理端 IP 白名单（公司内网）访问。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 若依统一返回：HTTP 恒为 200，成败看 code",
+          "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 准备（登录、站点）",
+      "item": [
+        {
+          "name": "0.1 登录（获取 token）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "code 为 Google Authenticator 6 位动态码，执行前在变量 totp 填好。已有 token 可直接填变量 token 并跳过本请求。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('拿到 token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 当前用户与站点 GET /getInfo（siteCode 为空时取 currentSite）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/getInfo"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const codes = (j.sites || []).map(s => s.code);",
+                  "if (!pm.collectionVariables.get('siteCode')) pm.collectionVariables.set('siteCode', j.currentSite);",
+                  "const site = pm.collectionVariables.get('siteCode');",
+                  "pm.test('测试站点 ' + site + ' 在可访问站点里（' + codes.join(', ') + '）', () => pm.expect(codes.map(c => c.toUpperCase())).to.include(site.toUpperCase()));",
+                  "pm.test('有 system:site:list / edit 权限', () => { const p = j.permissions || []; pm.expect(p.includes('*:*:*') || (p.includes('system:site:list') && p.includes('system:site:edit'))).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 只读（DEFAULT / REPORT 读取）",
+      "item": [
+        {
+          "name": "1.1 运营总览 · 不传 displayType = DEFAULT（记下原状）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data || {};",
+                  "pm.test('displayType = DEFAULT', () => pm.expect(d.displayType).to.eql('DEFAULT'));",
+                  "pm.test('page = OVERVIEW，customized 为布尔', () => { pm.expect(d.page).to.eql('OVERVIEW'); pm.expect(d.customized).to.be.a('boolean'); });",
+                  "pm.test('items 每项字段齐全，sortNo 为 1…n', () => { pm.expect(d.items.length).to.be.above(1); d.items.forEach((x, i) => { ['metricCode','metricName','groupCode','core','defaultSortNo','sortNo','visible'].forEach(k => pm.expect(x).to.have.property(k)); pm.expect(x.sortNo).to.eql(i + 1); }); });",
+                  "pm.collectionVariables.set('ovDefaultOrig', JSON.stringify({ customized: d.customized, items: d.items.map(x => ({ metricCode: x.metricCode, visible: x.visible })) }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 运营总览 · displayType=DEFAULT 与不传一致",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=DEFAULT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const d = pm.response.json().data || {};",
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovDefaultOrig'));",
+                  "pm.test('displayType = DEFAULT', () => pm.expect(d.displayType).to.eql('DEFAULT'));",
+                  "pm.test('与 1.1 相同', () => pm.expect(sig(d)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 运营总览 · displayType=REPORT（记下原状，最后恢复）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=REPORT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data || {};",
+                  "pm.test('displayType = REPORT', () => pm.expect(d.displayType).to.eql('REPORT'));",
+                  "pm.test('items 非空、sortNo 为 1…n', () => { pm.expect(d.items.length).to.be.above(1); d.items.forEach((x, i) => pm.expect(x.sortNo).to.eql(i + 1)); });",
+                  "pm.collectionVariables.set('ovReportOrig', JSON.stringify({ customized: d.customized, items: d.items.map(x => ({ metricCode: x.metricCode, visible: x.visible })) }));",
+                  "console.log('REPORT 原来' + (d.customized ? '有' : '没有') + '自定义');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 指标汇总 · displayType=REPORT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=SUMMARY&displayType=REPORT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data || {};",
+                  "pm.test('page = SUMMARY，displayType = REPORT', () => { pm.expect(d.page).to.eql('SUMMARY'); pm.expect(d.displayType).to.eql('REPORT'); });",
+                  "pm.test('items 非空', () => pm.expect(d.items.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 displayType 不区分大小写（report）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=overview&displayType=report"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data || {};",
+                  "pm.test('返回 REPORT / OVERVIEW', () => { pm.expect(d.displayType).to.eql('REPORT'); pm.expect(d.page).to.eql('OVERVIEW'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 校验（不写入）",
+      "item": [
+        {
+          "name": "2.1 [校验] GET displayType=WEEKLY → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=WEEKLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400，fields.displayType', () => { pm.expect(j.code).to.eql(400); pm.expect(j.data.fields).to.have.property('displayType'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 [校验] PUT displayType=WEEKLY → 400，不写入",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"page\": \"OVERVIEW\", \"displayType\": \"WEEKLY\", \"items\": [] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 [校验] PUT REPORT · items 为空 / 全部隐藏 / 不在页面上 / 重复 → 400，REPORT 不变",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"page\": \"OVERVIEW\", \"displayType\": \"REPORT\", \"items\": [] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const j = pm.response.json();",
+                  "pm.test('items 为空：400，fields.items', () => { pm.expect(j.code).to.eql(400); pm.expect(j.data.fields).to.have.property('items'); });",
+                  "const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'Content-Type': 'application/json', 'X-Site-Code': pm.variables.get('siteCode') };",
+                  "const url = pm.variables.get('baseUrl') + '/system/site/' + pm.variables.get('siteCode') + '/metrics';",
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovReportOrig'));",
+                  "const put = (b, cb) => pm.sendRequest({ url, method: 'PUT', header: H, body: { mode: 'raw', raw: JSON.stringify(Object.assign({ page: 'OVERVIEW', displayType: 'REPORT' }, b)) } }, (e, r) => cb(r.json()));",
+                  "put({ items: orig.items.map(x => ({ metricCode: x.metricCode, visible: false })) }, r => pm.test('全部隐藏：400（至少顯示 1 個）', () => { pm.expect(r.code).to.eql(400); pm.expect(r.data.fields.items).to.include('至少'); }));",
+                  "put({ items: [{ metricCode: 'NO_SUCH_METRIC', visible: true }] }, r => pm.test('不在页面上的指标：400', () => { pm.expect(r.code).to.eql(400); pm.expect(r.data.fields.items).to.include('NO_SUCH_METRIC'); }));",
+                  "put({ items: [orig.items[0], orig.items[0]] }, r => pm.test('重复：400', () => pm.expect(r.code).to.eql(400)));",
+                  "setTimeout(() => pm.sendRequest({ url: url + '?page=OVERVIEW&displayType=REPORT', method: 'GET', header: H }, (e, r) => {",
+                  "  const d = r.json().data;",
+                  "  pm.test('校验失败不改 REPORT', () => { pm.expect(d.customized).to.eql(orig.customized); pm.expect(sig(d)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)); });",
+                  "}), 500);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 [校验] DELETE displayType=WEEKLY → 400",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=WEEKLY"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400，fields.displayType', () => { pm.expect(j.code).to.eql(400); pm.expect(j.data.fields).to.have.property('displayType'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 [边界] 站点不存在 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/NO-SUCH-SITE/metrics?page=OVERVIEW&displayType=REPORT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 404', () => pm.expect(pm.response.json().code).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 [边界] 未登录 → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=REPORT",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('code = 401', () => pm.expect(pm.response.json().code).to.eql(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 写入 REPORT 并恢复（DEFAULT 不动）",
+      "item": [
+        {
+          "name": "3.1 保存 REPORT：运营总览倒序、隐藏最后一个",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics",
+            "body": {
+              "mode": "raw",
+              "raw": "{{reportBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovReportOrig'));",
+                  "const items = orig.items.slice().reverse().map((x, i, a) => ({ metricCode: x.metricCode, visible: i < a.length - 1 }));",
+                  "pm.collectionVariables.set('reportExpect', JSON.stringify(items));",
+                  "pm.collectionVariables.set('reportBody', JSON.stringify({ page: 'OVERVIEW', displayType: 'REPORT', items }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data || {};",
+                  "const exp = JSON.parse(pm.collectionVariables.get('reportExpect'));",
+                  "pm.test('displayType = REPORT，customized = true', () => { pm.expect(d.displayType).to.eql('REPORT'); pm.expect(d.customized).to.eql(true); });",
+                  "pm.test('按保存的顺序返回，最后一个隐藏', () => pm.expect(sig(d)).to.eql(exp.map(x => x.metricCode + ':' + x.visible)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 DEFAULT 不受影响（与 1.1 相同）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const d = pm.response.json().data || {};",
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovDefaultOrig'));",
+                  "pm.test('DEFAULT customized 不变', () => pm.expect(d.customized).to.eql(orig.customized));",
+                  "pm.test('DEFAULT 顺序与显示不变', () => pm.expect(sig(d)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 恢复 REPORT 默认（DELETE displayType=REPORT）",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=REPORT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const d = j.data || {};",
+                  "pm.test('REPORT customized = false', () => { pm.expect(d.displayType).to.eql('REPORT'); pm.expect(d.customized).to.eql(false); });",
+                  "pm.test('sortNo 为 1…n、全部显示（全站默认）', () => d.items.forEach((x, i) => { pm.expect(x.sortNo).to.eql(i + 1); pm.expect(x.visible).to.eql(true); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 DEFAULT 仍不受影响（恢复 REPORT 不删 DEFAULT）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=DEFAULT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const d = pm.response.json().data || {};",
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovDefaultOrig'));",
+                  "pm.test('DEFAULT customized 不变', () => pm.expect(d.customized).to.eql(orig.customized));",
+                  "pm.test('DEFAULT 顺序与显示不变', () => pm.expect(sig(d)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 恢复原状：REPORT 原来有自定义的按原样保存（没有的已在 3.3 恢复）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": "{{baseUrl}}/system/site/{{siteCode}}/metrics?page=OVERVIEW&displayType=REPORT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sig = d => (d.items || []).map(x => x.metricCode + ':' + x.visible);",
+                  "const orig = JSON.parse(pm.collectionVariables.get('ovReportOrig'));",
+                  "const H = { 'Authorization': 'Bearer ' + pm.variables.get('token'), 'Content-Type': 'application/json', 'X-Site-Code': pm.variables.get('siteCode') };",
+                  "const url = pm.variables.get('baseUrl') + '/system/site/' + pm.variables.get('siteCode') + '/metrics';",
+                  "const check = d => { pm.test('REPORT customized 恢复为 ' + orig.customized, () => pm.expect(d.customized).to.eql(orig.customized)); pm.test('REPORT 顺序与显示恢复', () => pm.expect(sig(d)).to.eql(orig.items.map(x => x.metricCode + ':' + x.visible))); };",
+                  "if (orig.customized) {",
+                  "  pm.sendRequest({ url, method: 'PUT', header: H, body: { mode: 'raw', raw: JSON.stringify({ page: 'OVERVIEW', displayType: 'REPORT', items: orig.items }) } }, (e, r) => check(r.json().data || {}));",
+                  "} else {",
+                  "  check(pm.response.json().data || {});",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://d3ajrxvlugsarb.cloudfront.net/prod-api"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "totp",
+      "value": "",
+      "description": "Google Authenticator 6 位码"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "siteCode",
+      "value": "",
+      "description": "测试站点；空 = getInfo 的 currentSite"
+    },
+    {
+      "key": "ovDefaultOrig",
+      "value": ""
+    },
+    {
+      "key": "ovReportOrig",
+      "value": ""
+    },
+    {
+      "key": "reportBody",
+      "value": ""
+    },
+    {
+      "key": "reportExpect",
+      "value": ""
+    }
+  ]
+}

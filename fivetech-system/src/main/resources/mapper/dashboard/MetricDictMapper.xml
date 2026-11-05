@@ -7,6 +7,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   运营总览、指标汇总读这张表走 DashboardConfigMapper，启动时加载 status = '0' 的行；这里的写操作：
     - 所有行：只改 remark、source_table / source_field、uds_*_field（这些列没有取数代码读）
     - 仅登记（status = '1'）的行：还能改名称、分组、格式、方向、更新频率，能删除
+    - 所有行：可歸因开关（attributable，推广分析概览的变化归因）
 -->
 <mapper namespace="com.fivetech.dashboard.mapper.MetricDictMapper">
 
@@ -41,6 +42,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="minSampleKey"     column="min_sample_key"     />
 		<result property="minSampleDefault" column="min_sample_default" />
 		<result property="allowNegative"    column="allow_negative"     />
+		<result property="attributable"     column="attributable"       />
 		<result property="gaugeMin"         column="gauge_min"          />
 		<result property="gaugeMax"         column="gauge_max"          />
 		<result property="status"           column="status"             />
@@ -55,7 +57,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       c.source_table, c.source_field, c.uds_hour_field, c.uds_day_field, c.uds_amount_field, c.uds_baseline_field,
 		       c.update_frequency, c.single_day_only, c.chart_type, c.value_format, c.value_decimals, c.direction,
 		       c.show_as_card, c.sort_no, c.calc_type, c.left_code, c.right_code, c.agg_type, c.weight_field,
-		       c.monitorable, c.judge_type, c.min_sample_key, c.min_sample_default, c.allow_negative,
+		       c.monitorable, c.judge_type, c.min_sample_key, c.min_sample_default, c.allow_negative, c.attributable,
 		       c.gauge_min, c.gauge_max, c.status, c.create_by, c.create_time, c.update_by, c.update_time
 		  from dashboard_metric_card c
 		  left join dashboard_metric_group g on g.group_code = c.group_code
@@ -152,6 +154,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       update_time    = current_timestamp
 		 where metric_code = #{item.metricCode}
 		   and status = '0'
+	</update>
+
+	<update id="updateAttributable">
+		update dashboard_metric_card
+		   set attributable = #{attributable},
+		       update_by    = #{updateBy},
+		       update_time  = current_timestamp
+		 where metric_code = #{metricCode}
 	</update>
 
 	<select id="countRules" resultType="int">

@@ -16,8 +16,12 @@ import com.fivetech.dashboard.domain.MetricCardConfig;
 import com.fivetech.dashboard.domain.MetricDefinition;
 import com.fivetech.dashboard.domain.MetricGroupConfig;
 import com.fivetech.dashboard.domain.PageMetricConfig;
+import com.fivetech.dashboard.domain.PageMetricLayout;
+import com.fivetech.dashboard.domain.SitePageMetric;
 import com.fivetech.dashboard.enums.DashboardPage;
+import com.fivetech.dashboard.enums.PageDisplayType;
 import com.fivetech.dashboard.mapper.DashboardConfigMapper;
+import com.fivetech.dashboard.mapper.SitePageMetricMapper;
 
 /**
  * 指标注册表：接口入参的<b>白名单</b>，以及页面与指标的对应关系。
@@ -50,10 +54,24 @@ public class MetricRegistry
     /** dashboard_metric_group 的启用行，按 sort_no 排序；与快照一起在 reload 里替换 */
     private volatile List<MetricGroupConfig> groups = List.of();
 
+    /** 站点自定义的页面指标顺序与显示（dashboard_page_metric_site）；为 null 时只有全站默认 */
+    private final SitePageMetricMapper siteMapper;
+
+    /** 「站点编码大写|页面」→（指标编码 → 站点配置）；与快照一起在 reload 里替换 */
+    private volatile Map<String, Map<String, SitePageMetric>> siteLayouts = Map.of();
+
     public MetricRegistry(DashboardConfigMapper configMapper, DashboardConfigValidator validator)
+    {
+        this(configMapper, validator, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public MetricRegistry(DashboardConfigMapper configMapper, DashboardConfigValidator validator,
+            SitePageMetricMapper siteMapper)
     {
         this.configMapper = configMapper;
         this.validator = validator;
+        this.siteMapper = siteMapper;
     }
 
     @PostConstruct
@@ -95,10 +113,206 @@ public class MetricRegistry
 
         this.snapshot = Snapshot.build(cards, pageMetrics);
         this.groups = Collections.unmodifiableList(new ArrayList<>(groupRows));
+        this.siteLayouts = loadSiteLayouts();
         log.info("[dashboard-config] 注册表已加载：可选指标 {} 个，{} 页面 {} 个，{} 页面 {} 个",
             snapshot.selectable.size(),
             DashboardPage.OVERVIEW, snapshot.columnsOf(DashboardPage.OVERVIEW).size(),
             DashboardPage.SUMMARY, snapshot.columnsOf(DashboardPage.SUMMARY).size());
+    }
+
+    /**
+     * 读站点自定义的顺序与显示。读不到（没执行 sql/add_dashboard_page_metric_site_postgresql.sql 等）时只记警告、按全站默认，
+     * 不影响注册表加载。
+     */
+    private Map<String, Map<String, SitePageMetric>> loadSiteLayouts()
+    {
+        if (siteMapper == null)
+        {
+            return Map.of();
+        }
+        try
+        {
+            Map<String, Map<String, SitePageMetric>> out = new LinkedHashMap<>();
+            for (SitePageMetric row : siteMapper.selectAll())
+            {
+                if (row.getSiteCode() == null || row.getPageCode() == null || row.getMetricCode() == null)
+                {
+                    continue;
+                }
+                PageDisplayType type = PageDisplayType.of(row.getDisplayType());
+                if (type == null)
+                {
+                    continue;
+                }
+                out.computeIfAbsent(layoutKey(row.getSiteCode(), row.getPageCode(), type), k -> new LinkedHashMap<>())
+                    .put(row.getMetricCode(), row);
+            }
+            Map<String, Map<String, SitePageMetric>> frozen = new LinkedHashMap<>();
+            out.forEach((k, v) -> frozen.put(k, Collections.unmodifiableMap(v)));
+            return Collections.unmodifiableMap(frozen);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[dashboard-config] 读取站点指标顺序（dashboard_page_metric_site）失败，各站点按全站默认：{}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private static String layoutKey(String site, String page, PageDisplayType type)
+    {
+        return site.trim().toUpperCase(java.util.Locale.ROOT) + "|" + page + "|" + type.name();
+    }
+
+    // ===================== 按站点的页面排列 =====================
+
+    /**
+     * 某站点某页面的完整排列（含隐藏的指标）：站点配置过的按站点顺序在前，没配置的（如之后新上的指标）按全站默认顺序在后、默认显示。
+     * site 为空或没有配置时就是全站默认。取数用的默认指标集（DEFAULT）。
+     */
+    public List<PageMetricLayout> layoutOf(DashboardPage page, String site)
+    {
+        return layoutOf(page, site, PageDisplayType.DEFAULT);
+    }
+
+    /** 同 {@link #layoutOf(DashboardPage, String)}，指定指标集（DEFAULT / REPORT）；REPORT 目前只给后台配置用，不影响取数 */
+    public List<PageMetricLayout> layoutOf(DashboardPage page, String site, PageDisplayType type)
+    {
+        PageDisplayType t = type == null ? PageDisplayType.DEFAULT : type;
+        Map<String, SitePageMetric> overrides = site == null || site.trim().isEmpty() ? null
+            : siteLayouts.get(layoutKey(site, page.name(), t));
+        Map<String, Integer> sort = new LinkedHashMap<>();
+        for (String code : snapshot.columnsOf(page))
+        {
+            sort.put(code, snapshot.pageSortNo(page, code));
+        }
+        return arrange(snapshot.columnsOf(page), sort, overrides);
+    }
+
+    /**
+     * 排列规则（包内可见供测试）：base 为全站默认顺序（只含启用、挂在页面上的指标）；
+     * overrides 里有的按其 sort_no 在前（相同按全站顺序），没有的按全站顺序在后；不在 base 里的配置忽略。
+     */
+    static List<PageMetricLayout> arrange(List<String> base, Map<String, Integer> defaultSort,
+            Map<String, SitePageMetric> overrides)
+    {
+        List<String> custom = new ArrayList<>();
+        List<String> rest = new ArrayList<>();
+        for (String code : base)
+        {
+            if (overrides != null && overrides.containsKey(code))
+            {
+                custom.add(code);
+            }
+            else
+            {
+                rest.add(code);
+            }
+        }
+        custom.sort(java.util.Comparator.comparingInt((String c) -> {
+            Integer n = overrides.get(c).getSortNo();
+            return n == null ? Integer.MAX_VALUE : n;
+        }).thenComparingInt(base::indexOf));
+        List<PageMetricLayout> out = new ArrayList<>();
+        int pos = 1;
+        for (String code : custom)
+        {
+            out.add(new PageMetricLayout(code, defaultSort.get(code), pos++, overrides.get(code).isVisible(), true));
+        }
+        for (String code : rest)
+        {
+            out.add(new PageMetricLayout(code, defaultSort.get(code), pos++, true, false));
+        }
+        return out;
+    }
+
+    /** 某站点某页面要显示的指标，按站点顺序（前端按返回顺序 / sortNo 直接展示） */
+    public List<String> columnsOf(DashboardPage page, String site)
+    {
+        List<String> out = new ArrayList<>();
+        for (PageMetricLayout l : layoutOf(page, site))
+        {
+            if (l.isVisible())
+            {
+                out.add(l.getMetricCode());
+            }
+        }
+        return out;
+    }
+
+    /** 某站点某页面的默认指标集（DEFAULT）是否有自定义排列 */
+    public boolean customized(DashboardPage page, String site)
+    {
+        return customized(page, site, PageDisplayType.DEFAULT);
+    }
+
+    /** 某站点某页面某指标集是否有自定义排列 */
+    public boolean customized(DashboardPage page, String site, PageDisplayType type)
+    {
+        PageDisplayType t = type == null ? PageDisplayType.DEFAULT : type;
+        return site != null && !site.trim().isEmpty() && siteLayouts.containsKey(layoutKey(site, page.name(), t));
+    }
+
+    /** 指标在某站点某页面上的名次（只算显示的，从 1 起）；隐藏或不在页面上返回 null */
+    public Integer pageSortNo(DashboardPage page, String site, String code)
+    {
+        int i = columnsOf(page, site).indexOf(code);
+        return i < 0 ? null : i + 1;
+    }
+
+    /** 同 {@link #resolveColumns(DashboardPage, List)}，按站点的顺序与显示 */
+    public List<String> resolveColumns(DashboardPage page, String site, List<String> requested)
+    {
+        return pick(columnsOf(page, site), requested);
+    }
+
+    /** 同 {@link #resolveCoreColumns(DashboardPage, List)}，按站点的顺序与显示 */
+    public List<String> resolveCoreColumns(DashboardPage page, String site, List<String> requested)
+    {
+        java.util.Set<String> core = coreMetricCodes();
+        List<String> all = new ArrayList<>();
+        for (String code : columnsOf(page, site))
+        {
+            if (core.contains(code))
+            {
+                all.add(code);
+            }
+        }
+        return pickOrAll(all, requested);
+    }
+
+    /** 请求列与页面列取交集（按页面顺序）；没传或交集为空返回页面全部 */
+    private static List<String> pick(List<String> ordered, List<String> requested)
+    {
+        if (requested == null || requested.isEmpty())
+        {
+            return new ArrayList<>(ordered);
+        }
+        List<String> result = new ArrayList<>();
+        for (String code : ordered)
+        {
+            if (requested.contains(code))
+            {
+                result.add(code);
+            }
+        }
+        return result.isEmpty() ? new ArrayList<>(ordered) : result;
+    }
+
+    private static List<String> pickOrAll(List<String> all, List<String> requested)
+    {
+        if (requested == null || requested.isEmpty())
+        {
+            return all;
+        }
+        List<String> picked = new ArrayList<>();
+        for (String code : all)
+        {
+            if (requested.contains(code))
+            {
+                picked.add(code);
+            }
+        }
+        return picked.isEmpty() ? all : picked;
     }
 
     // ===================== 查询 =====================

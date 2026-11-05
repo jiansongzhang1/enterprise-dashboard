@@ -55,6 +55,15 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         this.gateway = gateway;
     }
 
+    /** 用户明细的终端与推广筛选（FY-55）；setter 注入，避免改动构造函数 */
+    private com.fivetech.promo.analysis.MemberPromoFilter memberPromoFilter;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setMemberPromoFilter(com.fivetech.promo.analysis.MemberPromoFilter memberPromoFilter)
+    {
+        this.memberPromoFilter = memberPromoFilter;
+    }
+
     @Override
     public RecordResultVO<MemberRecordVO> queryMembers(MemberRecordQuery query)
     {
@@ -137,6 +146,11 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         }
         // 金额上下限都包含（与页面「0 ~ 50000」的读法一致）
         request.addRange("cumulativeDepositAmount", depMin, depMax, true);
+        // 终端、推广商 / 推广渠道（按注册时的归属，IN 条件）
+        if (memberPromoFilter != null)
+        {
+            request.getFilters().putAll(memberPromoFilter.filters(query.getTerminals(), query.getAgents(), query.getChannels()));
+        }
         return ctx;
     }
 

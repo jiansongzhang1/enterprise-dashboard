@@ -21,6 +21,20 @@ public class OverviewCompareVO implements Serializable
 
     private String label;
 
+    /** 推广分析：本期含今天时，对比期最后一天也只算到这个时刻（HH:mm，同时段对比）；运营总览不返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String cutAt;
+
+    public String getCutAt()
+    {
+        return cutAt;
+    }
+
+    public void setCutAt(String cutAt)
+    {
+        this.cutAt = cutAt;
+    }
+
     public String getFrom()
     {
         return from;

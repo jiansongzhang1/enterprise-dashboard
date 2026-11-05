@@ -105,10 +105,6 @@ public class TimeRangeResolver
         {
             throw new ServiceException("结束日不能早于开始日");
         }
-        if (from.isBefore(launchDate()))
-        {
-            throw new ServiceException("开始日不能早于站点上线日 " + properties.getLaunchDate());
-        }
         return clampToAsOf(from.atStartOfDay(), to.plusDays(1).atStartOfDay(), asOf);
     }
 
@@ -205,11 +201,6 @@ public class TimeRangeResolver
             end = from;
         }
         return ResolvedRange.of(from, end, null);
-    }
-
-    private LocalDate launchDate()
-    {
-        return LocalDate.parse(properties.getLaunchDate(), DATE);
     }
 
 

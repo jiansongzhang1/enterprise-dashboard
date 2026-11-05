@@ -98,6 +98,9 @@ public class MetricDictItem
     /** 阈值能否为负 */
     private Boolean allowNegative;
 
+    /** 可歸因：推广分析概览选中该卡并请求 attribution 时返回变化归因（dashboard_metric_card.attributable） */
+    private Boolean attributable;
+
     /** 门槛条下限 */
     private java.math.BigDecimal gaugeMin;
 
@@ -425,6 +428,16 @@ public class MetricDictItem
     public void setMinSampleDefault(java.math.BigDecimal minSampleDefault)
     {
         this.minSampleDefault = minSampleDefault;
+    }
+
+    public Boolean getAttributable()
+    {
+        return attributable;
+    }
+
+    public void setAttributable(Boolean attributable)
+    {
+        this.attributable = attributable;
     }
 
     public Boolean getAllowNegative()

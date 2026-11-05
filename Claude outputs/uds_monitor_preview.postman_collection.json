@@ -1,0 +1,203 @@
+{
+  "info": {
+    "name": "UDS · 监控回测预览（reg）",
+    "description": "由后端当前代码（UdsMetricDataGateway / UdsClient，application.yml 默认值）实际生成的请求，复现 POST /monitor/rules/preview {metricCode: reg, periodHours: 1, minSampleValue: 15}。切站点改变量 udsSite（SITE-IN / JITO），udsTenant 各站相同。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1 回测 · reg 逐小时序列（含跌幅基准 reg_baseline）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Uds-Principal",
+            "value": "{{udsPrincipal}}"
+          },
+          {
+            "key": "X-Uds-Tenant",
+            "value": "{{udsTenant}}"
+          },
+          {
+            "key": "X-Uds-Site",
+            "value": "{{udsSite}}"
+          },
+          {
+            "key": "X-Uds-Roles",
+            "value": "{{udsRoles}}"
+          },
+          {
+            "key": "X-Request-Id",
+            "value": "postman-{{$guid}}"
+          }
+        ],
+        "description": "POST /monitor/rules/preview 的 preview 部分：UdsMetricDataGateway.queryHourly。time.to 为最后一个整点（含），limit = 小时数。看每小时 reg 与 reg_baseline 是否有值。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dataset\": \"dashboard_overview_hour_v2\",\n  \"dimensions\": [\n    \"uds_hh\"\n  ],\n  \"metrics\": [\n    \"reg\",\n    \"reg_baseline\"\n  ],\n  \"time\": {\n    \"dimension\": \"uds_hh\",\n    \"granularity\": \"HOUR\",\n    \"from\": \"{{hourFrom}}\",\n    \"to\": \"{{hourTo}}\"\n  },\n  \"orderBy\": [\n    {\n      \"field\": \"uds_hh\",\n      \"dir\": \"ASC\"\n    }\n  ],\n  \"limit\": 704,\n  \"offset\": 0,\n  \"options\": {\n    \"channel\": \"ONLINE\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/query",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "query"
+          ]
+        }
+      }
+    },
+    {
+      "name": "2 平时水平 · reg H1 · sample_basis ≥ 15（与那次预览相同）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Uds-Principal",
+            "value": "{{udsPrincipal}}"
+          },
+          {
+            "key": "X-Uds-Tenant",
+            "value": "{{udsTenant}}"
+          },
+          {
+            "key": "X-Uds-Site",
+            "value": "{{udsSite}}"
+          },
+          {
+            "key": "X-Uds-Roles",
+            "value": "{{udsRoles}}"
+          },
+          {
+            "key": "X-Request-Id",
+            "value": "postman-{{$guid}}"
+          }
+        ],
+        "description": "usual 部分：UdsMetricDataGateway.queryDistribution(reg, 1h, minSample=15)。看 valid_point_count。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dataset\": \"metric_distribution_v1\",\n  \"dimensions\": [],\n  \"metrics\": [\n    \"p5\",\n    \"p95\",\n    \"min\",\n    \"max\",\n    \"min_at\",\n    \"max_at\",\n    \"valid_point_count\"\n  ],\n  \"time\": {\n    \"dimension\": \"period_start\",\n    \"granularity\": \"HOUR\",\n    \"from\": \"{{distFrom}}\",\n    \"to\": \"{{distTo}}\"\n  },\n  \"filters\": {\n    \"and\": [\n      {\n        \"field\": \"metric_code\",\n        \"op\": \"EQ\",\n        \"value\": \"registration_count\"\n      },\n      {\n        \"field\": \"period_code\",\n        \"op\": \"EQ\",\n        \"value\": \"H1\"\n      },\n      {\n        \"field\": \"sample_basis\",\n        \"op\": \"GTE\",\n        \"value\": 15\n      }\n    ]\n  },\n  \"orderBy\": [],\n  \"limit\": 1,\n  \"offset\": 0,\n  \"options\": {\n    \"channel\": \"ONLINE\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/query",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "query"
+          ]
+        }
+      }
+    },
+    {
+      "name": "3 平时水平 · reg H1 · 不带样本量门槛（对照）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Uds-Principal",
+            "value": "{{udsPrincipal}}"
+          },
+          {
+            "key": "X-Uds-Tenant",
+            "value": "{{udsTenant}}"
+          },
+          {
+            "key": "X-Uds-Site",
+            "value": "{{udsSite}}"
+          },
+          {
+            "key": "X-Uds-Roles",
+            "value": "{{udsRoles}}"
+          },
+          {
+            "key": "X-Request-Id",
+            "value": "postman-{{$guid}}"
+          }
+        ],
+        "description": "同 2，去掉 sample_basis GTE（规则最小样本量为空或 0 时后端就是这样发）。2 为 0、3 > 0 = 门槛 15 过滤掉了全部 1 小时周期。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dataset\": \"metric_distribution_v1\",\n  \"dimensions\": [],\n  \"metrics\": [\n    \"p5\",\n    \"p95\",\n    \"min\",\n    \"max\",\n    \"min_at\",\n    \"max_at\",\n    \"valid_point_count\"\n  ],\n  \"time\": {\n    \"dimension\": \"period_start\",\n    \"granularity\": \"HOUR\",\n    \"from\": \"{{distFrom}}\",\n    \"to\": \"{{distTo}}\"\n  },\n  \"filters\": {\n    \"and\": [\n      {\n        \"field\": \"metric_code\",\n        \"op\": \"EQ\",\n        \"value\": \"registration_count\"\n      },\n      {\n        \"field\": \"period_code\",\n        \"op\": \"EQ\",\n        \"value\": \"H1\"\n      }\n    ]\n  },\n  \"orderBy\": [],\n  \"limit\": 1,\n  \"offset\": 0,\n  \"options\": {\n    \"channel\": \"ONLINE\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/query",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "query"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:28081/contract-stage"
+    },
+    {
+      "key": "udsPrincipal",
+      "value": "backend-local-debug"
+    },
+    {
+      "key": "udsTenant",
+      "value": "site:SITE-IN"
+    },
+    {
+      "key": "udsSite",
+      "value": "SITE-IN"
+    },
+    {
+      "key": "udsRoles",
+      "value": "dashboard_ops"
+    },
+    {
+      "key": "hourFrom",
+      "value": "2026-10-04 00:00:00"
+    },
+    {
+      "key": "hourTo",
+      "value": "2026-11-02 07:00:00"
+    },
+    {
+      "key": "distFrom",
+      "value": "2026-10-04 00:00:00"
+    },
+    {
+      "key": "distTo",
+      "value": "2026-11-01 23:00:00"
+    }
+  ]
+}

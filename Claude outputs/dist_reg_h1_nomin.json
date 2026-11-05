@@ -1,0 +1,39 @@
+{
+  "dataset": "metric_distribution_v1",
+  "dimensions": [],
+  "metrics": [
+    "p5",
+    "p95",
+    "min",
+    "max",
+    "min_at",
+    "max_at",
+    "valid_point_count"
+  ],
+  "time": {
+    "dimension": "period_start",
+    "granularity": "HOUR",
+    "from": "2026-10-04 00:00:00",
+    "to": "2026-11-01 23:00:00"
+  },
+  "filters": {
+    "and": [
+      {
+        "field": "metric_code",
+        "op": "EQ",
+        "value": "registration_count"
+      },
+      {
+        "field": "period_code",
+        "op": "EQ",
+        "value": "H1"
+      }
+    ]
+  },
+  "orderBy": [],
+  "limit": 1,
+  "offset": 0,
+  "options": {
+    "channel": "ONLINE"
+  }
+}

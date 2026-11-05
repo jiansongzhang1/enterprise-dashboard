@@ -108,9 +108,30 @@ public class OverviewServiceImpl implements IOverviewService
         this.normalizer = normalizer;
     }
 
+    /** 推广分析概览（scene = PROMO）；setter 注入，避免改动构造函数 */
+    private com.fivetech.promo.analysis.PromoOverviewService promoOverview;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setPromoOverview(com.fivetech.promo.analysis.PromoOverviewService promoOverview)
+    {
+        this.promoOverview = promoOverview;
+    }
+
     @Override
     public OverviewVO query(OverviewQuery query)
     {
+        if (query.isPromo())
+        {
+            if (promoOverview == null)
+            {
+                throw new ServiceException("推廣分析未啟用", 5001);
+            }
+            return promoOverview.query(query);
+        }
+        if (StringUtils.isNotEmpty(query.getScene()) && !"OPS".equalsIgnoreCase(query.getScene().trim()))
+        {
+            throw new ServiceException("scene 只能是 OPS（運營總覽）或 PROMO（推廣分析）", 4003);
+        }
         OverviewVO vo = new OverviewVO();
         List<OverviewNoticeVO> notices = vo.getNotices();
 
@@ -515,7 +536,7 @@ public class OverviewServiceImpl implements IOverviewService
         }
     }
 
-    private static int countPoints(LocalDateTime from, LocalDateTime to, Granularity granularity)
+    public static int countPoints(LocalDateTime from, LocalDateTime to, Granularity granularity)
     {
         if (granularity == null)
         {
@@ -533,7 +554,8 @@ public class OverviewServiceImpl implements IOverviewService
         }
     }
 
-    private OverviewSlotVO buildSlot(LocalDateTime from, LocalDateTime to, Granularity granularity)
+    /** 时间片与标签（推广分析概览共用） */
+    public static OverviewSlotVO buildSlot(LocalDateTime from, LocalDateTime to, Granularity granularity)
     {
         OverviewSlotVO slot = new OverviewSlotVO();
         slot.setFrom(from.format(SLOT_IN));
@@ -604,11 +626,6 @@ public class OverviewServiceImpl implements IOverviewService
                     "對比期終點調整為 " + cmpTo.format(SLOT_IN) + "，與主區間小時數一致"));
             }
             // 对比期允许与主区间重叠（产品确认），不做重叠校验
-            String launch = properties.getLaunchDate();
-            if (StringUtils.isNotEmpty(launch) && cmpFrom.toLocalDate().toString().compareTo(launch) < 0)
-            {
-                throw new ServiceException("对比期早于站点上线日 " + launch, 4002);
-            }
             // 长度校验用「截断前」的主区间：天 / 周粒度下主区间被截到当前整点不算长度不一致；
             // 小时粒度两边已同步截断，用截断后的长度比较
             LocalDateTime mainTo = clamped && !hourly ? to.plus(clampedBy) : to;
@@ -717,10 +734,8 @@ public class OverviewServiceImpl implements IOverviewService
             card.setExpression(com.fivetech.dashboard.service.OverviewMetricText.caliber(code, def, metricRegistry));
             card.setValueFormat(def.getFormat());
             card.setDecimals(decimalsOf(def));
-            // 序号取页面关系 dashboard_page_metric.sort_no，与列表顺序同源；
-            // 不是返回列表里的位次——前端自己重排过，靠这个还原成页面约定的次序。
-            // 不能用 def.getSortNo()：那是 dashboard_metric_card 的全局顺序，两列配得不一样时会和列表顺序打架
-            card.setSortNo(metricRegistry.pageSortNo(DashboardPage.OVERVIEW, code));
+            // 序号 = 站点内名次（站点在「站点管理 › 指標配置」里调过顺序时按站点，否则按全站默认）；前端按 sortNo 直接展示
+            card.setSortNo(metricRegistry.pageSortNo(DashboardPage.OVERVIEW, site(query), code));
             card.setUpdateFrequency(def.getUpdateFrequency());
             card.setDirection(def.getDirection());
             // 没有规则的指标 NOT_CONFIGURED，绝不填 OK：「没配规则」和「查过了一切正常」是两件事，后者染绿是骗人
@@ -903,16 +918,19 @@ public class OverviewServiceImpl implements IOverviewService
      */
     private List<String> resolveMetricCodes(OverviewQuery query)
     {
-        List<String> configured = metricRegistry.columnsOf(DashboardPage.OVERVIEW);
+        // 按站点的顺序与显示（dashboard_page_metric_site）；站点隐藏的指标不返回，传了也当作不在页面上
+        List<String> configured = metricRegistry.columnsOf(DashboardPage.OVERVIEW, site(query));
         List<String> requested = query.getMetrics();
         if (requested == null || requested.isEmpty())
         {
             return filterByGroup(configured, query.getGroup());
         }
+        // 不认识的编码看全站页面配置：站点隐藏的指标是认识的，传了只是不返回，不报 4003
+        List<String> known = metricRegistry.columnsOf(DashboardPage.OVERVIEW);
         List<String> unknown = new ArrayList<>();
         for (String code : requested)
         {
-            if (!configured.contains(code))
+            if (!known.contains(code))
             {
                 unknown.add(code);
             }
@@ -999,7 +1017,7 @@ public class OverviewServiceImpl implements IOverviewService
     private List<MetricGroupVO> buildGroups()
     {
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (String code : metricRegistry.columnsOf(DashboardPage.OVERVIEW))
+        for (String code : metricRegistry.columnsOf(DashboardPage.OVERVIEW, properties.currentSite()))
         {
             MetricDefinition def = metricRegistry.get(code);
             if (def != null && def.getGroup() != null)

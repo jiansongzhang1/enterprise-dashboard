@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.configcenter.mapper.ConfigItemMapper">
+
+	<resultMap type="com.fivetech.configcenter.domain.ConfigItem" id="ConfigItemResult">
+		<id     property="id"          column="id"           />
+		<result property="configCode"  column="config_code"  />
+		<result property="siteCode"    column="site_code"    />
+		<result property="pageName"    column="page_name"    />
+		<result property="description" column="description" />
+		<result property="configValue" column="config_value" />
+		<result property="createBy"    column="create_by"    />
+		<result property="createTime"  column="create_time"  />
+		<result property="updateBy"    column="update_by"    />
+		<result property="updateTime"  column="update_time"  />
+	</resultMap>
+
+	<sql id="cols">
+		select id, config_code, site_code, page_name, description, config_value, create_by, create_time, update_by, update_time
+		  from config_center
+	</sql>
+
+	<select id="selectList" resultMap="ConfigItemResult">
+		<include refid="cols"/>
+		<where>
+			<if test="configCode != null and configCode != ''">and config_code ilike '%' || #{configCode} || '%'</if>
+			<if test="siteCode == '-'">and site_code = ''</if>
+			<if test="siteCode != null and siteCode != '' and siteCode != '-'">and upper(site_code) = upper(#{siteCode})</if>
+			<if test="pageName != null and pageName != ''">and page_name ilike '%' || #{pageName} || '%'</if>
+		</where>
+		order by page_name, config_code, site_code
+	</select>
+
+	<select id="selectById" resultMap="ConfigItemResult">
+		<include refid="cols"/>
+		 where id = #{id}
+	</select>
+
+	<select id="selectOne" resultMap="ConfigItemResult">
+		<include refid="cols"/>
+		 where config_code = #{configCode} and upper(site_code) = upper(#{siteCode})
+	</select>
+
+	<select id="countKey" resultType="int">
+		select count(*) from config_center
+		 where config_code = #{configCode} and upper(site_code) = upper(#{siteCode})
+		<if test="excludeId != null">and id &lt;&gt; #{excludeId}</if>
+	</select>
+
+	<select id="selectPageNames" resultType="string">
+		select distinct page_name from config_center order by page_name
+	</select>
+
+	<insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+		insert into config_center (config_code, site_code, page_name, description, config_value, create_by, create_time, update_by, update_time)
+		values (#{configCode}, #{siteCode}, #{pageName}, #{description}, #{configValue}, #{createBy}, localtimestamp, #{createBy}, localtimestamp)
+	</insert>
+
+	<update id="update">
+		update config_center
+		   set config_code = #{configCode}, site_code = #{siteCode}, page_name = #{pageName}, description = #{description},
+		       config_value = #{configValue}, update_by = #{updateBy}, update_time = localtimestamp
+		 where id = #{id}
+	</update>
+
+	<delete id="deleteById">
+		delete from config_center where id = #{id}
+	</delete>
+</mapper>
