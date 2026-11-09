@@ -285,7 +285,7 @@
           ]
         },
         {
-          "name": "2.4 按推广渠道归因 → PENDING_SOURCE",
+          "name": "2.4 按推广渠道归因 → supported=false（reasonCode 未配置或待接入）",
           "request": {
             "method": "POST",
             "header": [
@@ -315,11 +315,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
-                  "if (c_reg.attribution) pm.test('渠道映射待补', () => pm.expect(c_reg.attribution.reason).to.eql('PENDING_SOURCE'));"
+                  "const a = j.data.blocks.METRICS.items.find(c => c.code === 'reg').attribution;",
+                  "pm.test('每张卡都有 attribution', () => pm.expect(a).to.be.an('object'));",
+                  "pm.test('不支持：NOT_CONFIGURED 或 PENDING_SOURCE，reason 是展示文字', () => { pm.expect(a.supported).to.eql(false); pm.expect(['NOT_CONFIGURED','PENDING_SOURCE']).to.include(a.reasonCode); pm.expect(a.reason).to.be.a('string'); });"
                 ]
               }
             }
@@ -1310,7 +1310,7 @@
           ]
         },
         {
-          "name": "7.2 按终端筛选（用户明细数据集还没有终端字段 → 5001）",
+          "name": "7.2 按终端筛选（用户快照 terminal）→ 200，行的 registerTerminal 都是 unidentified",
           "request": {
             "method": "POST",
             "header": [
@@ -1341,9 +1341,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
-                  "pm.test('code = 5001', () => pm.expect(j.code).to.eql(5001));"
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('都是未識別', () => j.data.page.rows.forEach(r => pm.expect(r.registerTerminal).to.eql('unidentified')));",
+                  "pm.test('有新增 3 列', () => ['registerTerminal','agentAccount','lastLoginTime'].forEach(c => pm.expect(j.data.columns.map(x => x.code)).to.include(c)));"
                 ]
               }
             }
@@ -1383,6 +1384,46 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 4004', () => pm.expect(j.code).to.eql(4004));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 流失用户 lost=true（UDS 字段未配置 → 5001）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/records/member",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registerTimeFrom\": \"{{d7From}}\",\n  \"registerTimeTo\": \"{{todayEnd}}\",\n  \"lost\": true,\n  \"pageNum\": 1,\n  \"pageSize\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "用户明细读的是 dashboard_player_snapshot_v3，没有注册终端字段；application.yml details.member.filter-fields 配好后应为 200"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('字段待提供：5001「暫時不能按它篩選」；配好后改为 200', () => pm.expect([200, 5001]).to.include(j.code));",
+                  "if (j.code === 5001) pm.test('提示流失', () => pm.expect(j.msg).to.include('流失'));"
                 ]
               }
             }
@@ -1823,7 +1864,7 @@
           ]
         },
         {
-          "name": "9.8 表格列：同组不相邻 → 400",
+          "name": "9.8 表格列：跨组穿插 → 200，按传入顺序保存（不再要求同组相邻）",
           "request": {
             "method": "POST",
             "header": [
@@ -1854,8 +1895,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
-                  "pm.test('fields.items', () => pm.expect(j.data.fields.items).to.include('相鄰'));"
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('顺序原样', () => pm.expect(j.data.items).to.eql(['reg','spend','ftd']));",
+                  "pm.test('groupAdjacent = false', () => pm.expect(j.data.groupAdjacent).to.eql(false));"
                 ]
               }
             }

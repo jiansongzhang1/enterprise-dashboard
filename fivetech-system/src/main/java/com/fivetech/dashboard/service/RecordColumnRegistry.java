@@ -43,7 +43,7 @@ public class RecordColumnRegistry
 
     public RecordColumnRegistry()
     {
-        // ---- 会员表：27 列，对齐原型 MVP-V1.0。列显示由用户自选，这里只定义全集 ----
+        // ---- 会员表：29 列，对齐原型 MVP-V1.0（26 列）+ 推广分析（FY-55）的注册终端、上级账号、最近登录时间。列显示由用户自选，这里只定义全集 ----
         // 基本資訊：用戶ID 与帳號名稱必选（locked），默认显示的 13 列标 defaultVisible
         member("userId", "用戶ID", "TEXT", G_BASE).locked(true).defaultVisible(true).sortable(true);
         member("username", "帳號名稱", "TEXT", G_BASE).locked(true).defaultVisible(true);
@@ -53,6 +53,11 @@ public class RecordColumnRegistry
         member("country", "國家", "TAG", G_BASE).defaultVisible(true).filterable(true);
         // 註冊與來源
         member("registerTime", "註冊時間", "TIME", G_REG).defaultVisible(true).sortable(true).filterable(true);
+        // 推广分析（FY-55）：注册终端、上级账号取用户快照；按注册终端筛选走请求的 terminals，不是列筛选
+        member("registerTerminal", "註冊終端", "TAG", G_REG);
+        member("agentAccount", "上級帳號", "TEXT", G_REG);
+        // 最近登录时间来自市场会员快照（按本页用户 ID 补），不能排序、筛选，也不进 UDS 导出
+        member("lastLoginTime", "最近登錄時間", "TIME", G_REG);
         // 存款指標
         member("firstDepositTime", "首存時間", "TIME", G_DEP).sortable(true).filterable(true);
         member("firstDepositAmount", "首存金額", "MONEY", G_DEP).defaultVisible(true).sortable(true);

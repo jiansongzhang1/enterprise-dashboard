@@ -1349,6 +1349,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
             vo.setCountryLabel(com.fivetech.dashboard.service.MemberDict.label(
                 com.fivetech.dashboard.service.MemberDict.COUNTRY, vo.getCountry()));
             vo.setRegisterTime(str(row, d, "registerTime"));
+            vo.setRegisterTerminal(decoded(row, d, "registerTerminal"));
+            vo.setRegisterTerminalLabel(terminalLabel(vo.getRegisterTerminal()));
+            vo.setAgentAccount(str(row, d, "agentAccount"));
             vo.setFirstDepositTime(str(row, d, "firstDepositTime"));
             vo.setFirstDepositAmount(num(row, d, "firstDepositAmount"));
             vo.setFirstDepositChannel(str(row, d, "firstDepositChannel"));
@@ -1397,6 +1400,28 @@ public class UdsMetricDataGateway implements MetricDataGateway
     private static BigDecimal num(UdsRow row, UdsProperties.DetailDataset d, String code)
     {
         return row.num(d.getFields().get(code));
+    }
+
+    /** 注册终端编码 → 显示名；不认识的原样显示 */
+    static String terminalLabel(String code)
+    {
+        if (code == null)
+        {
+            return null;
+        }
+        switch (code)
+        {
+            case "web":
+                return "Web";
+            case "android":
+                return "Android";
+            case "ios":
+                return "iOS";
+            case "unidentified":
+                return "未識別";
+            default:
+                return code;
+        }
     }
 
     /** 取值并按 valueMaps 反查回本系统取值；反查不到的原值保留（未知状态不改名） */
@@ -2053,13 +2078,16 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return job;
     }
 
-    /** 页面列编码 → UDS 导出列代码，保持用户选择的顺序；映射不到的列直接拒绝（UDS 会返回 4001） */
-    private static List<String> exportColumns(UdsProperties.DetailDataset detail, List<String> columns)
+    /**
+     * 页面列编码 → UDS 导出列代码，保持用户选择的顺序；映射不到的列直接拒绝（UDS 会返回 4001）。
+     * page-only-columns 里的列（不在这个数据集、由后端另外补的，如会员的最近登录时间）不进导出，跳过不报错。
+     */
+    static List<String> exportColumns(UdsProperties.DetailDataset detail, List<String> columns)
     {
         Set<String> out = new LinkedHashSet<>();
         for (String code : columns)
         {
-            if (StringUtils.isEmpty(code))
+            if (StringUtils.isEmpty(code) || detail.getPageOnlyColumns().contains(code))
             {
                 continue;
             }

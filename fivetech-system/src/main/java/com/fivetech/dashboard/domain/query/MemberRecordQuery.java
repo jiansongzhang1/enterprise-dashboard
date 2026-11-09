@@ -88,6 +88,15 @@ public class MemberRecordQuery extends BaseRecordQuery
     /** 推广渠道编码，可与推广商混选 */
     private java.util.List<String> channels = new java.util.ArrayList<>();
 
+    /**
+     * 只看流失用户：true = 注册后截至目前还没首存的用户（推广分析获客漏斗「流失」下钻用，注册时间区间照常传 registerTimeFrom / To）；
+     * null / false = 不限，与原逻辑相同
+     */
+    private Boolean lost;
+
+    public Boolean getLost() { return lost; }
+    public void setLost(Boolean lost) { this.lost = lost; }
+
     public java.util.List<String> getTerminals() { return terminals; }
     public void setTerminals(java.util.List<String> terminals) { this.terminals = terminals == null ? new java.util.ArrayList<>() : terminals; }
     public java.util.List<String> getAgents() { return agents; }

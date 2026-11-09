@@ -44,8 +44,10 @@ import com.fivetech.promo.budget.PromoChannelDictionary;
  * compare 多 cutAt。</p>
  *
  * <p><b>数据</b>：UDS 市场数据集 {@code dashboard_market_hour_v1}（见 {@link MarketValues}）。已接：注册、首存、首存转化率、
- * 首存金额、复存人数、淨充值（= 存款总额）、激活，以及按终端的变化归因。其余（消耗、预算、成本类、UV、下载点击、
- * 注册转化率）没有来源或口径不同：value 为 null、state = NO_SOURCE、note 写原因，notices 写 PROMO_DATA_PARTIAL。
+ * 首存金额、复存人数、淨充值（= 存款总额）、激活，以及按终端的变化归因。消耗、预算取运营导入数据（{@link PromoSpend}，
+ * 可按推广商 / 推广渠道筛选）；成本类（CPA、首存成本、D0 ROI）按有效格子算（{@link PromoCost}），行为数据能按推广渠道拆之前为
+ * NO_SOURCE。其余（UV、下载点击、注册转化率）没有来源或口径不同：value 为 null、state = NO_SOURCE、note 写原因，
+ * notices 写 PROMO_DATA_PARTIAL。
  * 选了推广商 / 推广渠道时，渠道映射还没有，全部为 NO_SOURCE（不返回未筛选的数）。</p>
  *
  * @author fivetech
@@ -71,6 +73,8 @@ public class PromoOverviewService
         boolean channelPending;
         /** 终端键（all / web / android / ios / unknown）；null = 终端认不出 */
         String terminalKey;
+        /** 消耗 / 预算（含对比期）；null = 没取或关闭了读取 */
+        PromoSpend.Cube spend;
 
         boolean has()
         {
@@ -96,6 +100,18 @@ public class PromoOverviewService
         this.channels = channels;
         this.terminals = terminals;
         this.market = market;
+    }
+
+    /** 消耗 / 预算（可选，setter 注入，避免改动构造函数）；没有时这几张卡按「數據待接入」 */
+    private PromoSpend spend;
+
+    /** 按推广渠道的行为数据（成本类指标的有效格子）；数据平台提供推广渠道维度（U1）前为 NONE */
+    PromoCost.ChannelBehavior behavior = PromoCost.ChannelBehavior.NONE;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSpend(PromoSpend spend)
+    {
+        this.spend = spend;
     }
 
     public OverviewVO query(OverviewQuery query)
@@ -205,6 +221,15 @@ public class PromoOverviewService
                 vo.setEmpty(true);
                 return vo;
             }
+        }
+
+        // ---------- 6b. 消耗 / 预算（运营导入，按推广渠道，可按推广商 / 推广渠道筛选） ----------
+        if (spend != null && selected.stream().anyMatch(m -> PromoSpend.CODES.contains(m.getCode()) || PromoCost.CODES.contains(m.getCode())))
+        {
+            LocalDate[] w = spendDays("budget", range, compare, now);
+            LocalDate from = w[2] != null && w[2].isBefore(w[0]) ? w[2] : w[0];
+            LocalDate to = w[3] != null && w[3].isAfter(w[1]) ? w[3] : w[1];
+            data.spend = spend.load(from, to);
         }
 
         MetricsBlockVO block = new MetricsBlockVO();
@@ -388,16 +413,62 @@ public class PromoOverviewService
         }
         String code = m.getCode();
         boolean available = MarketValues.AVAILABLE.contains(code);
+        boolean spendCard = PromoSpend.CODES.contains(code);
+        boolean costCard = PromoCost.CODES.contains(code);
+        LocalDate[] w = spendCard || costCard ? spendDays(code, range, compare, now) : null;
+        PromoCost.Result cost = null;
+        PromoCost.Result prevCost = null;
         String state = na ? "NA" : "OK";
-        if (!na && (!available || data.channelPending))
+        if (!na && spendCard)
+        {
+            // 消耗 / 预算带推广渠道，选了推广商 / 推广渠道也能算
+            if (data.spend == null || data.spend.isFailed())
+            {
+                state = "NO_SOURCE";
+                c.setNote(data.spend == null ? MarketValues.noSourceNote(code) : PromoSpend.FAILED_NOTE);
+            }
+        }
+        else if (!na && costCard)
+        {
+            if (data.spend == null || data.spend.isFailed())
+            {
+                state = "NO_SOURCE";
+                c.setNote(data.spend == null ? PromoCost.note(code) : PromoSpend.FAILED_NOTE);
+            }
+            else
+            {
+                cost = costOf(code, data.spend, scope, w[0], w[1]);
+                prevCost = w[2] == null ? null : costOf(code, data.spend, scope, w[2], w[3]);
+                state = cost.state();
+                c.setNote(cost.note());
+            }
+        }
+        else if (!na && (!available || data.channelPending))
         {
             state = "NO_SOURCE";
             c.setNote(data.channelPending ? NOTE_CHANNEL_PENDING : MarketValues.noSourceNote(code));
         }
         c.setState(state);
         boolean fill = "OK".equals(state) && data.has();
-        BigDecimal value = fill ? MarketValues.value(code, data.day, data.terminalKey, null) : null;
-        BigDecimal prev = fill && data.prevDay != null ? MarketValues.value(code, data.prevDay, data.terminalKey, null) : null;
+        BigDecimal value;
+        BigDecimal prev;
+        java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> inScope = PromoSpend.inScope(scope);
+        if (spendCard)
+        {
+            boolean ok = "OK".equals(state);
+            value = ok ? data.spend.sum(PromoSpend.kind(code), w[0], w[1], inScope) : null;
+            prev = ok && w[2] != null ? data.spend.sum(PromoSpend.kind(code), w[2], w[3], inScope) : null;
+        }
+        else if (costCard)
+        {
+            value = cost == null ? null : cost.value();
+            prev = prevCost == null || !"OK".equals(prevCost.state()) ? null : prevCost.value();
+        }
+        else
+        {
+            value = fill ? MarketValues.value(code, data.day, data.terminalKey, null) : null;
+            prev = fill && data.prevDay != null ? MarketValues.value(code, data.prevDay, data.terminalKey, null) : null;
+        }
         c.setValue(value);
         c.setPrevValue(prev);
         if (value != null && prev != null)
@@ -410,7 +481,9 @@ public class PromoOverviewService
         if (query.isIncludeSeries())
         {
             int points = Math.max(0, slot.getPoints());
-            c.setSeries(fill ? series(code, data.series, data.terminalKey, range.from, slot.getGranularity(), points)
+            boolean spendSeries = spendCard && "OK".equals(state);
+            c.setSeries(spendSeries ? spendSeries(data.spend, PromoSpend.kind(code), inScope, range.from, slot.getGranularity(), points)
+                : fill && !costCard ? series(code, data.series, data.terminalKey, range.from, slot.getGranularity(), points)
                 : new ArrayList<>(Collections.nCopies(points, null)));
             if (compare == null)
             {
@@ -418,7 +491,10 @@ public class PromoOverviewService
             }
             else
             {
-                c.setPrevSeries(fill && data.prevSeries != null
+                LocalDateTime prevStart = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT);
+                c.setPrevSeries(spendSeries
+                    ? spendSeries(data.spend, PromoSpend.kind(code), inScope, prevStart, slot.getGranularity(), points)
+                    : fill && !costCard && data.prevSeries != null
                     ? series(code, data.prevSeries, data.terminalKey, data.prevFrom, slot.getGranularity(), points)
                     : new ArrayList<>(Collections.nCopies(points, null)));
             }
@@ -440,6 +516,66 @@ public class PromoOverviewService
             c.setAttribution(a);
         }
         return c;
+    }
+
+    /**
+     * 消耗 / 预算与成本类指标的日期：{ 本期起, 本期止, 对比期起, 对比期止 }（都含当天；没有对比期时后两个为 null）。
+     * 消耗本期含今天且不只今天时，两期都去掉今天、按同样天数比（与卡片 spendCompare 一致）；预算含今天。
+     */
+    static LocalDate[] spendDays(String code, PromoTime.Range range, OverviewCompareVO compare, LocalDateTime now)
+    {
+        LocalDate from = range.firstDay();
+        LocalDate to = range.lastDay();
+        LocalDate prevFrom = null;
+        LocalDate prevTo = null;
+        if (compare != null)
+        {
+            prevFrom = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT).toLocalDate();
+            prevTo = LocalDateTime.parse(compare.getTo(), PromoTime.SLOT).minusMinutes(1).toLocalDate();
+        }
+        if (!"budget".equals(code) && compare != null && spendCompare(range, compare, now) != null)
+        {
+            LocalDate today = now.toLocalDate();
+            long days = ChronoUnit.DAYS.between(from, today);
+            to = today.minusDays(1);
+            prevTo = prevFrom.plusDays(days - 1);
+        }
+        return new LocalDate[] { from, to, prevFrom, prevTo };
+    }
+
+    /** 成本类指标：范围内（所选推广商 / 推广渠道）按有效格子算 */
+    PromoCost.Result costOf(String code, PromoSpend.Cube cube, PromoScope scope, LocalDate from, LocalDate to)
+    {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        scope.getChannels().forEach(ch -> ids.add(com.fivetech.configcenter.ConfigCodes.idKey(ch.getId())));
+        java.util.function.Predicate<String> channel = scope.isAll() ? k -> true : ids::contains;
+        Map<PromoCost.Cell, BigDecimal> cells = cube.cells(com.fivetech.promo.budget.BudgetKind.SPEND, from, to, PromoSpend.inScope(scope));
+        Map<PromoCost.Cell, BigDecimal> b = PromoCost.filter(behavior.byChannel(PromoCost.behaviorMetric(code), from, to), from, to, channel);
+        return PromoCost.evaluate(code, cells, b);
+    }
+
+    /** 消耗 / 预算的序列：按日录入，日 / 周粒度按导入日期归点；小时粒度没有（DAILY_ONLY） */
+    static List<BigDecimal> spendSeries(PromoSpend.Cube cube, com.fivetech.promo.budget.BudgetKind kind,
+        java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> filter, LocalDateTime from, Granularity g, int points)
+    {
+        List<BigDecimal> out = new ArrayList<>(Collections.nCopies(points, null));
+        if (cube == null || g == Granularity.HOUR)
+        {
+            return out;
+        }
+        for (com.fivetech.promo.budget.BudgetDataReader.Row r : cube.rows(kind))
+        {
+            if (r.getDate() == null || r.getAmount() == null || !filter.test(r))
+            {
+                continue;
+            }
+            int i = index(r.getDate().atStartOfDay(), from, g);
+            if (i >= 0 && i < points)
+            {
+                out.set(i, out.get(i) == null ? r.getAmount() : out.get(i).add(r.getAmount()));
+            }
+        }
+        return out;
     }
 
     /** 序列：每个时间片的值（与 slot.points 等长，缺的为 null） */
