@@ -280,6 +280,66 @@ public class LarkClient
         return LarkResult.ok(r.getData().path("data").path("message_id").asText(""), r.getHttpStatus());
     }
 
+    /** 上传图片的大小上限（Lark：10 MB） */
+    static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+    /**
+     * 上传图片（POST /open-apis/im/v1/images，image_type = message），用于卡片里的图片元素或图片消息。
+     * 需要机器人开通「上传图片」相关权限。
+     *
+     * @param image    图片内容（PNG / JPEG 等，最大 10 MB）
+     * @param fileName 文件名（只用于 multipart，Lark 不展示）
+     * @return 成功时 data 为 image_key
+     */
+    public LarkResult<String> uploadImage(String appId, String appSecret, byte[] image, String fileName)
+    {
+        if (image == null || image.length == 0)
+        {
+            return LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "圖片內容為空", 0);
+        }
+        if (image.length > MAX_IMAGE_BYTES)
+        {
+            return LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "圖片超過 10 MB：" + image.length + " 字節", 0);
+        }
+        String boundary = "----fivetech" + Long.toHexString(System.nanoTime());
+        byte[] body = multipartImage(boundary, image, fileName == null || fileName.isBlank() ? "image.png" : fileName);
+        URI uri = URI.create(baseUrl + "/open-apis/im/v1/images");
+        LarkResult<JsonNode> r = call(appId, appSecret, token -> HttpRequest.newBuilder(uri)
+                .timeout(timeout.multipliedBy(3))
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .build());
+        if (!r.isSuccess())
+        {
+            return r.castFailure();
+        }
+        String key = r.getData().path("data").path("image_key").asText("");
+        if (key.isEmpty())
+        {
+            return LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "Lark 沒有返回 image_key", r.getHttpStatus());
+        }
+        return LarkResult.ok(key, r.getHttpStatus());
+    }
+
+    /** multipart/form-data：image_type = message + image 文件（包内可见供测试） */
+    static byte[] multipartImage(String boundary, byte[] image, String fileName)
+    {
+        String safeName = fileName.replaceAll("[\\r\\n\"]", "_");
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(image.length + 512);
+        byte[] head = ("--" + boundary + "\r\n"
+            + "Content-Disposition: form-data; name=\"image_type\"\r\n\r\n"
+            + "message\r\n"
+            + "--" + boundary + "\r\n"
+            + "Content-Disposition: form-data; name=\"image\"; filename=\"" + safeName + "\"\r\n"
+            + "Content-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+        byte[] tail = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+        out.writeBytes(head);
+        out.writeBytes(image);
+        out.writeBytes(tail);
+        return out.toByteArray();
+    }
+
     /**
      * 机器人名称（GET /open-apis/bot/v3/info 的 bot.app_name）。
      *

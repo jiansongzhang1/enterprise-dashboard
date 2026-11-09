@@ -47,8 +47,8 @@ public class MarketGateway
     /** 宽表带终端前缀的指标前缀 */
     public static final List<String> TERMINAL_PREFIXES = List.of("web", "android", "ios", "unknown");
 
-    /** 宽表：注册、首存、首存金额、复存金额、激活（与页面口径一致的部分） */
-    public static final List<String> WIDE = List.of("reg", "ftd_players", "ftd_amount", "redeposit_amount", "android_first_open");
+    /** 宽表：注册、首存、首存金额、复存金额（与页面口径一致的部分；激活 lp_install 口径待确认，不取） */
+    public static final List<String> WIDE = List.of("reg", "ftd_players", "ftd_amount", "redeposit_amount");
 
     /** 宽表里有终端前缀的指标 */
     public static final List<String> WIDE_BY_TERMINAL = List.of("reg", "ftd_players", "ftd_amount", "redeposit_amount");

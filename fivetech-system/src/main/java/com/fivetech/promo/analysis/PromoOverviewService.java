@@ -44,8 +44,8 @@ import com.fivetech.promo.budget.PromoChannelDictionary;
  * compare 多 cutAt。</p>
  *
  * <p><b>数据</b>：UDS 市场数据集 {@code dashboard_market_hour_v1}（见 {@link MarketValues}）。已接：注册、首存、首存转化率、
- * 首存金额、复存人数、淨充值（= 存款总额）、激活，以及按终端的变化归因。其余（消耗、预算、成本类、UV、下载点击、
- * 注册转化率）没有来源或口径不同：value 为 null、state = NO_SOURCE、note 写原因，notices 写 PROMO_DATA_PARTIAL。
+ * 首存金额、复存人数、淨充值（= 存款总额），以及按终端的变化归因。其余（消耗、预算、成本类、UV、下载点击、激活、
+ * 注册转化率）没有来源或口径待确认：value 为 null、state = NO_SOURCE、note 写原因，notices 写 PROMO_DATA_PARTIAL。
  * 选了推广商 / 推广渠道时，渠道映射还没有，全部为 NO_SOURCE（不返回未筛选的数）。</p>
  *
  * @author fivetech

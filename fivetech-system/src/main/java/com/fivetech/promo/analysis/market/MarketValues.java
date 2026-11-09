@@ -18,14 +18,15 @@ import java.util.function.Predicate;
  *   <tr><td>ftdAmt 首存金額</td><td>宽表 ftd_amount</td></tr>
  *   <tr><td>rdAmt 複存金額</td><td>宽表 redeposit_amount</td></tr>
  *   <tr><td>rd 複存人數</td><td>精确 redeposit_users，逐日相加</td></tr>
- *   <tr><td>rdR 複存率</td><td>Σ redeposit_users ÷ ftd_players</td></tr>
  *   <tr><td>depU 存款人數</td><td>精确 deposit_users，逐日相加</td></tr>
  *   <tr><td>depR 存款率</td><td>Σ deposit_users ÷ reg</td></tr>
  *   <tr><td>dep 存款總額 / net 淨充值（= 存款总额）</td><td>精确 deposit_amount</td></tr>
  *   <tr><td>arppu</td><td>deposit_amount ÷ Σ deposit_users</td></tr>
  *   <tr><td>betU 投注人數 / bet 投注總額</td><td>精确 bet_users（逐日相加）/ bet_amount</td></tr>
- *   <tr><td>act 激活</td><td>宽表 android_first_open；没有终端拆分，只在「全部」与 Android 有值</td></tr>
  * </table>
+ *
+ * <p>《推广分析 · 指标与 UDS 数据集字段映射》2026-11-05 标「需确认」的不取数（{@link #CALIBER_DIFF}）：落地页 PV / UV、下载点击、
+ * 激活（宽表 lp_install 是 APK 首次打开的设备数，不是人数）、复存率（分母未定）；注册转化率、UV 成本缺源。</p>
  *
  * <p>比率为百分数（12.3 = 12.3%），保留 2 位；分母为 0 或缺失返回 null。</p>
  *
@@ -34,11 +35,11 @@ import java.util.function.Predicate;
 public final class MarketValues
 {
     /** 可以从市场数据集取到的页面指标编码 */
-    public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "rdR", "depU", "depR", "dep",
-        "net", "arppu", "betU", "bet", "act");
+    public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "depU", "depR", "dep",
+        "net", "arppu", "betU", "bet");
 
-    /** 有字段但口径与页面不同（产品确认前不展示） */
-    public static final Set<String> CALIBER_DIFF = Set.of("lpPV", "lpUV", "dl", "regR", "uvCost");
+    /** 有字段但口径或前提待确认（产品确认前不展示） */
+    public static final Set<String> CALIBER_DIFF = Set.of("lpPV", "lpUV", "dl", "act", "rdR", "regR", "uvCost");
 
     /** 比率类（PCT） */
     public static final Set<String> PCT = Set.of("ftdR", "rdR", "depR");
@@ -131,12 +132,8 @@ public final class MarketValues
                 return cube.sum("bet_users", t, buckets);
             case "bet":
                 return cube.sum("bet_amount", t, buckets);
-            case "act":
-                return MarketCube.ALL.equals(t) || "android".equals(t) ? cube.sum("android_first_open", MarketCube.ALL, buckets) : null;
             case "ftdR":
                 return pct(cube.sum("ftd_players", t, buckets), cube.sum("reg", t, buckets));
-            case "rdR":
-                return pct(cube.sum("redeposit_users", t, buckets), cube.sum("ftd_players", t, buckets));
             case "depR":
                 return pct(cube.sum("deposit_users", t, buckets), cube.sum("reg", t, buckets));
             case "arppu":

@@ -142,6 +142,12 @@ public class SubscriptionService
         ai.put("models", models);
         ai.put("dailyLimit", copilot.getBrief().getDailyLimit());
         out.put("ai", ai);
+        // 运营总览截图：后端开了才显示开关；查询条件为空时按统计范围生成
+        Map<String, Object> snap = new LinkedHashMap<>();
+        snap.put("enabled", sender.snapshotAvailable());
+        snap.put("queryHint", "填運營總覽頁地址（或 ? 後面的部分），如 range=last-7-days&gran=day&cmp=previous-period；"
+            + "留空按統計範圍生成；可用 {from} {to}（統計區間首尾日期）");
+        out.put("snapshot", snap);
         return out;
     }
 
@@ -259,6 +265,8 @@ public class SubscriptionService
         String aiModel = copilot.effectiveModel(s.getAiModel());
         m.put("aiModelEffective", aiModel);
         m.put("aiModelLabel", copilot.label(aiModel));
+        m.put("snapshotEnabled", s.isSnapshotOn());
+        m.put("snapshotQuery", s.getSnapshotQuery());
         m.put("nextRunAt", s.isOn() && properties.isEnabled() && s.getSendHour() != null
             ? nextRun(sender.zone(s.getSiteCode()) == null ? null : LocalDateTime.now(sender.zone(s.getSiteCode())), s)
             : null);
@@ -325,6 +333,8 @@ public class SubscriptionService
         s.setEnabled(old.getEnabled());
         s.setAiEnabled(old.getAiEnabled());
         s.setAiModel(old.getAiModel());
+        s.setSnapshotEnabled(old.getSnapshotEnabled());
+        s.setSnapshotQuery(old.getSnapshotQuery());
         fill(s, body, errors, id);
         if (!errors.isEmpty())
         {
@@ -453,6 +463,25 @@ public class SubscriptionService
             s.setAiModel(model == null ? null : copilot.find(model) == null ? model : copilot.find(model).getId());
         }
 
+        // 运营总览截图：不传沿用原值（新增默认关闭）；查询条件可贴整条页面地址，只取 ? 后面的部分
+        if (body.containsKey("snapshotEnabled"))
+        {
+            Object sn = body.get("snapshotEnabled");
+            s.setSnapshotEnabled(sn instanceof Boolean ? (Boolean) sn : Boolean.parseBoolean(String.valueOf(sn).trim()));
+        }
+        if (body.containsKey("snapshotQuery"))
+        {
+            String q = com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService.normalizeQuery(str(body, "snapshotQuery"));
+            if (q == null)
+            {
+                errors.put("snapshotQuery", "截圖查詢條件格式不正確（填運營總覽頁地址或 ? 後面的部分，最多 500 字）");
+            }
+            else
+            {
+                s.setSnapshotQuery(q.isEmpty() ? null : q);
+            }
+        }
+
         Object enabled = body.get("enabled");
         if (enabled != null)
         {
@@ -534,6 +563,7 @@ public class SubscriptionService
         }
         SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(site), false);
         sender.addAi(s, brief, operator);
+        sender.addSnapshot(s, brief, false);
         Map<String, Object> out = brief.toPreview();
         out.put("card", brief.getCard());
         return out;
@@ -545,6 +575,7 @@ public class SubscriptionService
         DashboardSubscription s = require(id);
         SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(s.getSiteCode()), false);
         sender.addAi(s, brief, operator);
+        sender.addSnapshot(s, brief, true);
         return sender.deliver(s, brief, sender.receivers(s), SubscriptionSender.MANUAL, operator, null);
     }
 
@@ -558,6 +589,7 @@ public class SubscriptionService
         }
         SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(s.getSiteCode()), true);
         sender.addAi(s, brief, operator);
+        sender.addSnapshot(s, brief, true);
         List<SubscriptionReceiver> me = new ArrayList<>();
         me.add(new SubscriptionReceiver(SubscriptionReceiver.USER, String.valueOf(userId), email.trim()));
         return sender.deliver(s, brief, me, SubscriptionSender.TEST, operator, null);

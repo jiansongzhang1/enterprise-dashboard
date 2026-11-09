@@ -272,4 +272,14 @@ class LarkClientTest
             assertEquals(c[2], r.isChatGone(), "code " + code + " isChatGone");
         }
     }
+
+    @Test
+    void multipartImageHasTypeFieldAndFile()
+    {
+        byte[] img = { (byte) 0x89, 'P', 'N', 'G' };
+        String body = new String(LarkClient.multipartImage("B0", img, "a\"b.png"), java.nio.charset.StandardCharsets.ISO_8859_1);
+        org.junit.jupiter.api.Assertions.assertTrue(body.startsWith("--B0\r\nContent-Disposition: form-data; name=\"image_type\"\r\n\r\nmessage\r\n"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("name=\"image\"; filename=\"a_b.png\""));
+        org.junit.jupiter.api.Assertions.assertTrue(body.endsWith("\u0089PNG\r\n--B0--\r\n"));
+    }
 }

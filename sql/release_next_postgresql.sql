@@ -22,6 +22,8 @@
 --   ⑥ 2026-11-05  管理后台 · AI 助手                      按钮权限 copilot:chat:use（系统管理下，无新表；对话不落库，次数记在 copilot_usage_log）
 --   ⑦ 2026-11-09  个人自定义指标集（个人视图）一期        新表 dashboard_view_slot / _slot_item / _preset / dashboard_user_view；
 --                                                       推广分析 3 个配置位（核心指标卡、渠道表现表格列、行维度）的可选项、默认与预置组合
+--   ⑧ 2026-11-09  推广分析 · 概览指标补 UDS 取数对照        16 个 promo 指标的 source_table / source_field 与 remark 里的对照状态（无结构变化）
+--   ⑨ 2026-11-09  订阅简报 · 运营总览截图                 dashboard_subscription.snapshot_enabled / snapshot_query
 --
 -- 上线记录：
 --   （尚未上线）
@@ -640,5 +642,85 @@ SELECT to_regclass('dashboard_user_view') AS user_view_table;
 
 
 -- ----------------------------------------------------------------------------
--- 新的改动从这里往下追加（⑧ …）
+-- 新的改动从这里往下追加（⑧ 起，下一段 ⑨ …）
 -- ----------------------------------------------------------------------------
+
+-- ============================================================================
+-- ⑧ 2026-11-09 · 推广分析 · 16 个概览指标补 UDS 取数对照（《推广分析 · 指标与 UDS 数据集字段映射》2026-11-05 @Daniel）
+--   只改 dashboard_metric_card 里 promo 前缀的 16 行：
+--     source_table / source_field = UDS 数据集与字段（或算法）；remark 第二行写对照状态（可映射 / 需确认 / 缺源）与原因。
+--   不填 uds_hour_field 等四列：那是运营总览的线上配置对照，填了指标管理会显示「與配置不一致」。
+--   只更新还没填过上游表 / 字段的行（指标管理里手工改过的不覆盖），可重复执行。
+--   回滚：UPDATE dashboard_metric_card SET source_table = NULL, source_field = NULL WHERE metric_code LIKE 'promo%' AND status = '1';
+--         （remark 回滚为 ⑤ 的原文，见 ⑤ 的 INSERT）
+-- ============================================================================
+BEGIN;
+
+UPDATE dashboard_metric_card c
+   SET source_table = v.source_table,
+       source_field = v.source_field,
+       remark       = v.remark,
+       update_by    = 'admin',
+       update_time  = CURRENT_TIMESTAMP
+  FROM (VALUES
+    ('promoSpend',   'import_yata_promo_cost',            'cost_amount',
+     E'推广分析 spend：运营导入的消耗合计（全部数据），按 biz_date × 推广商 × 推广渠道，站点默认币种，次日导入\nUDS：可映射'),
+    ('promoBudget',  'import_yata_promo_budget',          'budget_amount',
+     E'推广分析 budget：运营导入的预算合计，按日（含今天）\nUDS：可映射'),
+    ('promoCpa',     'import_yata_promo_cost + dashboard_market_hour_v1', 'cost_amount ÷ reg（有效格子）',
+     E'推广分析 cpa：有效格子的消耗 ÷ 有效格子的注册人数\nUDS：缺源（行为指标没有推广渠道维度，算不出有效格子）'),
+    ('promoFtdCost', 'import_yata_promo_cost + dashboard_market_hour_v1', 'cost_amount ÷ ftd_players（有效格子）',
+     E'推广分析 ftdCost：有效格子的消耗 ÷ 有效格子的首存人数\nUDS：缺源（同 CPA）'),
+    ('promoNet',     'dashboard_market_hour_v1（精确）',  'deposit_amount',
+     E'推广分析 net：暂定＝存款總額（与运营总览的存提差 net 不同）\nUDS：需确认（淨充值最终定义待 BI 定稿；若改为扣提款则缺源）'),
+    ('promoRoi',     'import_yata_promo_cost + dashboard_market_hour_v1', 'deposit_amount ÷ cost_amount − 1（有效格子）',
+     E'推广分析 roi：有效格子的淨充值 ÷ 有效格子的消耗 − 1\nUDS：缺源（同 CPA）'),
+    ('promoLpUV',    'dashboard_market_hour_v1（宽表）',  'lp_uv',
+     E'推广分析 lpUV：落地页去重访问人数\nUDS：需确认（字段是 IP 在推荐码下的首次访问次数、不分终端；页面要按用户 ID / 匿名标识去重的人数）'),
+    ('promoHUV',     NULL,                                NULL,
+     E'推广分析 hUV：主页去重访问人数（含 Web 与 APP 内打开）\nUDS：缺源（字典 web_uv 为空）'),
+    ('promoDl',      'dashboard_market_hour_v1（宽表）',  'lp_download 或 lp_download_ok',
+     E'推广分析 dl：点击下载 APK 的次数\nUDS：需确认（没有按钮点击事件，用下载请求数 lp_download 还是下载完成数 lp_download_ok 待产品定）'),
+    ('promoAct',     'dashboard_market_hour_v1（宽表）',  'lp_install',
+     E'推广分析 act：Android 安装后首次启动的人数\nUDS：需确认（字段是商户＋推荐码＋设备的 APK 首次打开数，是设备数不是人数；与 android_first_open 同源，不可相加）'),
+    ('promoReg',     'dashboard_market_hour_v1（宽表）',  'reg；分终端 web_ / android_ / ios_ / unknown_ 前缀',
+     E'推广分析 reg：按注册时的推广渠道与终端归属\nUDS：可映射（按推广商 / 推广渠道拆分缺源）'),
+    ('promoRegR',    'dashboard_market_hour_v1（宽表）',  'reg ÷ 入口 UV（lp_uv；主页 UV 缺源）',
+     E'推广分析 regR：注册人数 ÷ 入口 UV（按渠道入口类型取 UV-落地頁或 UV-主頁）\nUDS：缺源（主站入口缺 UV-主頁；落地页入口的 lp_uv 口径需确认）'),
+    ('promoFtd',     'dashboard_market_hour_v1（宽表）',  'ftd_players；分终端加前缀',
+     E'推广分析 ftd：按注册终端，按到账时间 bill_date\nUDS：可映射'),
+    ('promoFtdR',    'dashboard_market_hour_v1（宽表）',  'ftd_players ÷ reg',
+     E'推广分析 ftdR：首存人数 ÷ 注册人数（同一条查询）\nUDS：可映射'),
+    ('promoFtdAmt',  'dashboard_market_hour_v1（宽表）',  'ftd_amount',
+     E'推广分析 ftdAmt：首存金额，商户默认币种\nUDS：可映射'),
+    ('promoRd',      'dashboard_market_hour_v1（精确）',  'Σ日 redeposit_users',
+     E'推广分析 rd：首存后再次存款；多天按日累加\nUDS：可映射（不用宽表 redeposit_players：它要求六个代码维度全部固定）')
+  ) AS v(metric_code, source_table, source_field, remark)
+ WHERE c.metric_code = v.metric_code
+   AND c.source_table IS NULL AND c.source_field IS NULL;
+
+COMMIT;
+
+-- ⑧ 自检：16 行；除 promoHUV 外都有上游表
+SELECT metric_code, source_table, source_field, split_part(remark, E'\n', 2) AS uds_status
+  FROM dashboard_metric_card WHERE metric_code LIKE 'promo%' ORDER BY sort_no;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑨ 2026-11-09 · 订阅简报 · 运营总览截图（新 JAR 启动前执行）
+--   卡片带运营总览截图：snapshot_enabled（默认关）、snapshot_query（页面地址 ? 后面的查询条件，为空按统计范围生成）。
+--   截图帐号、页面地址等在 application.yml 的 dashboard.subscription.snapshot。
+--   回滚：ALTER TABLE dashboard_subscription DROP COLUMN IF EXISTS snapshot_query, DROP COLUMN IF EXISTS snapshot_enabled;
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_query   VARCHAR(500);
+COMMENT ON COLUMN dashboard_subscription.snapshot_enabled IS '卡片带运营总览截图（后端无头浏览器截图后上传 Lark）；截图失败照常发送';
+COMMENT ON COLUMN dashboard_subscription.snapshot_query   IS '截图的查询条件（运营总览页地址 ? 后面的部分，可用 {from} {to} {site}）；为空按统计范围生成';
+
+COMMIT;
+
+-- ⑨ 自检：应返回 snapshot_enabled、snapshot_query 两行
+SELECT column_name, data_type FROM information_schema.columns
+ WHERE table_name = 'dashboard_subscription' AND column_name IN ('snapshot_enabled', 'snapshot_query');

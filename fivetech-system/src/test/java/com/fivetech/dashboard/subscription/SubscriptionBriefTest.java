@@ -189,6 +189,36 @@ class SubscriptionBriefTest
 
     @Test
     @SuppressWarnings("unchecked")
+    void snapshotImageGoesBeforeFooterAndFailureOnlyShowsNote()
+    {
+        OverviewVO vo = vo(Granularity.HOUR, "2026-10-31 00:00", "2026-11-01 00:00", "2026-10-30 00:00", "2026-10-31 00:00",
+            card("reg", "註冊人數", "INT", "1200", "10", null, "up"));
+        SubscriptionBrief b = SubscriptionBrief.build(vo, List.of("reg"), ctx(false, ""));
+        b.applySnapshot("img_v3_abc", null, "https://x/zh-TW/overview?range=today", null);
+        List<Map<String, Object>> el = (List<Map<String, Object>>) b.getCard().get("elements");
+        Map<String, Object> img = el.stream().filter(e -> "img".equals(e.get("tag"))).findFirst().orElseThrow();
+        assertEquals("img_v3_abc", img.get("img_key"));
+        assertEquals("fit_horizontal", img.get("mode"));
+        // 图在底注前面
+        int imgAt = el.indexOf(img);
+        assertTrue(el.get(el.size() - 1).toString().contains("資料截至") && imgAt < el.size() - 1);
+        Map<String, Object> preview = b.toPreview();
+        assertEquals(null, ((Map<String, Object>) preview.get("snapshot")).get("error"));
+
+        b.applySnapshot(null, null, "https://x/zh-TW/overview", "等待頁面超時");
+        String all = b.getCard().get("elements").toString();
+        assertFalse(all.contains("img_key"));
+        assertTrue(all.contains("運營總覽截圖生成失敗"));
+        // 原因只在预览里，不进卡片
+        assertFalse(all.contains("等待頁面超時"));
+        assertEquals("等待頁面超時", ((Map<String, Object>) b.toPreview().get("snapshot")).get("error"));
+
+        b.applySnapshot(null, new byte[] { 1, 2, 3 }, "u", null);
+        assertEquals("data:image/png;base64,AQID", ((Map<String, Object>) b.toPreview().get("snapshot")).get("image"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void testCardIsGreyAndNoButtonWithoutUrl()
     {
         MetricCardVO active = card("active", "活躍人數", "INT", null, null, null, "up");

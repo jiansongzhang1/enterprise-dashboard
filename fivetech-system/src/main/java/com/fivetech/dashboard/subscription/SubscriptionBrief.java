@@ -88,6 +88,21 @@ public final class SubscriptionBrief
     /** 统计周期 [from, to)（站点时区）；查告警事件用 */
     private java.time.LocalDateTime windowFrom;
 
+    /** 订阅要求带截图 */
+    private boolean snapshotRequested;
+
+    /** 已上传到 Lark 的截图 */
+    private String snapshotKey;
+
+    /** 截图本身（预览时以 data URL 返回，不上传） */
+    private byte[] snapshotPng;
+
+    /** 截图失败的原因（卡片里只写「截圖生成失敗」，原因在预览和日志里） */
+    private String snapshotError;
+
+    /** 截的页面地址（不含令牌） */
+    private String snapshotUrl;
+
     private java.time.LocalDateTime windowTo;
 
     /** 每个指标的变化（判断明显波动用），顺序同 rows */
@@ -239,6 +254,27 @@ public final class SubscriptionBrief
         this.card = card(this, overviewUrl);
     }
 
+    /**
+     * 加上运营总览截图后重新生成卡片。
+     *
+     * @param imageKey Lark 的 image_key；null 表示没有（预览不上传、或失败）
+     * @param png      截图（预览用），可为 null
+     * @param error    失败原因；null 表示成功
+     */
+    public void applySnapshot(String imageKey, byte[] png, String url, String error)
+    {
+        this.snapshotRequested = true;
+        this.snapshotKey = imageKey;
+        this.snapshotPng = png;
+        this.snapshotUrl = url;
+        this.snapshotError = error;
+        this.card = card(this, overviewUrl);
+    }
+
+    public String getSnapshotKey() { return snapshotKey; }
+
+    public String getSnapshotError() { return snapshotError; }
+
     private static java.time.LocalDateTime parseSlot(String text)
     {
         try
@@ -347,6 +383,30 @@ public final class SubscriptionBrief
         if (!buf.isEmpty())
         {
             elements.add(fields(buf));
+        }
+        if (b.snapshotKey != null)
+        {
+            Map<String, Object> alt = new LinkedHashMap<>();
+            alt.put("tag", "plain_text");
+            alt.put("content", "運營總覽截圖");
+            Map<String, Object> img = new LinkedHashMap<>();
+            img.put("tag", "img");
+            img.put("img_key", b.snapshotKey);
+            img.put("alt", alt);
+            img.put("mode", "fit_horizontal");
+            img.put("preview", true);
+            elements.add(Map.of("tag", "hr"));
+            elements.add(img);
+        }
+        else if (b.snapshotRequested && b.snapshotError != null)
+        {
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("tag", "plain_text");
+            t.put("content", "運營總覽截圖生成失敗，請在 Yata 中查看");
+            Map<String, Object> n = new LinkedHashMap<>();
+            n.put("tag", "note");
+            n.put("elements", List.of(t));
+            elements.add(n);
         }
         Map<String, Object> noteText = new LinkedHashMap<>();
         noteText.put("tag", "plain_text");
@@ -628,6 +688,14 @@ public final class SubscriptionBrief
             an.put("analysis", anomaly);
             an.put("note", anomalyNote);
             m.put("anomaly", an);
+        }
+        if (snapshotRequested)
+        {
+            Map<String, Object> sn = new LinkedHashMap<>();
+            sn.put("image", snapshotPng == null ? null : "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(snapshotPng));
+            sn.put("url", snapshotUrl);
+            sn.put("error", snapshotError);
+            m.put("snapshot", sn);
         }
         return m;
     }

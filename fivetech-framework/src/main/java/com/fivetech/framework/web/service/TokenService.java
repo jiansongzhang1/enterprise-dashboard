@@ -136,6 +136,41 @@ public class TokenService
         return createToken(claims);
     }
 
+    /** 后台任务签发的临时令牌：浏览器一栏以它开头（不续期、不进在线用户） */
+    public static final String TEMPORARY_BROWSER_PREFIX = "後台任務：";
+
+    /**
+     * 签发后台任务用的临时令牌（订阅截图等）：不读当前请求、不记在线用户、不续期，ttlSeconds 后自动失效；
+     * 用完调用 {@link #delLoginUser(String)}（传 {@link LoginUser#getToken()}）立即作废。
+     *
+     * @param purpose 用途，显示在登录信息的浏览器一栏（如「訂閱截圖」）
+     * @return JWT（请求头 Authorization: Bearer 用的值）
+     */
+    public String createTemporaryToken(LoginUser loginUser, int ttlSeconds, String purpose)
+    {
+        int ttl = Math.max(30, ttlSeconds);
+        String uuid = IdUtils.fastUUID();
+        long now = System.currentTimeMillis();
+        loginUser.setToken(uuid);
+        loginUser.setIpaddr("127.0.0.1");
+        loginUser.setLoginLocation("內網IP");
+        loginUser.setBrowser(TEMPORARY_BROWSER_PREFIX + (purpose == null ? "" : purpose));
+        loginUser.setOs("Server");
+        loginUser.setLoginTime(now);
+        loginUser.setExpireTime(now + ttl * MILLIS_SECOND);
+        redisCache.setCacheObject(getTokenKey(uuid), loginUser, ttl, TimeUnit.SECONDS);
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(Constants.LOGIN_USER_KEY, uuid);
+        claims.put(Constants.JWT_USERNAME, loginUser.getUsername());
+        return createToken(claims);
+    }
+
+    /** 是不是 {@link #createTemporaryToken} 签发的临时令牌 */
+    public static boolean isTemporary(LoginUser loginUser)
+    {
+        return loginUser != null && loginUser.getBrowser() != null && loginUser.getBrowser().startsWith(TEMPORARY_BROWSER_PREFIX);
+    }
+
     /**
      * 验证令牌有效期：距上次续期超过 1 分钟就自动续期（滑动过期）
      * 
@@ -144,6 +179,11 @@ public class TokenService
      */
     public void verifyToken(LoginUser loginUser)
     {
+        // 临时令牌到期即失效，不滑动续期
+        if (isTemporary(loginUser))
+        {
+            return;
+        }
         long currentTime = System.currentTimeMillis();
         if (currentTime - loginUser.getLoginTime() >= REFRESH_INTERVAL)
         {
@@ -169,7 +209,7 @@ public class TokenService
     /** 刷新在线会话心跳。 */
     public void refreshOnlineSession(LoginUser loginUser)
     {
-        if (loginUser == null || StringUtils.isEmpty(loginUser.getToken()))
+        if (loginUser == null || StringUtils.isEmpty(loginUser.getToken()) || isTemporary(loginUser))
         {
             return;
         }

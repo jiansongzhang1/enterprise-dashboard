@@ -172,6 +172,62 @@ public class SubscriptionSender
         }
     }
 
+    /** 订阅截图（可选；没有这个 bean 时不截） */
+    private com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService snapshots;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSnapshots(com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService snapshots)
+    {
+        this.snapshots = snapshots;
+    }
+
+    /** 后端是否开了截图（管理后台据此显示「帶運營總覽截圖」开关） */
+    public boolean snapshotAvailable()
+    {
+        return snapshots != null && snapshots.isEnabled();
+    }
+
+    /**
+     * 订阅开了截图时截运营总览页放进卡片；任何失败都不影响发送（卡片写「截圖生成失敗」，原因记日志、预览里显示）。
+     *
+     * @param upload true：上传 Lark 拿 image_key（发送）；false：只截图，预览里以图片返回
+     */
+    public void addSnapshot(DashboardSubscription s, SubscriptionBrief brief, boolean upload)
+    {
+        if (!s.isSnapshotOn() || brief == null)
+        {
+            return;
+        }
+        if (snapshots == null || !snapshots.isEnabled())
+        {
+            brief.applySnapshot(null, null, null, "截圖功能未開啟（dashboard.subscription.snapshot.enabled）");
+            return;
+        }
+        String site = dashboard.canonical(s.getSiteCode());
+        com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService.Result r =
+            snapshots.capture(s, site, brief.getWindowFrom(), brief.getWindowTo());
+        if (!r.isOk())
+        {
+            log.warn("[subscription] 订阅 {} 截图失败，本次不带截图：{}", s.getId(), r.getError());
+            brief.applySnapshot(null, null, r.getUrl(), r.getError());
+            return;
+        }
+        if (!upload)
+        {
+            brief.applySnapshot(null, r.getPng(), r.getUrl(), null);
+            return;
+        }
+        try
+        {
+            brief.applySnapshot(snapshots.upload(r.getPng()), null, r.getUrl(), null);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[subscription] 订阅 {} 截图上传失败，本次不带截图：{}", s.getId(), e.getMessage());
+            brief.applySnapshot(null, null, r.getUrl(), e.getMessage());
+        }
+    }
+
     /** 取数失败、没有可输出的指标等：不发送，调用方决定重试还是报错 */
     public static class PrepareException extends RuntimeException
     {

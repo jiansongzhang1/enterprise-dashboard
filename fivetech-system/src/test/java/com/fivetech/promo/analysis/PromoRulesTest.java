@@ -347,9 +347,11 @@ class PromoRulesTest
         meta.put(PromoAnalysisService.LOST, new String[] { "流失", "流失說明" });
         List<Map<String, Object>> steps = PromoAnalysisService.steps(defs, cube, "android", meta);
         assertEquals("NO_SOURCE", steps.get(0).get("state"));
-        assertNull(steps.get(2).get("rate"));                       // 非严格步
-        assertEquals(new BigDecimal("40.00"), steps.get(3).get("rate")); // 20 ÷ 激活 50（跳过没有来源的步骤）
-        assertEquals("act", steps.get(3).get("rateFrom"));
+        // 激活口径待确认：不取数，注册前面没有可用的步骤，注册没有转化率
+        assertEquals("NO_SOURCE", steps.get(2).get("state"));
+        assertEquals("口徑待確認（數據平台字段與頁面口徑不同），暫不展示", steps.get(2).get("note"));
+        assertNull(steps.get(3).get("rate"));
+        assertNull(steps.get(3).get("rateFrom"));
         assertEquals(new BigDecimal("25.00"), steps.get(4).get("rate")); // 5 ÷ 20
         assertEquals("註冊人數", steps.get(3).get("name"));
         assertEquals("註冊說明", steps.get(3).get("description"));

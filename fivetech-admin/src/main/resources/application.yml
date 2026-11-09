@@ -165,6 +165,35 @@ dashboard:
     # 卡片「在 Yata 中查看」的地址（运营总览页）；为空不显示按钮
     overview-url: ${DASHBOARD_SUBSCRIPTION_OVERVIEW_URL:}
     max-receivers: ${DASHBOARD_SUBSCRIPTION_MAX_RECEIVERS:20}
+    # 运营总览截图：后端用本机无头 Chrome 打开运营总览页（订阅的站点 + 查询条件）截图，上传 Lark 放进订阅卡片；
+    # 失败时照常发文字卡片。需要安装 google-chrome 与中文字体（fonts-noto-cjk），并执行 sql/release_next_postgresql.sql ⑨
+    snapshot:
+      enabled: ${DASHBOARD_SNAPSHOT_ENABLED:false}
+      chromium-path: ${DASHBOARD_SNAPSHOT_CHROME:/usr/bin/google-chrome}
+      # 服务以 root 运行时 Chrome 要加 --no-sandbox（多个参数用逗号分隔）
+      chromium-args: ${DASHBOARD_SNAPSHOT_CHROME_ARGS:}
+      # 截图帐号：后端每次给它签发几分钟有效的临时令牌，截完立即作废（不配密码）；建议用只读的专用帐号
+      username: ${DASHBOARD_SNAPSHOT_USER:}
+      token-ttl-seconds: 180
+      # 运营总览页地址（不带 ? 后面的查询条件），如 https://d3ajrxvlugsarb.cloudfront.net/zh-TW/overview
+      page-url: ${DASHBOARD_SNAPSHOT_PAGE_URL:}
+      # 前端存登录令牌的位置：cookie 名、或 localStorage 键（看浏览器开发者工具 › Application）
+      token-cookie: ${DASHBOARD_SNAPSHOT_TOKEN_COOKIE:Admin-Token}
+      token-local-storage-key: ${DASHBOARD_SNAPSHOT_TOKEN_LS_KEY:}
+      # 额外写进 localStorage 的键值（如前端记住的当前站点），值里可用 {site} {token}
+      # local-storage:
+      #   currentSite: "{site}"
+      width: 1280
+      height: 900
+      max-height: 6000
+      scale: 1.5
+      # 只截某个区域 / 就绪元素 / 截图前隐藏的元素（CSS 选择器，按前端页面结构填）
+      capture-selector: ${DASHBOARD_SNAPSHOT_CAPTURE_SELECTOR:}
+      ready-selector: ${DASHBOARD_SNAPSHOT_READY_SELECTOR:}
+      hide-selector: ${DASHBOARD_SNAPSHOT_HIDE_SELECTOR:}
+      timeout-seconds: 45
+      queue-seconds: 120
+      restart-after: 50
   # 站点显示名，导出文件「導出說明」里写作「{site-name} · {站点编码}」
   site-name: ${DASHBOARD_SITE_NAME:uWin}
   # 默认站点之外的其他站点（多站点一期）。前端在请求头 X-Site-Code 里带站点编码，不带 = 默认站点；

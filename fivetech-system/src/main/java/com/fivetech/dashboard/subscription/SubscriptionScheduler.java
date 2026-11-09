@@ -101,6 +101,7 @@ public class SubscriptionScheduler
         }
         // 抢到发送权之后才调 AI：多实例时只调一次
         sender.addAi(s, brief, "system");
+        sender.addSnapshot(s, brief, true);
         sender.deliver(s, brief, sender.receivers(s), SubscriptionSender.SCHEDULE, "system", slotText);
     }
 

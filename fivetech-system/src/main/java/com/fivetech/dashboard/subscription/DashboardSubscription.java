@@ -43,6 +43,12 @@ public class DashboardSubscription implements Serializable
     /** AI 模型 id；为空用 copilot.default-model */
     private String aiModel;
 
+    /** 卡片带运营总览截图 */
+    private Boolean snapshotEnabled;
+
+    /** 截图的查询条件（运营总览页地址 ? 后面的部分，可用 {from} {to} {site}）；为空按统计范围生成 */
+    private String snapshotQuery;
+
     private String lastSlot;
 
     private LocalDateTime lastRunAt;
@@ -102,6 +108,11 @@ public class DashboardSubscription implements Serializable
     public boolean isAiOn() { return Boolean.TRUE.equals(aiEnabled); }
     public String getAiModel() { return aiModel; }
     public void setAiModel(String aiModel) { this.aiModel = aiModel; }
+    public Boolean getSnapshotEnabled() { return snapshotEnabled; }
+    public void setSnapshotEnabled(Boolean snapshotEnabled) { this.snapshotEnabled = snapshotEnabled; }
+    public boolean isSnapshotOn() { return Boolean.TRUE.equals(snapshotEnabled); }
+    public String getSnapshotQuery() { return snapshotQuery; }
+    public void setSnapshotQuery(String snapshotQuery) { this.snapshotQuery = snapshotQuery; }
 
     public String getLastSlot() { return lastSlot; }
 

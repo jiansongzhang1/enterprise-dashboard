@@ -97,7 +97,8 @@ class MarketGatewayTest
         assertEquals("dashboard_market_hour_v1", wide.get("dataset"));
         assertEquals(List.of("uds_hh"), wide.get("dimensions"));
         assertTrue(((List<?>) wide.get("metrics")).contains("web_reg"));
-        assertTrue(((List<?>) wide.get("metrics")).contains("android_first_open"));
+        // 激活口径待确认（字段映射 2026-11-05：lp_install 是设备数），不再取 android_first_open
+        assertTrue(!((List<?>) wide.get("metrics")).contains("android_first_open"));
         assertTrue(!((List<?>) wide.get("metrics")).contains("deposit_users"));
         assertEquals(List.of("uds_hh", "terminal"), precise.get("dimensions"));
         @SuppressWarnings("unchecked")
@@ -152,8 +153,10 @@ class MarketGatewayTest
         assertEquals(new BigDecimal("4500.25"), MarketValues.value("net", cube, MarketCube.ALL, null));
         assertEquals(new BigDecimal("16.67"), MarketValues.value("ftdR", cube, MarketCube.ALL, null));   // 25 / 150
         assertEquals(new BigDecimal("75.00"), MarketValues.value("arppu", cube, MarketCube.ALL, null));  // 4500.25 / 60
-        assertEquals(new BigDecimal("50"), MarketValues.value("act", cube, "android", null));
-        assertNull(MarketValues.value("act", cube, "web", null));
+        // 需确认的指标不取数：激活（设备数不是人数）、复存率（分母未定）
+        assertNull(MarketValues.value("act", cube, "android", null));
+        assertNull(MarketValues.value("rdR", cube, MarketCube.ALL, null));
+        assertTrue(MarketValues.CALIBER_DIFF.containsAll(java.util.Set.of("act", "rdR")));
         assertNull(MarketValues.value("lpUV", cube, MarketCube.ALL, null));
         // 按日期过滤
         assertEquals(new BigDecimal("50"), MarketValues.value("reg", cube, MarketCube.ALL,
