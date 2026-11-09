@@ -212,6 +212,11 @@ dashboard:
       # 触发 UDS 限流（HTTP 429 / code=4290）时按 retryAfterMillis 等待后重试的次数与单次最长等待
       rate-limit-retries: ${UDS_RATE_LIMIT_RETRIES:3}
       rate-limit-max-wait-millis: ${UDS_RATE_LIMIT_MAX_WAIT_MILLIS:2000}
+      # 全量日志：每次请求记 INFO（请求体、HTTP 状态、耗时、原始响应），失败时也打印原始响应。只在测试环境设 UDS_LOG_FULL=true；
+      # 生产保持 false：只记失败的请求（WARN，带请求体与前 500 字符响应）。
+      # log-response-limit：全量日志里响应体的最长字符数，0 = 不截断（原始响应）；大响应刷屏时再设一个上限
+      log-full: ${UDS_LOG_FULL:false}
+      log-response-limit: ${UDS_LOG_RESPONSE_LIMIT:0}
       tls:
         ca-cert: ${UDS_TLS_CA_CERT:}
         client-cert: ${UDS_TLS_CLIENT_CERT:}

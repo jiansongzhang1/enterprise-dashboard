@@ -324,6 +324,15 @@ public class UdsProperties
     /** 限流重试单次最长等待（毫秒），防止平台给出很长的 retryAfter 时把请求拖到网关超时 */
     private long rateLimitMaxWaitMillis = 2000;
 
+    /**
+     * 全量日志开关：打开后每次请求都记 INFO（请求体、HTTP 状态、耗时、响应摘要）。
+     * 只在测试环境打开（UDS_LOG_FULL=true）；生产保持 false，只记失败（WARN，带请求体与响应）。
+     */
+    private boolean logFull = false;
+
+    /** 全量日志里响应体的最长字符数；0（默认）= 不截断，原样打印 UDS 返回的原始响应，便于排查 */
+    private int logResponseLimit = 0;
+
     /** HTTPS / 双向 TLS 证书配置；base-url 为 https 且平台使用私有 CA 或要求客户端证书时必须配置 */
     private Tls tls = new Tls();
 
@@ -1250,6 +1259,26 @@ public class UdsProperties
     public void setRateLimitMaxWaitMillis(long rateLimitMaxWaitMillis)
     {
         this.rateLimitMaxWaitMillis = rateLimitMaxWaitMillis;
+    }
+
+    public boolean isLogFull()
+    {
+        return logFull;
+    }
+
+    public void setLogFull(boolean logFull)
+    {
+        this.logFull = logFull;
+    }
+
+    public int getLogResponseLimit()
+    {
+        return logResponseLimit;
+    }
+
+    public void setLogResponseLimit(int logResponseLimit)
+    {
+        this.logResponseLimit = logResponseLimit;
     }
 
     /**

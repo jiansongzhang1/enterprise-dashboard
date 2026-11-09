@@ -527,9 +527,14 @@ public class UdsClient
     private String send(HttpRequest.Builder builder, String body)
     {
         HttpRequest request = withHeaders(builder).build();
-        // 每次调用的请求体记 DEBUG：平时不进日志文件，排查时把
-        // com.fivetech.dashboard.gateway.uds 调成 debug 即可看到发给 UDS 的完整参数
-        if (log.isDebugEnabled())
+        // 请求体：全量日志开关（dashboard.gateway.uds.log-full，只在测试环境打开）时每次记 INFO；
+        // 否则记 DEBUG（平时不进日志文件，排查时把 com.fivetech.dashboard.gateway.uds 调成 debug 也能看到）
+        if (properties.isLogFull())
+        {
+            log.info("[uds] -> {} {} requestId={} body={}", request.method(), request.uri().getPath(),
+                requestId(request), body == null ? "-" : abbreviate(body, BODY_LOG_LIMIT));
+        }
+        else if (log.isDebugEnabled())
         {
             log.debug("[uds] {} {} requestId={} body={}", request.method(), request.uri().getPath(),
                 requestId(request), body == null ? "-" : abbreviate(body, BODY_LOG_LIMIT));
@@ -598,8 +603,10 @@ public class UdsClient
     private void logFailedRequest(HttpRequest request, String body, int http, int udsCode, String responseBody)
     {
         String text = "[uds] 请求失败 {} {} requestId={} http={} udsCode={} response={} body={}";
+        // 全量日志（测试环境排查）时打印原始响应，否则只留前 500 字符
         Object[] args = { request.method(), request.uri().getPath(), requestId(request), http, udsCode,
-            abbreviate(responseBody, 500), body == null ? "-" : abbreviate(body, BODY_LOG_LIMIT) };
+            properties.isLogFull() ? rawResponse(responseBody) : abbreviate(responseBody, 500),
+            body == null ? "-" : abbreviate(body, BODY_LOG_LIMIT) };
         if (udsCode == UdsQueryException.CODE_NO_READY_BINDING)
         {
             log.info(text, args);
@@ -640,7 +647,16 @@ public class UdsClient
                 });
                 throw ex;
             }
-            log.debug("[uds] {} {}ms", request.uri().getPath(), cost);
+            if (properties.isLogFull())
+            {
+                // 全量日志（测试环境）：成功的响应也记下来，默认原样打印原始响应（log-response-limit > 0 时截断）
+                log.info("[uds] <- {} {} requestId={} http={} 耗时 {}ms response={}", request.method(),
+                    request.uri().getPath(), requestId(request), response.statusCode(), cost, rawResponse(response.body()));
+            }
+            else
+            {
+                log.debug("[uds] {} {}ms", request.uri().getPath(), cost);
+            }
             return response.body();
         }
         catch (InterruptedException e)
@@ -743,6 +759,13 @@ public class UdsClient
             return "";
         }
         return text.length() <= max ? text : text.substring(0, max) + "...(共 " + text.length() + " 字符，已截断)";
+    }
+
+    /** 全量日志里的响应体：log-response-limit ≤ 0 时原样返回（原始响应），否则截断到该长度 */
+    private String rawResponse(String text)
+    {
+        int limit = properties.getLogResponseLimit();
+        return limit <= 0 ? (text == null ? "" : text) : abbreviate(text, limit);
     }
 
     private String abbreviate(String text)
