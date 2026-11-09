@@ -92,6 +92,23 @@ public class SubscriptionSender
     /** AI 摘要（没有 copilot 配置的环境、单测里为 null：不加摘要） */
     private SubscriptionAiAnalyst aiAnalyst;
 
+    /** 数据异动分析与它要用的告警事件（单测里为 null：不加） */
+    private SubscriptionAnomalyAnalyst anomalyAnalyst;
+
+    private com.fivetech.monitor.service.IMonitorEventService monitorEvents;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAnomalyAnalyst(SubscriptionAnomalyAnalyst anomalyAnalyst)
+    {
+        this.anomalyAnalyst = anomalyAnalyst;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setMonitorEvents(com.fivetech.monitor.service.IMonitorEventService monitorEvents)
+    {
+        this.monitorEvents = monitorEvents;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setAiAnalyst(SubscriptionAiAnalyst aiAnalyst)
     {
@@ -116,6 +133,42 @@ public class SubscriptionSender
         {
             log.error("[subscription] AI 摘要生成异常 id={}，本次不带摘要", s.getId(), e);
             brief.applyAi(null, s.getAiModel(), s.getAiModel(), "AI 摘要生成失敗");
+        }
+        addAnomaly(s, brief, operator);
+    }
+
+    /**
+     * 数据异动分析：读统计周期内本站的告警事件（失败时只按指标波动判断），交给 {@link SubscriptionAnomalyAnalyst}；
+     * 任何失败都不影响发送。
+     */
+    void addAnomaly(DashboardSubscription s, SubscriptionBrief brief, String operator)
+    {
+        if (anomalyAnalyst == null)
+        {
+            return;
+        }
+        List<com.fivetech.monitor.domain.vo.MonitorEventVO> events = null;
+        if (monitorEvents != null && brief.getWindowFrom() != null && brief.getWindowTo() != null)
+        {
+            try
+            {
+                String site = dashboard.canonical(s.getSiteCode());
+                events = monitorEvents.eventsInWindow(new com.fivetech.monitor.domain.MonitorScope(site, null),
+                    brief.getWindowFrom(), brief.getWindowTo(), anomalyAnalyst.getProperties().getAnomaly().getMaxEvents());
+            }
+            catch (RuntimeException e)
+            {
+                log.warn("[subscription] 读取告警事件失败 id={}，异动分析只看指标波动：{}", s.getId(), e.getMessage());
+            }
+        }
+        try
+        {
+            anomalyAnalyst.apply(s, brief, events, operator == null ? "system" : operator);
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[subscription] 数据异动分析生成异常 id={}，本次不带", s.getId(), e);
+            brief.applyAnomaly(null, s.getAiModel(), "數據異動分析生成失敗");
         }
     }
 

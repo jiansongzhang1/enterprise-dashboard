@@ -14,4 +14,7 @@ public interface CopilotUsageMapper
 
     /** 某功能今天（数据库日期）已调用模型的次数（成功、失败、被拒都算，因为都消耗了调用） */
     int countToday(@Param("feature") String feature);
+
+    /** 某人今天某功能的调用次数（按数据库日期） */
+    int countTodayByOperator(@Param("feature") String feature, @Param("operator") String operator);
 }

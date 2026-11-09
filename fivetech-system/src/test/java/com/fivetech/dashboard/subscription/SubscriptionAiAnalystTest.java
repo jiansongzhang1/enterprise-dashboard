@@ -60,6 +60,12 @@ class SubscriptionAiAnalystTest
         {
             return today;
         }
+
+        @Override
+        public int countTodayByOperator(String feature, String operator)
+        {
+            return today;
+        }
     }
 
     private static CopilotProperties props()

@@ -74,6 +74,18 @@ final class ChannelTree
 
     private final LocalDate yesterday;
 
+    /** 按日的市场数据（全站、按终端）；null = 没取（渠道筛选无法应用、或关闭了市场数据） */
+    private com.fivetech.promo.analysis.market.MarketCube cube;
+
+    /** 选了推广商 / 推广渠道：渠道映射还没有，数值都取不到 */
+    private boolean channelPending;
+
+    void setData(com.fivetech.promo.analysis.market.MarketCube cube, boolean channelPending)
+    {
+        this.cube = cube;
+        this.channelPending = channelPending;
+    }
+
     private ChannelTree(List<String> dims, PromoScope scope, PromoTerminalDictionary.Config terminals, PromoTime.Range range,
         LocalDate yesterday)
     {
@@ -218,19 +230,29 @@ final class ChannelTree
     }
 
     /**
-     * 一行（或合计行）的单元格：数据接入前 value 为 null。
-     * 路径上有终端或推广关系时依赖消耗的列为 NA；批次列带 matured，全部未到期为 PENDING。
+     * 一行（或合计行）的单元格。
+     * <ul>
+     *   <li>路径上有终端或推广关系时依赖消耗的列为 NA；激活在 Android 以外的终端为 NA；</li>
+     *   <li>批次列带 matured，全部未到期为 PENDING；</li>
+     *   <li>每格带 format（INT / MONEY / PCT，同首页 valueFormat）与 drillable；</li>
+     *   <li>市场数据集能取到的列（{@link com.fivetech.promo.analysis.market.MarketValues#AVAILABLE}）在路径只含日期、终端时有值；
+     *       路径上有推广商、推广渠道、推广关系，或选了渠道筛选时为 NO_SOURCE（渠道映射待接入）；其余列 NO_SOURCE。</li>
+     * </ul>
      */
     Map<String, Object> cells(List<PromoMetricCatalog.Column> columns, List<PathItem> path)
     {
-        boolean byTerminal = keyOf(path, TERMINAL) != null;
+        String terminal = keyOf(path, TERMINAL);
+        boolean byTerminal = terminal != null;
         boolean byRelation = keyOf(path, RELATION) != null;
+        boolean byChannel = keyOf(path, AGENT) != null || keyOf(path, CHANNEL) != null || byRelation;
         String day = keyOf(path, DATE);
+        LocalDate dayValue = day == null ? null : LocalDate.parse(day);
+        String terminalKey = com.fivetech.promo.analysis.market.MarketValues.terminalKey(terminal);
         Map<String, Object> cells = new LinkedHashMap<>();
         for (PromoMetricCatalog.Column col : columns)
         {
             Map<String, Object> v = new LinkedHashMap<>();
-            v.put("value", null);
+            Object value = null;
             String state = "OK";
             String note = null;
             if (col.isSpendBased() && (byTerminal || byRelation))
@@ -238,12 +260,17 @@ final class ChannelTree
                 state = "NA";
                 note = byTerminal ? "消耗不按終端拆分" : "消耗不按推廣關係拆分";
             }
+            else if ("act".equals(col.getCode()) && byTerminal && !"android".equals(terminalKey))
+            {
+                state = "NA";
+                note = "只有 Android 有值";
+            }
             Map<String, Object> matured = null;
             if (col.isCohort())
             {
                 int n = COHORT_DAYS.get(col.getCode());
-                LocalDate from = day == null ? range.firstDay() : LocalDate.parse(day);
-                LocalDate to = day == null ? range.lastDay() : LocalDate.parse(day);
+                LocalDate from = day == null ? range.firstDay() : dayValue;
+                LocalDate to = day == null ? range.lastDay() : dayValue;
                 int total = 0;
                 int done = 0;
                 for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
@@ -262,9 +289,33 @@ final class ChannelTree
                     state = "PENDING";
                 }
             }
+            if ("OK".equals(state))
+            {
+                boolean available = com.fivetech.promo.analysis.market.MarketValues.AVAILABLE.contains(col.getCode());
+                if (byChannel || channelPending)
+                {
+                    state = "NO_SOURCE";
+                    note = "推廣渠道映射待接入";
+                }
+                else if (!available)
+                {
+                    state = "NO_SOURCE";
+                    note = com.fivetech.promo.analysis.market.MarketValues.noSourceNote(col.getCode());
+                }
+                else if (cube != null && terminalKey != null)
+                {
+                    value = com.fivetech.promo.analysis.market.MarketValues.value(col.getCode(), cube, terminalKey,
+                        dayValue == null ? null : b -> b.toLocalDate().equals(dayValue));
+                }
+            }
+            v.put("value", value);
+            // 取值与首页指标卡 valueFormat 一致：INT / MONEY / PCT（PCT 的 value 已是百分数，如 12.34 表示 12.34%）
+            v.put("format", col.getFormat());
             v.put("state", state);
             v.put("matured", matured);
             v.put("note", note);
+            // 指标支持下钻，且这一格有数（OK 且 value 不为 null）才能点
+            v.put("drillable", col.isDrillable() && "OK".equals(state) && value != null);
             cells.put(col.getCode(), v);
         }
         return cells;

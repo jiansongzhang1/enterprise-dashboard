@@ -142,7 +142,7 @@ public final class PromoTime
      * 对比期（推广分析规则）。NONE 返回 null；LAST_YEAR 返回 4002；CUSTOM 须与主区间等长（cmpLock = true 时），否则 4002；
      * PREV_PERIOD：往前推「主区间覆盖的自然日数」天，对比期与主区间同一时刻结束（本期含今天时即同时段对比）。
      *
-     * @param now 站点时区的当前整点；主区间终点已截到它时返回 cutAt
+     * @param now 当前时间向右取整的整点（不含，UDS 实时数据）；主区间终点已截到它时返回 cutAt
      */
     public static Map<String, Object> compare(CompareType type, String compareFrom, String compareTo, boolean cmpLock, Range r,
         LocalDateTime now)
@@ -192,7 +192,8 @@ public final class PromoTime
         {
             return null;
         }
-        LocalDate today = now.toLocalDate();
+        // now 是向右取整的整点（不含），23:xx 时为次日 00:00：往回 1 纳秒取日期
+        LocalDate today = now.minusNanos(1).toLocalDate();
         boolean includesToday = r.to.isAfter(today.atStartOfDay()) && !r.from.isAfter(now);
         if (!includesToday)
         {

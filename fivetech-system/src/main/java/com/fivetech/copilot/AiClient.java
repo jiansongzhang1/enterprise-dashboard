@@ -18,6 +18,37 @@ public interface AiClient
      */
     AiResult complete(String model, String system, String user, int maxTokens);
 
+    /**
+     * 多轮对话（无工具）。messages 按时间顺序，user / assistant 交替，最后一条是 user。
+     * 默认实现把历史拼成一条用户消息（给不支持多轮的实现和测试用）。
+     */
+    default AiResult chat(String model, String system, java.util.List<Message> messages, int maxTokens)
+    {
+        StringBuilder sb = new StringBuilder();
+        for (Message m : messages)
+        {
+            sb.append("assistant".equals(m.getRole()) ? "助手：" : "使用者：").append(m.getContent()).append("\n\n");
+        }
+        return complete(model, system, sb.toString().trim(), maxTokens);
+    }
+
+    /** 对话里的一条消息：role = user / assistant */
+    final class Message
+    {
+        private final String role;
+
+        private final String content;
+
+        public Message(String role, String content)
+        {
+            this.role = role;
+            this.content = content;
+        }
+
+        public String getRole() { return role; }
+        public String getContent() { return content; }
+    }
+
     /** 一次调用的结果 */
     final class AiResult
     {

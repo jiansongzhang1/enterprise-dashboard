@@ -1,5 +1,6 @@
 package com.fivetech.promo.analysis;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -21,6 +22,9 @@ import com.fivetech.promo.analysis.query.CohortQuery;
 import com.fivetech.promo.analysis.query.FissionQuery;
 import com.fivetech.promo.analysis.query.PromoFilter;
 import com.fivetech.promo.analysis.query.Sort;
+import com.fivetech.promo.analysis.market.MarketCube;
+import com.fivetech.promo.analysis.market.MarketGateway;
+import com.fivetech.promo.analysis.market.MarketValues;
 import com.fivetech.promo.budget.PromoChannelDictionary;
 
 /**
@@ -56,13 +60,35 @@ public class PromoAnalysisService
 
     private final PromoMetricCatalog catalog;
 
+    private final MarketGateway market;
+
     public PromoAnalysisService(DashboardProperties properties, PromoChannelDictionary channels, PromoTerminalDictionary terminals,
-        PromoMetricCatalog catalog)
+        PromoMetricCatalog catalog, MarketGateway market)
     {
         this.properties = properties;
         this.channels = channels;
         this.terminals = terminals;
         this.catalog = catalog;
+        this.market = market;
+    }
+
+    boolean marketOn()
+    {
+        return market != null && market.isEnabled();
+    }
+
+    /** UDS 取数失败统一成 5001 */
+    static ServiceException dataFailed(RuntimeException e)
+    {
+        return new ServiceException("資料平台取數失敗：" + e.getMessage(), PromoErrors.DATA_FAILED);
+    }
+
+    static Map<String, Object> notice(String code, String message)
+    {
+        Map<String, Object> n = new LinkedHashMap<>();
+        n.put("code", code);
+        n.put("message", message);
+        return n;
     }
 
     // ------------------------------------------------------------------ 公共
@@ -72,9 +98,10 @@ public class PromoAnalysisService
         return properties.currentSite();
     }
 
+    /** 当前时间向右取整的整点（UDS 实时数据：16:50 → 17:00），用作「今天截至」 */
     LocalDateTime nowHour()
     {
-        return LocalDateTime.now(properties.currentZone()).truncatedTo(ChronoUnit.HOURS);
+        return com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(LocalDateTime.now(properties.currentZone()));
     }
 
     LocalDate today()
@@ -106,7 +133,14 @@ public class PromoAnalysisService
         m.put("timezone", properties.currentTimezone());
         m.put("currency", currency());
         m.put("dataPending", true);
+        m.put("notices", new ArrayList<Map<String, Object>>());
         return m;
+    }
+
+    @SuppressWarnings("unchecked")
+    static void addNotice(Map<String, Object> out, String code, String message)
+    {
+        ((List<Map<String, Object>>) out.get("notices")).add(notice(code, message));
     }
 
     Map<String, Object> currency()
@@ -166,6 +200,7 @@ public class PromoAnalysisService
             x.put("name", c.getName());
             x.put("group", c.getGroup());
             x.put("format", c.getFormat());
+            x.put("drillable", c.isDrillable());
             cols.add(x);
         }
         out.put("columns", cols);
@@ -241,6 +276,31 @@ public class PromoAnalysisService
         return ChannelTree.of(q.getRows(), scope, terminalConfig(), range, today().minusDays(1));
     }
 
+    /**
+     * 给行维度树装上按日的市场数据（列里有能取到的指标、且没有渠道筛选时才取）。
+     *
+     * @return 取到的数据；没取返回 null
+     */
+    MarketCube attachData(ChannelTree tree, ChannelTableQuery q, PromoTime.Range range, List<PromoMetricCatalog.Column> cols)
+    {
+        boolean channelPending = !q.getAgents().isEmpty() || !q.getChannels().isEmpty();
+        boolean need = cols.stream().anyMatch(c -> MarketValues.AVAILABLE.contains(c.getCode()));
+        MarketCube cube = null;
+        if (!channelPending && need && marketOn())
+        {
+            try
+            {
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+            }
+            catch (RuntimeException e)
+            {
+                throw dataFailed(e);
+            }
+        }
+        tree.setData(cube, channelPending);
+        return cube;
+    }
+
     /** 渠道表现按天：主区间取整天（起点当天 00:00 到终点所在日的次日 00:00） */
     static PromoTime.Range wholeDays(PromoTime.Range r)
     {
@@ -254,6 +314,7 @@ public class PromoAnalysisService
         ChannelTree tree = tree(q, range);
         tree.checkParent(q.getParent());
         sortOf(q.getSort(), "reg");
+        MarketCube cube = attachData(tree, q, range, cols);
 
         int level = q.getParent().size();
         List<PathItem> parent = new ArrayList<>();
@@ -262,6 +323,30 @@ public class PromoAnalysisService
             parent.add(new PathItem(tree.dims().get(i), q.getParent().get(i).getKey().trim()));
         }
         Map<String, Object> out = header(PromoTime.slot(range, null), null);
+        if (cube != null)
+        {
+            out.put("dataPending", false);
+            if (cube.getWatermark() != null)
+            {
+                out.put("asOf", cube.getWatermark().format(PromoTime.SLOT));
+            }
+        }
+        if (!q.getAgents().isEmpty() || !q.getChannels().isEmpty())
+        {
+            addNotice(out, "PROMO_CHANNEL_PENDING", "數據平台還沒有推廣渠道映射，暫不能按推廣商 / 推廣渠道篩選");
+        }
+        // 本次请求的列（按请求顺序）：drillable = 这个指标支持下钻；单元格里的 drillable 再看这一格有没有值
+        List<Map<String, Object>> colMeta = new ArrayList<>();
+        for (PromoMetricCatalog.Column c : cols)
+        {
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("code", c.getCode());
+            x.put("name", c.getName());
+            x.put("format", c.getFormat());
+            x.put("drillable", c.isDrillable());
+            colMeta.add(x);
+        }
+        out.put("columns", colMeta);
         out.put("level", level + 1);
         String dim = tree.dims().get(level);
         out.put("dim", dim);
@@ -324,52 +409,203 @@ public class PromoAnalysisService
     public Map<String, Object> funnel(PromoFilter q)
     {
         PromoTime.Range range = PromoTime.range(q.getSlotFrom(), q.getSlotTo());
-        scope(q.getAgents(), q.getChannels(), null);
+        PromoScope scope = scope(q.getAgents(), q.getChannels(), null);
         Map<String, Object> compare = PromoTime.compare(q.getCompareType(), q.getCompareFrom(), q.getCompareTo(), true, range, nowHour());
         Map<String, Object> out = header(PromoTime.slot(range, null), compare);
+
+        // 取数：注册、首存、激活来自小时宽表；流失人数来自会员快照。UV 两项没有来源 / 口径不同
+        MarketCube cube = null;
+        MarketCube prev = null;
+        Map<String, Long> lost = new LinkedHashMap<>();
+        PromoTerminalDictionary.Config cfg = terminalConfig();
+        if (!scope.isAll())
+        {
+            addNotice(out, "PROMO_CHANNEL_PENDING", "數據平台還沒有推廣渠道映射，暫不能按推廣商 / 推廣渠道篩選");
+        }
+        else if (marketOn())
+        {
+            try
+            {
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+                if (compare != null)
+                {
+                    prev = market.cube(LocalDateTime.parse((String) compare.get("from"), PromoTime.SLOT),
+                        LocalDateTime.parse((String) compare.get("to"), PromoTime.SLOT), com.fivetech.dashboard.enums.Granularity.DAY);
+                }
+                List<String> keys = new ArrayList<>();
+                List<List<Map<String, Object>>> conds = new ArrayList<>();
+                for (PromoTerminalDictionary.Terminal t : cfg.getTerminals())
+                {
+                    String key = MarketValues.terminalKey(t.getCode());
+                    if (key == null || MarketCube.ALL.equals(key) || t.getSteps().isEmpty())
+                    {
+                        continue;
+                    }
+                    keys.add(t.getCode());
+                    List<Map<String, Object>> c = new ArrayList<>();
+                    c.add(MarketGateway.cond("register_time", "GTE", MarketGateway.datetime(range.from)));
+                    c.add(MarketGateway.cond("register_time", "LT", MarketGateway.datetime(range.to)));
+                    c.add(MarketGateway.cond("is_ftd", "EQ", 0));
+                    c.add(MarketGateway.cond("terminal", "EQ", MarketValues.udsTerminal(key)));
+                    conds.add(c);
+                }
+                List<Long> counts = market.memberCounts(conds);
+                for (int i = 0; i < keys.size(); i++)
+                {
+                    lost.put(keys.get(i), counts.get(i));
+                }
+                out.put("dataPending", false);
+                if (cube.getWatermark() != null)
+                {
+                    out.put("asOf", cube.getWatermark().format(PromoTime.SLOT));
+                }
+            }
+            catch (RuntimeException e)
+            {
+                throw dataFailed(e);
+            }
+        }
+        Map<String, String[]> meta = funnelMeta();
         List<Map<String, Object>> overall = new ArrayList<>();
         for (String code : List.of("lpUV", "hUV", "reg", "ftd"))
         {
-            Map<String, Object> x = new LinkedHashMap<>();
-            x.put("code", code);
-            x.put("value", null);
+            boolean ok = MarketValues.AVAILABLE.contains(code);
+            BigDecimal v = ok ? MarketValues.value(code, cube, MarketCube.ALL, null) : null;
+            BigDecimal p = ok ? MarketValues.value(code, prev, MarketCube.ALL, null) : null;
+            Map<String, Object> x = funnelItem(code, meta, v);
             if (compare != null)
             {
-                x.put("prev", null);
-                x.put("deltaPct", null);
+                x.put("prev", p);
+                x.put("deltaPct", MarketValues.delta(code, v, p)[0]);
             }
+            x.put("state", ok ? "OK" : "NO_SOURCE");
+            x.put("note", ok ? null : MarketValues.noSourceNote(code));
             overall.add(x);
         }
         out.put("overall", overall);
-        out.put("regShare", new ArrayList<>());
+
+        List<Map<String, Object>> share = new ArrayList<>();
+        BigDecimal regAll = MarketValues.value("reg", cube, MarketCube.ALL, null);
+        List<String[]> members = new ArrayList<>();
+        cfg.getTerminals().forEach(t -> members.add(new String[] { t.getCode(), MarketValues.terminalKey(t.getCode()) }));
+        members.add(new String[] { PromoTerminalDictionary.UNIDENTIFIED, "unknown" });
+        if (cube != null)
+        {
+            for (String[] t : members)
+            {
+                if (t[1] == null || MarketCube.ALL.equals(t[1]))
+                {
+                    continue;
+                }
+                BigDecimal r = MarketValues.value("reg", cube, t[1], null);
+                if (r == null || (PromoTerminalDictionary.UNIDENTIFIED.equals(t[0]) && r.signum() == 0))
+                {
+                    continue;
+                }
+                Map<String, Object> x = new LinkedHashMap<>();
+                x.put("terminal", t[0]);
+                x.put("pct", MarketValues.pct(r, regAll));
+                share.add(x);
+            }
+        }
+        out.put("regShare", share);
+
         List<Map<String, Object>> cards = new ArrayList<>();
-        for (PromoTerminalDictionary.Terminal t : terminalConfig().getTerminals())
+        for (PromoTerminalDictionary.Terminal t : cfg.getTerminals())
         {
             if (t.getSteps().isEmpty())
             {
                 continue;
             }
+            String key = MarketValues.terminalKey(t.getCode());
             Map<String, Object> card = new LinkedHashMap<>();
             card.put("terminal", t.getCode());
-            card.put("reg", null);
+            card.put("terminalName", t.getName());
+            card.put("reg", funnelItem("reg", meta, MarketValues.value("reg", cube, key, null)));
             card.put("viaLandingPage", null);
-            card.put("lost", null);
-            List<Map<String, Object>> steps = new ArrayList<>();
-            for (PromoTerminalDictionary.Step s : t.getSteps())
-            {
-                Map<String, Object> x = new LinkedHashMap<>();
-                x.put("code", s.getCode());
-                x.put("value", null);
-                x.put("role", s.getRole());
-                x.put("strict", s.isStrict());
-                x.put("rate", null);
-                steps.add(x);
-            }
-            card.put("steps", steps);
+            Long l = lost.get(t.getCode());
+            card.put("lost", funnelItem(LOST, meta, l == null ? null : BigDecimal.valueOf(l)));
+            card.put("steps", steps(t.getSteps(), cube, key, meta));
             cards.add(card);
         }
         out.put("terminals", cards);
         return out;
+    }
+
+    /** 「流失」的编码（不是指标管理里的指标，名称与说明写在代码里） */
+    static final String LOST = "lost";
+
+    /** 获客漏斗里支持下钻名单的：注册、首存、流失 */
+    static final java.util.Set<String> FUNNEL_DRILLABLE = java.util.Set.of("reg", "ftd", LOST);
+
+    /**
+     * 漏斗里各项的名称与说明：名称取指标管理里推广分析指标的名称（页面配置），说明取口径说明；
+     * 读不到配置时按代码里的名称。
+     */
+    Map<String, String[]> funnelMeta()
+    {
+        Map<String, String[]> m = new LinkedHashMap<>();
+        for (String code : List.of("lpUV", "hUV", "dl", "act", "reg", "ftd"))
+        {
+            PromoMetricCatalog.Column col = PromoMetricCatalog.column(code);
+            PromoMetricCatalog.Spec spec = PromoMetricCatalog.spec(code);
+            m.put(code, new String[] { col == null ? code : col.getName(), spec == null ? null : spec.getDefinition() });
+        }
+        for (PromoMetricCatalog.Metric x : catalog.overviewMetrics())
+        {
+            String[] v = m.get(x.getCode());
+            if (v != null && x.getName() != null && !x.getName().isBlank())
+            {
+                v[0] = x.getName();
+            }
+        }
+        m.put(LOST, new String[] { "流失", "所選時間內註冊、截至目前還沒有首存的人數（按這批註冊用戶直接統計，不是註冊減首存）" });
+        return m;
+    }
+
+    /** 漏斗里的一项：code、name、description、value、drillable */
+    static Map<String, Object> funnelItem(String code, Map<String, String[]> meta, BigDecimal value)
+    {
+        String[] nm = meta.getOrDefault(code, new String[] { code, null });
+        Map<String, Object> x = new LinkedHashMap<>();
+        x.put("code", code);
+        x.put("name", nm[0]);
+        x.put("description", nm[1]);
+        x.put("value", value);
+        x.put("drillable", FUNNEL_DRILLABLE.contains(code));
+        return x;
+    }
+
+    /**
+     * 漏斗步骤。rate = 本步 ÷ 前面最近一个有数值的步骤（rateFrom 为该步骤的编码）；入口步、非严格步、
+     * 前面没有可比的步骤时为 null。没有来源的步骤 state = NO_SOURCE，不参与比较。
+     */
+    static List<Map<String, Object>> steps(List<PromoTerminalDictionary.Step> defs, MarketCube cube, String terminalKey,
+        Map<String, String[]> meta)
+    {
+        List<Map<String, Object>> steps = new ArrayList<>();
+        BigDecimal base = null;
+        String baseCode = null;
+        for (PromoTerminalDictionary.Step s : defs)
+        {
+            boolean ok = MarketValues.AVAILABLE.contains(s.getCode());
+            BigDecimal v = ok ? MarketValues.value(s.getCode(), cube, terminalKey, null) : null;
+            Map<String, Object> x = funnelItem(s.getCode(), meta, v);
+            x.put("role", s.getRole());
+            x.put("strict", s.isStrict());
+            boolean rated = s.isStrict() && !"ENTRY".equals(s.getRole()) && base != null;
+            x.put("rate", rated ? MarketValues.pct(v, base) : null);
+            x.put("rateFrom", rated ? baseCode : null);
+            x.put("state", ok ? "OK" : "NO_SOURCE");
+            x.put("note", ok ? null : MarketValues.noSourceNote(s.getCode()));
+            steps.add(x);
+            if (v != null)
+            {
+                base = v;
+                baseCode = s.getCode();
+            }
+        }
+        return steps;
     }
 
     // ------------------------------------------------------------------ 6.3–6.5 留存与回收
@@ -424,7 +660,8 @@ public class PromoAnalysisService
             Map<String, Object> card = new LinkedHashMap<>();
             card.put("code", d[0]);
             card.put("value", null);
-            card.put("state", m == null ? "PENDING" : "OK");
+            // 注册分群数据集未接入（UDS dashboard_market_cohort_v1 安全禁用）：到期的也没有值
+            card.put("state", m == null ? "PENDING" : "NO_SOURCE");
             Map<String, Object> days = new LinkedHashMap<>();
             days.put("from", m == null ? null : m[0].toString());
             days.put("to", m == null ? null : m[1].toString());
@@ -502,7 +739,7 @@ public class PromoAnalysisService
         List<String> marks = new ArrayList<>();
         for (int n : OFFSETS)
         {
-            marks.add(matured(r[0], r[1], n) == null ? "PENDING" : null);
+            marks.add(matured(r[0], r[1], n) == null ? "PENDING" : "NO_SOURCE");
         }
         s.put("marks", marks);
         return s;
@@ -536,7 +773,7 @@ public class PromoAnalysisService
             List<String> states = new ArrayList<>();
             for (int n : OFFSETS)
             {
-                states.add(d.plusDays(n).isAfter(yesterday) ? "PENDING" : "OK");
+                states.add(d.plusDays(n).isAfter(yesterday) ? "PENDING" : "NO_SOURCE");
             }
             row.put("states", states);
             rows.add(row);
@@ -567,13 +804,162 @@ public class PromoAnalysisService
         return m;
     }
 
+    /** 进入某用户后的数据：该用户、他的直属下级（全部，已排序）、合计 */
+    static final class Fission
+    {
+        Map<String, Object> current;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, Object> total;
+        List<Map<String, Object>> notices = new ArrayList<>();
+        boolean loaded;
+    }
+
+    /**
+     * 裂变层级：进入某用户（parentId）时，按 UDS 会员快照的 agent_login（会员当前上级）列出直属下级，
+     * 每人的新增下级、首存、存款人数（按日累加）、存款总额、投注总额取小时数据集按 agent_login 汇总，直属下级人数取快照计数。
+     * 顶层一级代理清单、层级、提款人数、会员输赢、推广商 / 推广渠道待数据平台补源。
+     */
+    Fission fission(FissionQuery q, PromoTime.Range range)
+    {
+        Fission f = new Fission();
+        f.total = fissionStats();
+        f.total.put("directCount", null);
+        boolean top = q.getParentId() == null || q.getParentId().isBlank();
+        if (top)
+        {
+            f.notices.add(notice("FISSION_TOP_PENDING", "一級代理清單、層級與裂變註冊待數據平台提供關係閉包與渠道映射"));
+            return f;
+        }
+        String id = q.getParentId().trim();
+        if (!marketOn())
+        {
+            f.current = currentStub(id, null);
+            return f;
+        }
+        try
+        {
+            List<String> dims = List.of("player_id", "member_account", "agent_login");
+            List<com.fivetech.dashboard.gateway.uds.UdsRow> me = market.members(
+                List.of(MarketGateway.cond("player_id", "EQ", id.matches("\\d{1,18}") ? (Object) Long.valueOf(id) : id)), dims, List.of(), 1, 0);
+            if (me.isEmpty())
+            {
+                me = market.members(List.of(MarketGateway.cond("member_account", "EQ", id)), dims, List.of(), 1, 0);
+            }
+            if (me.isEmpty())
+            {
+                f.current = null;
+                f.notices.add(notice("NOT_FOUND", "找不到這個用戶：" + id));
+                f.loaded = true;
+                return f;
+            }
+            String account = me.get(0).str("member_account");
+            String userId = me.get(0).str("player_id");
+            int max = Math.max(1, Math.min(1000, market.maxChildren()));
+            List<com.fivetech.dashboard.gateway.uds.UdsRow> children = market.members(
+                List.of(MarketGateway.cond("agent_login", "EQ", account)), List.of("player_id", "member_account", "register_time"),
+                List.of(MarketGateway.order("register_time", "ASC")), max, 0);
+            if (children.size() >= max)
+            {
+                f.notices.add(notice("CHILDREN_TRUNCATED", "直屬下級超過 " + max + " 人，只列出最早註冊的 " + max + " 人"));
+            }
+            List<String> accounts = new ArrayList<>();
+            accounts.add(account);
+            children.forEach(c -> accounts.add(c.str("member_account")));
+            Map<String, Map<String, BigDecimal>> stats = market.byAgent(range.from, range.to, accounts);
+            Map<String, Long> direct = market.directCounts(accounts);
+
+            Map<String, BigDecimal> mine = stats.getOrDefault(account, Map.of());
+            f.current = currentStub(userId, account);
+            f.current.put("directCount", direct.getOrDefault(account, 0L));
+            f.current.put("newSub", mine.getOrDefault("reg", BigDecimal.ZERO));
+            f.current.put("ftd", mine.getOrDefault("ftd_players", BigDecimal.ZERO));
+            f.current.put("betAmt", mine.getOrDefault("bet_amount", BigDecimal.ZERO));
+
+            for (com.fivetech.dashboard.gateway.uds.UdsRow c : children)
+            {
+                String acc = c.str("member_account");
+                Map<String, BigDecimal> st = stats.getOrDefault(acc, Map.of());
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("userId", c.str("player_id"));
+                row.put("account", acc);
+                row.put("level", null);
+                row.put("agent", null);
+                row.put("channel", null);
+                row.put("directCount", direct.getOrDefault(acc, 0L));
+                row.put("newSub", st.getOrDefault("reg", BigDecimal.ZERO));
+                row.put("ftd", st.getOrDefault("ftd_players", BigDecimal.ZERO));
+                row.put("depU", st.getOrDefault("deposit_users", BigDecimal.ZERO));
+                row.put("wdU", null);
+                row.put("depAmt", st.getOrDefault("deposit_amount", BigDecimal.ZERO));
+                row.put("betAmt", st.getOrDefault("bet_amount", BigDecimal.ZERO));
+                row.put("winLoss", null);
+                f.rows.add(row);
+            }
+            String[] sort = fissionSort(q.getSort());
+            java.util.Comparator<Map<String, Object>> cmp = java.util.Comparator.comparing(
+                (Map<String, Object> r) -> num(r.get(sort[0])), java.util.Comparator.nullsLast(
+                    "asc".equals(sort[1]) ? java.util.Comparator.<BigDecimal>naturalOrder() : java.util.Comparator.<BigDecimal>reverseOrder()))
+                .thenComparing(r -> num(r.get("newSub")), java.util.Comparator.nullsLast(java.util.Comparator.<BigDecimal>reverseOrder()))
+                .thenComparing(r -> String.valueOf(r.get("account")));
+            f.rows.sort(cmp);
+            long directSum = 0;
+            for (Map<String, Object> r : f.rows)
+            {
+                directSum += ((Number) r.get("directCount")).longValue();
+                for (String k : List.of("newSub", "ftd", "depU", "depAmt", "betAmt"))
+                {
+                    BigDecimal v = num(r.get(k));
+                    BigDecimal t = num(f.total.get(k));
+                    f.total.put(k, v == null ? t : t == null ? v : t.add(v));
+                }
+            }
+            f.total.put("directCount", directSum);
+            f.notices.add(notice("FISSION_PARTIAL", "層級、推廣商 / 推廣渠道、提款人數、會員輸贏待數據平台補源；上級關係按會員當前上級"));
+            f.loaded = true;
+            return f;
+        }
+        catch (RuntimeException e)
+        {
+            throw dataFailed(e);
+        }
+    }
+
+    private static BigDecimal num(Object v)
+    {
+        if (v == null)
+        {
+            return null;
+        }
+        return v instanceof BigDecimal b ? b : new BigDecimal(v.toString());
+    }
+
+    private static Map<String, Object> currentStub(String userId, String account)
+    {
+        Map<String, Object> current = new LinkedHashMap<>();
+        current.put("userId", userId);
+        current.put("account", account);
+        current.put("level", null);
+        current.put("agent", null);
+        current.put("channel", null);
+        current.put("directCount", null);
+        current.put("newSub", null);
+        current.put("ftd", null);
+        current.put("betAmt", null);
+        return current;
+    }
+
     public Map<String, Object> fissionAgents(FissionQuery q)
     {
         PromoTime.Range range = PromoTime.range(q.getSlotFrom(), q.getSlotTo());
         scope(q.getAgents(), q.getChannels(), null);
         fissionSort(q.getSort());
         boolean top = q.getParentId() == null || q.getParentId().isBlank();
+        Fission f = fission(q, range);
         Map<String, Object> out = header(PromoTime.slot(range, null), null);
+        out.put("dataPending", !f.loaded);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> notices = (List<Map<String, Object>>) out.get("notices");
+        notices.addAll(f.notices);
         if (top)
         {
             Map<String, Object> summary = new LinkedHashMap<>();
@@ -582,33 +968,30 @@ public class PromoAnalysisService
             summary.put("activeAgents", null);
             summary.put("directShare", null);
             out.put("summary", summary);
-            out.put("current", null);
-            out.put("breadcrumb", new ArrayList<>());
         }
         else
         {
             out.put("summary", null);
-            Map<String, Object> current = new LinkedHashMap<>();
-            current.put("userId", q.getParentId().trim());
-            current.put("account", null);
-            current.put("level", null);
-            current.put("agent", null);
-            current.put("channel", null);
-            current.put("directCount", null);
-            current.put("newSub", null);
-            current.put("ftd", null);
-            current.put("betAmt", null);
-            out.put("current", current);
-            out.put("breadcrumb", new ArrayList<>());
         }
-        Map<String, Object> total = fissionStats();
-        total.put("directCount", null);
-        out.put("total", total);
-        out.put("rows", new ArrayList<>());
+        out.put("current", f.current);
+        List<Map<String, Object>> crumb = new ArrayList<>();
+        if (f.current != null)
+        {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("userId", f.current.get("userId"));
+            c.put("account", f.current.get("account"));
+            crumb.add(c);
+        }
+        out.put("breadcrumb", crumb);
+        out.put("total", f.total);
+        int num = q.getPageNum() == null ? 1 : Math.max(1, q.getPageNum());
+        int size = q.getPageSize() == null ? 20 : Math.max(1, Math.min(200, q.getPageSize()));
+        int from = Math.min(f.rows.size(), (num - 1) * size);
+        out.put("rows", new ArrayList<>(f.rows.subList(from, Math.min(f.rows.size(), from + size))));
         Map<String, Object> page = new LinkedHashMap<>();
-        page.put("num", q.getPageNum() == null ? 1 : Math.max(1, q.getPageNum()));
-        page.put("size", q.getPageSize() == null ? 20 : Math.max(1, Math.min(200, q.getPageSize())));
-        page.put("total", 0);
+        page.put("num", num);
+        page.put("size", size);
+        page.put("total", f.rows.size());
         out.put("page", page);
         return out;
     }

@@ -63,6 +63,12 @@ public class CopilotGateway
 
         public String operator;
 
+        /** 多轮对话：不为 null 时按 messages 调用（user 不用） */
+        public java.util.List<AiClient.Message> messages;
+
+        /** true：每日上限按 operator 分别统计（聊天按人限次） */
+        public boolean limitPerOperator;
+
         /** 业务校验：返回 null 表示通过，否则返回不采用的原因（会写进记录和页面提示） */
         public Function<String, String> validator;
     }
@@ -111,7 +117,8 @@ public class CopilotGateway
             int used;
             try
             {
-                used = usageMapper.countToday(r.feature);
+                used = r.limitPerOperator ? usageMapper.countTodayByOperator(r.feature, r.operator)
+                    : usageMapper.countToday(r.feature);
             }
             catch (RuntimeException e)
             {
@@ -120,7 +127,7 @@ public class CopilotGateway
             }
             if (used >= r.dailyLimit)
             {
-                return Outcome.fail("今日 AI 調用已達上限（" + r.dailyLimit + " 次）");
+                return Outcome.fail((r.limitPerOperator ? "你今日的 AI 對話已達上限（" : "今日 AI 調用已達上限（") + r.dailyLimit + " 次）");
             }
         }
 
@@ -134,7 +141,8 @@ public class CopilotGateway
         Outcome outcome;
         try
         {
-            AiClient.AiResult res = client.complete(r.model, r.system, r.user, r.maxTokens);
+            AiClient.AiResult res = r.messages != null ? client.chat(r.model, r.system, r.messages, r.maxTokens)
+                : client.complete(r.model, r.system, r.user, r.maxTokens);
             u.setInputTokens(res.getInputTokens());
             u.setOutputTokens(res.getOutputTokens());
             if (res.getModel() != null)

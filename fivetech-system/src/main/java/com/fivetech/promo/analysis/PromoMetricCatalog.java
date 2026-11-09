@@ -93,7 +93,7 @@ public class PromoMetricCatalog
         new Spec("budget", "promoBudget", false, false, NOTE_SPEND, false, false, false, "所選範圍內運營匯入的預算合計"),
         new Spec("cpa", "promoCpa", false, false, NOTE_SPEND, false, false, true, "有效格子的消耗 ÷ 有效格子的註冊人數（有效格子：已錄入消耗且 ＞ 0 的「日 × 推廣渠道」）"),
         new Spec("ftdCost", "promoFtdCost", false, false, NOTE_SPEND, false, false, true, "有效格子的消耗 ÷ 有效格子的首存人數"),
-        new Spec("net", "promoNet", true, true, null, false, false, false, "暫定＝存款總額（不扣優惠）"),
+        new Spec("net", "promoNet", true, true, null, false, false, false, "＝存款總額（不扣優惠）"),
         new Spec("roi", "promoRoi", false, false, NOTE_SPEND, false, false, true, "有效格子的淨充值 ÷ 有效格子的消耗 − 1"),
         new Spec("lpUV", "promoLpUV", true, false, NOTE_TERMINAL, false, false, false, "落地頁去重訪問人數（玩家按用戶 ID、匿名按匿名標識）"),
         new Spec("hUV", "promoHUV", true, false, NOTE_TERMINAL, false, false, false, "主頁去重訪問人數（含 Web 與 APP 內打開）"),
@@ -148,7 +148,12 @@ public class PromoMetricCatalog
         public String getFormat() { return format; }
         public boolean isSpendBased() { return spendBased; }
         public boolean isCohort() { return cohort; }
+        /** 渠道表现里这一列能否下钻到用户明细（见 {@link #CHANNEL_DRILLABLE}） */
+        public boolean isDrillable() { return CHANNEL_DRILLABLE.contains(code); }
     }
+
+    /** 渠道表现支持下钻的列：注册人数、首存人数 */
+    public static final java.util.Set<String> CHANNEL_DRILLABLE = java.util.Set.of("reg", "ftd");
 
     /** 渠道表现可选列（5 组），编码与第 8 节指标清单一致 */
     public static final List<Column> COLUMNS = List.of(
@@ -173,6 +178,8 @@ public class PromoMetricCatalog
         new Column("cpa", "CPA", "spend", "MONEY", true, false),
         new Column("ftdCost", "首存成本", "spend", "MONEY", true, false),
         new Column("roi", "D0 ROI", "spend", "PCT", true, false),
+        // ROAS 由 UDS 计算好直接给值，后端不用「累计淨充值 ÷ 消耗」自己算；UDS 未提供前为 NO_SOURCE。
+        // 仍标 spendBased：分母是按推广渠道导入的消耗，路径上有终端 / 推广关系时 NA
         new Column("roas7", "ROAS D7", "retention", "PCT", true, true),
         new Column("roas30", "ROAS D30", "retention", "PCT", true, true),
         new Column("regRet1", "次日註冊留存", "retention", "PCT", false, true),

@@ -150,28 +150,30 @@ public class OverviewServiceImpl implements IOverviewService
 
         Granularity granularity = query.getGranularity() == null ? Granularity.HOUR : query.getGranularity();
 
-        // 终点统一到「当前整点」（站点时区），只返回已结束的小时：
-        // · 小时粒度且截止日期是今天（前后端约定）：忽略前端传的小时，终点 = 当前整点。
-        //   例：现在 09:25，slotTo 传 06:00 / 10:00 / 次日 00:00 都按 09:00 处理，返回 00:00–09:00 共 9 个小时；
-        // · 其他粒度：终点晚于当前整点时截到当前整点（未结束的小时没有数据）。
-        // 当前整点不晚于起点（如 00:25 查今天，还没有任何完整小时）时不调整，避免区间为空
+        // 终点统一到「当前时间向右取整的整点」（站点时区；UDS 已支持实时数据，正在进行的小时一起返回）：
+        // · 小时粒度且截止日期是今天（前后端约定）：忽略前端传的小时，终点 = 向右取整的整点。
+        //   例：现在 09:25，slotTo 传 06:00 / 10:00 / 次日 00:00 都按 10:00 处理，返回 00:00–10:00 共 10 个小时（09 点为实时数据）；
+        // · 其他粒度：终点晚于它时截到它（之后的小时还没有数据）。
+        // 发给 UDS 的 uds_hh to 同样向右取整（见 UdsRealtime）
         Duration clampedBy = Duration.ZERO;
-        LocalDateTime currentHour = LocalDateTime.now(properties.currentZone()).truncatedTo(ChronoUnit.HOURS);
-        boolean endsToday = to.minusNanos(1).toLocalDate().equals(currentHour.toLocalDate());
+        LocalDateTime nowAt = LocalDateTime.now(properties.currentZone());
+        LocalDateTime currentHour = com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(nowAt);
+        boolean endsToday = to.minusNanos(1).toLocalDate().equals(nowAt.toLocalDate());
         boolean pinToNow = granularity == Granularity.HOUR ? endsToday || to.isAfter(currentHour) : to.isAfter(currentHour);
         if (pinToNow && currentHour.isAfter(from) && !to.isEqual(currentHour))
         {
             clampedBy = Duration.between(currentHour, to);
             to = currentHour;
-            notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至最近完整小時",
-                "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時尚未結束）"));
+            notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至當前時間",
+                "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時為實時數據，尚未結束）"));
         }
         Granularity effective = downgrade(from, to, granularity, notices);
         // 「今日」：区间正好是站点时区的今天 00:00 ~ 明天 00:00（终点被截到当前整点也算），且按小时出序列。
         // 这时额外返回每张卡片的小时基准线（近 4 周同星期同小时中位数，UDS 的 *_baseline 列）
-        LocalDate today = currentHour.toLocalDate();
+        LocalDate today = nowAt.toLocalDate();
         // 区间是否完全等于今日（异常提醒条 anomalies.inScope 也用它）
-        boolean isToday = coversToday(from, requestedTo, to, granularity, currentHour);
+        // 「今天」按当前时间所在的日期判断（23:xx 时向右取整的整点已是次日 00:00，不能拿它算日期）
+        boolean isToday = coversToday(from, requestedTo, to, granularity, nowAt.truncatedTo(ChronoUnit.HOURS));
         boolean todayHourly = isToday && effective == Granularity.HOUR && query.isIncludeSeries();
 
         OverviewSlotVO slot = buildSlot(from, to, effective);

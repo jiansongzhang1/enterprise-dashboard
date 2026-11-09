@@ -19,6 +19,7 @@
 --   ④ 2026-11-04  系统管理 · 配置中心                     新表 config_center（唯一键 配置编码 + 站点）+ 菜单 system:configCenter:list/add/edit/remove
 --   ⑤ 2026-11-05  推广分析 · 概览指标与可歸因开关        dashboard_metric_card.attributable；推广分析分组 inv / flow 与 16 个指标（仅登记）；
 --                                                       页面 PROMO（dashboard_page_metric 的 CHECK 放开）；菜单「推广分析」dashboard:promo:view
+--   ⑥ 2026-11-05  管理后台 · AI 助手                      按钮权限 copilot:chat:use（系统管理下，无新表；对话不落库，次数记在 copilot_usage_log）
 --
 -- 上线记录：
 --   （尚未上线）
@@ -399,5 +400,48 @@ SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms
 
 
 -- ----------------------------------------------------------------------------
--- 新的改动从这里往下追加（⑥ …）
+-- ⑥ 2026-11-05 · 管理后台 · AI 助手（右下角聊天）权限（新 JAR 上线后执行即可）
+--   系统管理（menu_id = 1）下加按钮「AI 助手」copilot:chat:use；有这个权限的人在每个页面右下角看到 AI 助手。授给 role 1。
+--   依赖 ① 的 copilot_usage_log（记次数，不记内容）。
+--   回滚：DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms = 'copilot:chat:use' 对应的 menu_id
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'AI 助手', 1, 99, '', '', '', '',
+       1, 0, 'F', '0', '0', 'copilot:chat:use', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '每个页面右下角的 AI 助手（带本站今日、昨日指标与告警）'
+WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'copilot:chat:use');
+
+INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
+SELECT m.menu_id, v.locale, v.menu_name, v.remark
+FROM sys_menu m
+JOIN (VALUES
+    ('zh-CN', 'AI 助手', '每个页面右下角的 AI 助手'),
+    ('zh-TW', 'AI 助手', '每個頁面右下角的 AI 助手'),
+    ('en-US', 'AI Assistant', 'AI assistant on every page')
+) AS v(locale, menu_name, remark) ON TRUE
+WHERE m.perms = 'copilot:chat:use'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
+
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 1, m.menu_id
+FROM sys_menu m
+WHERE m.perms = 'copilot:chat:use'
+  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+
+COMMIT;
+
+-- ⑥ 自检：1 行
+SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms = 'copilot:chat:use';
+
+
+-- ----------------------------------------------------------------------------
+-- 新的改动从这里往下追加（⑦ …）
 -- ----------------------------------------------------------------------------

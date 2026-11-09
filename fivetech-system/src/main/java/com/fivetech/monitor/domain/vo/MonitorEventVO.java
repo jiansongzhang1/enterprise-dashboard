@@ -29,6 +29,13 @@ public class MonitorEventVO
     private BigDecimal baselineValue;
     private ThresholdVO threshold;
     private List<String> judgeBasis;
+
+    /** 触发值的展示文字（如「83.60%」「₹40,000」）；只在订阅简报的异动分析里用，事件列表不返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String currentText;
+
+    public String getCurrentText() { return currentText; }
+    public void setCurrentText(String currentText) { this.currentText = currentText; }
     private String startHour;
     private String triggerHour;
     private String endHour;

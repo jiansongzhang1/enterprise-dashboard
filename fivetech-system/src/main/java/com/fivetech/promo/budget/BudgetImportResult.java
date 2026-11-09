@@ -12,7 +12,9 @@ import java.util.List;
  *   <li>dateFrom / dateTo / channelCount 只算有效行；有效 0 行时为 null / 0（结果页只显示文件名）。</li>
  *   <li>currencyNote：表头金额列写的是「消耗 (USDT)」这类旧模板时的提示；REJECTED 时为 null。</li>
  *   <li>failures：按行号排列；date / promoter / channel / amount 为文件原值，空为 null（前端显示「（空）」）。</li>
- *   <li>written：有效行是否已写入。数据存放在 UDS 侧，写入暂未接入，目前恒为 false（writeNote 说明）。</li>
+ *   <li>write：有效行写入数据平台的结果（{@link BudgetWriteOutcome}，同步）；written = write.status 为 SUCCEEDED。
+ *       CONFIRM_REQUIRED 时前端让用户确认覆盖，PROCESSING 时可「重新查詢結果」，都调 POST /promo/budget/import/resume。
+ *       没有有效行时 write 为 null；写入未开启时 status = DISABLED、writeNote 说明。</li>
  * </ul>
  *
  * @author fivetech
@@ -49,6 +51,9 @@ public class BudgetImportResult
 
     private boolean written;
     private String writeNote;
+
+    /** 写入数据平台的结果；没有有效行时为 null */
+    private BudgetWriteOutcome write;
 
     /** 失败的行：文件原值照写，空为 null（前端写「（空）」） */
     public static class Failure
@@ -125,4 +130,6 @@ public class BudgetImportResult
     public void setWritten(boolean written) { this.written = written; }
     public String getWriteNote() { return writeNote; }
     public void setWriteNote(String writeNote) { this.writeNote = writeNote; }
+    public BudgetWriteOutcome getWrite() { return write; }
+    public void setWrite(BudgetWriteOutcome write) { this.write = write; }
 }

@@ -50,10 +50,15 @@ public class PromoExportService
         return name == null || name.isBlank() ? site : name;
     }
 
-    /** 资料截至：数据接入前没有，写「—」 */
+    /** 资料截至：没有数据写「—」 */
     private static String asOfText()
     {
         return "—";
+    }
+
+    private static String asOfText(com.fivetech.promo.analysis.market.MarketCube cube)
+    {
+        return cube == null || cube.getWatermark() == null ? "—" : cube.getWatermark().format(PromoTime.SLOT);
     }
 
     private static String span(LocalDate from, LocalDate to)
@@ -163,6 +168,7 @@ public class PromoExportService
         PromoAnalysisService.sortOf(q.getSort(), "reg");
         long count = tree.count(0, List.of(), PromoErrors.MAX_EXPORT_ROWS);
         checkRows(count + 1);
+        com.fivetech.promo.analysis.market.MarketCube cube = analysis.attachData(tree, q, range, cols);
 
         List<String> dims = tree.dims();
         List<String> dimNames = new ArrayList<>();
@@ -170,7 +176,7 @@ public class PromoExportService
         PromoScope scope = analysis.scope(q.getAgents(), q.getChannels(), null);
         String title = siteName() + DOT + "推廣分析" + DOT + "渠道表現" + DOT + span(range.firstDay(), range.lastDay()) + DOT
             + "行維度：" + String.join(" › ", dimNames) + DOT + "渠道：" + scope.channelLabel() + DOT + "終端：全部" + DOT
-            + "資料截至 " + asOfText();
+            + "資料截至 " + asOfText(cube);
         PromoSheet sheet = new PromoSheet("渠道表現", title);
         dimNames.forEach(n -> sheet.column(n, PromoSheet.TEXT));
         cols.forEach(c -> sheet.column(c.getName(), c.getFormat()));
@@ -241,9 +247,13 @@ public class PromoExportService
         PromoScope scope = analysis.scope(q.getAgents(), q.getChannels(), null);
         PromoAnalysisService.fissionSort(q.getSort());
         boolean top = q.getParentId() == null || q.getParentId().isBlank();
-        String level = top ? "一級代理" : q.getParentId().trim();
+        PromoAnalysisService.Fission f = analysis.fission(q, range);
+        // 层级：顶层写「一級代理」，进入某用户写他的帳號（上层路径要关系闭包，暂只有当前用户）
+        String level = top ? "一級代理"
+            : f.current != null && f.current.get("account") != null ? String.valueOf(f.current.get("account")) : q.getParentId().trim();
         String title = siteName() + DOT + "推廣分析" + DOT + "裂變層級" + DOT + span(range.firstDay(), range.lastDay()) + DOT
             + "層級：" + level + DOT + "渠道：" + scope.channelLabel() + DOT + "終端：全部" + DOT + "資料截至 " + asOfText();
+        // 合計在第 3 行，其后是当前层全部行（已按请求的排序）
         PromoSheet sheet = new PromoSheet("裂變層級", title)
             .column("用戶帳號", PromoSheet.TEXT)
             .column("用戶 ID", PromoSheet.TEXT)
@@ -258,9 +268,31 @@ public class PromoExportService
             .column("存款總額", PromoSheet.MONEY)
             .column("投注總額", PromoSheet.MONEY)
             .column("會員輸贏", PromoSheet.MONEY);
+        checkRows(f.rows.size() + 1);
         Object[] total = sheet.newRow();
         total[0] = "合計";
+        fissionCells(total, f.total);
+        for (Map<String, Object> r : f.rows)
+        {
+            Object[] row = sheet.newRow();
+            row[0] = r.get("account");
+            row[1] = r.get("userId");
+            row[2] = r.get("agent");
+            row[3] = r.get("channel");
+            row[4] = r.get("level") == null ? null : new java.math.BigDecimal(r.get("level").toString());
+            fissionCells(row, r);
+        }
         String base = siteName() + "_裂變層級_" + compact(range.firstDay(), range.lastDay());
-        return file(sheet, base, "rows=0");
+        return file(sheet, base, "rows=" + f.rows.size());
+    }
+
+    private static void fissionCells(Object[] row, Map<String, Object> v)
+    {
+        String[] keys = { "directCount", "newSub", "ftd", "depU", "wdU", "depAmt", "betAmt", "winLoss" };
+        for (int i = 0; i < keys.length; i++)
+        {
+            Object x = v.get(keys[i]);
+            row[5 + i] = x == null ? null : new java.math.BigDecimal(x.toString());
+        }
     }
 }

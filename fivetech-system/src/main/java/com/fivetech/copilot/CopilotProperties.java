@@ -136,6 +136,84 @@ public class CopilotProperties
         public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
     }
 
+    /** 订阅简报 · 数据异动分析 */
+    public static class Anomaly
+    {
+        /** 每天最多调用几次（全部站点；与 AI 摘要分开计数） */
+        private int dailyLimit = 20;
+
+        private int maxTokens = 400;
+
+        /** 分析文字最多几个字（不计空白），超过不采用 */
+        private int maxChars = 100;
+
+        /** 明显波动：非比率类指标变化率绝对值 ≥ 它（%） */
+        private java.math.BigDecimal changePct = new java.math.BigDecimal("20");
+
+        /** 明显波动：比率类指标变化 ≥ 它（百分点） */
+        private java.math.BigDecimal changePt = new java.math.BigDecimal("5");
+
+        /** 最多给模型几条告警事件 */
+        private int maxEvents = 10;
+
+        public int getDailyLimit() { return dailyLimit; }
+        public void setDailyLimit(int dailyLimit) { this.dailyLimit = dailyLimit; }
+        public int getMaxTokens() { return maxTokens; }
+        public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
+        public int getMaxChars() { return maxChars; }
+        public void setMaxChars(int maxChars) { this.maxChars = maxChars; }
+        public java.math.BigDecimal getChangePct() { return changePct; }
+        public void setChangePct(java.math.BigDecimal changePct) { this.changePct = changePct; }
+        public java.math.BigDecimal getChangePt() { return changePt; }
+        public void setChangePt(java.math.BigDecimal changePt) { this.changePt = changePt; }
+        public int getMaxEvents() { return maxEvents; }
+        public void setMaxEvents(int maxEvents) { this.maxEvents = maxEvents; }
+    }
+
+    private Anomaly anomaly = new Anomaly();
+
+    /** 管理后台 · AI 助手（右下角聊天） */
+    public static class Chat
+    {
+        /** 模型；为空用 default-model */
+        private String model;
+
+        /** 每人每天最多问几次（按数据库日期） */
+        private int dailyLimitPerUser = 50;
+
+        private int maxTokens = 1500;
+
+        /** 最多带上最近几条消息（含本次提问） */
+        private int maxMessages = 20;
+
+        /** 单条提问最多几个字 */
+        private int maxChars = 2000;
+
+        /** 站点数据上下文缓存秒数（同一站点几分钟内的提问共用一份数据，少打 UDS） */
+        private int contextCacheSeconds = 300;
+
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        public int getDailyLimitPerUser() { return dailyLimitPerUser; }
+        public void setDailyLimitPerUser(int dailyLimitPerUser) { this.dailyLimitPerUser = dailyLimitPerUser; }
+        public int getMaxTokens() { return maxTokens; }
+        public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
+        public int getMaxMessages() { return maxMessages; }
+        public void setMaxMessages(int maxMessages) { this.maxMessages = maxMessages; }
+        public int getMaxChars() { return maxChars; }
+        public void setMaxChars(int maxChars) { this.maxChars = maxChars; }
+        public int getContextCacheSeconds() { return contextCacheSeconds; }
+        public void setContextCacheSeconds(int contextCacheSeconds) { this.contextCacheSeconds = contextCacheSeconds; }
+    }
+
+    private Chat chat = new Chat();
+
+    public Chat getChat() { return chat; }
+    public void setChat(Chat chat) { this.chat = chat == null ? new Chat() : chat; }
+
+    public Anomaly getAnomaly() { return anomaly; }
+    public void setAnomaly(Anomaly anomaly) { this.anomaly = anomaly == null ? new Anomaly() : anomaly; }
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public String getDefaultModel() { return defaultModel; }

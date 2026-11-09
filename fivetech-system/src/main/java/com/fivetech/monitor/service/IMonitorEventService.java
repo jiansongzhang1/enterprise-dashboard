@@ -24,6 +24,13 @@ public interface IMonitorEventService
     /** 标记已处理（单条与批量共用）：1～100 条，全部属于本站，否则 404；note 去掉首尾空白后 1～500 字 */
     int handle(MonitorScope scope, List<Long> eventIds, String note);
 
+    /**
+     * 某段时间内的告警事件（订阅简报的数据异动分析用）：触发时间在 [from, to) 内的，加上现在仍异常中的；
+     * 异常中的在前，再按触发时间从新到旧，最多 limit 条。每条带触发值的展示文字 currentText。
+     */
+    List<com.fivetech.monitor.domain.vo.MonitorEventVO> eventsInWindow(MonitorScope scope, java.time.LocalDateTime from,
+            java.time.LocalDateTime to, int limit);
+
     /** 撤销处理；事件不属于本站 → 404；本来就是未处理也返回成功 */
     void unhandle(MonitorScope scope, Long eventId);
 }

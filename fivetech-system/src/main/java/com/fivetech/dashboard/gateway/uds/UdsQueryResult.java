@@ -65,6 +65,19 @@ public class UdsQueryResult
         this.datasetOmitted = datasetOmitted;
     }
 
+    /** 导入类数据集（import_*）的 meta.imported.complete：false = 被 limit 截断；非导入数据集为 null */
+    private Boolean importedComplete;
+
+    public Boolean getImportedComplete()
+    {
+        return importedComplete;
+    }
+
+    public void setImportedComplete(Boolean importedComplete)
+    {
+        this.importedComplete = importedComplete;
+    }
+
     public List<UdsRow> getRows()
     {
         return rows;

@@ -395,7 +395,7 @@ public class MetricCardVO implements Serializable
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private Boolean drillable;
 
-    /** 变化归因；只在请求带 attribution、且指标可歸因时返回 */
+    /** 变化归因；请求带 attribution 时每张卡都返回，不可归因的 supported = false、reasonCode / reason 写原因 */
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private java.util.Map<String, Object> attribution;
 

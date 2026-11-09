@@ -49,6 +49,33 @@ public class AnthropicAiClient implements AiClient
     @Override
     public AiResult complete(String model, String system, String user, int maxTokens)
     {
+        return send(model, body(model, system, user, maxTokens));
+    }
+
+    @Override
+    public AiResult chat(String model, String system, List<Message> messages, int maxTokens)
+    {
+        List<Map<String, Object>> list = new java.util.ArrayList<>();
+        for (Message msg : messages)
+        {
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("role", "assistant".equals(msg.getRole()) ? "assistant" : "user");
+            x.put("content", msg.getContent());
+            list.add(x);
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("model", model);
+        m.put("max_tokens", Math.max(1, maxTokens));
+        if (system != null && !system.isEmpty())
+        {
+            m.put("system", system);
+        }
+        m.put("messages", list);
+        return send(model, m);
+    }
+
+    private AiResult send(String model, Map<String, Object> requestBody)
+    {
         CopilotProperties.Anthropic cfg = properties.getAnthropic();
         if (!properties.isConfigured())
         {
@@ -57,7 +84,7 @@ public class AnthropicAiClient implements AiClient
         String body;
         try
         {
-            body = objectMapper.writeValueAsString(body(model, system, user, maxTokens));
+            body = objectMapper.writeValueAsString(requestBody);
         }
         catch (RuntimeException e)
         {

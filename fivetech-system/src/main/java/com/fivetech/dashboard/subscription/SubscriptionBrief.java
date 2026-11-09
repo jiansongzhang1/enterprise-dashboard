@@ -27,6 +27,9 @@ import com.fivetech.dashboard.format.ValueFormat;
  * <p>开了 AI 摘要的订阅：{@link #applyAi} 在统计周期下方加一段「AI 摘要」（模型只根据 {@link #getFacts()} 里后端算好的数字写文字），
  * 生成失败时卡片不带摘要、照常发送。</p>
  *
+ * <p>数据异动分析（{@link #applyAnomaly}）：统计周期内有告警事件或指标明显波动时，在 AI 摘要下方加一段不超过 100 字的分析
+ * （变化原因），由 {@link SubscriptionAnomalyAnalyst} 结合告警事件生成；没有异动或生成失败时不加。</p>
+ *
  * <p>数值与页面同一量纲（比率已 ×100、时长为分钟）；金额用站点币种符号、不缩写，方便核对。
  * 百分比类指标的变化写百分点（pt），其余写相对变化率（%），与运营总览一致。</p>
  *
@@ -82,6 +85,44 @@ public final class SubscriptionBrief
 
     private Map<String, Object> card;
 
+    /** 统计周期 [from, to)（站点时区）；查告警事件用 */
+    private java.time.LocalDateTime windowFrom;
+
+    private java.time.LocalDateTime windowTo;
+
+    /** 每个指标的变化（判断明显波动用），顺序同 rows */
+    private final List<Change> changes = new ArrayList<>();
+
+    /** 数据异动分析（已通过校验）；null = 没有 */
+    private String anomaly;
+
+    /** 开了 AI、但没有异动分析的原因（预览里给） */
+    private String anomalyNote;
+
+    private boolean anomalyRequested;
+
+    /** 一个指标的变化 */
+    public static final class Change
+    {
+        public final String code;
+        public final String label;
+        /** 卡片上的变化文字，如「+12.3%」「-2.51pt」 */
+        public final String text;
+        public final java.math.BigDecimal deltaPct;
+        public final java.math.BigDecimal deltaPt;
+        public final String direction;
+
+        Change(String code, String label, String text, java.math.BigDecimal deltaPct, java.math.BigDecimal deltaPt, String direction)
+        {
+            this.code = code;
+            this.label = label;
+            this.text = text;
+            this.deltaPct = deltaPct;
+            this.deltaPt = deltaPt;
+            this.direction = direction;
+        }
+    }
+
     private SubscriptionBrief()
     {
     }
@@ -126,6 +167,12 @@ public final class SubscriptionBrief
             + (ctx.sendHour == null ? "" : " · 每日 " + String.format("%02d:00", ctx.sendHour) + " 發送")
             + (ctx.timezone == null ? "" : " · " + ctx.timezone);
 
+        if (vo.getSlot() != null)
+        {
+            b.windowFrom = parseSlot(vo.getSlot().getFrom());
+            b.windowTo = parseSlot(vo.getSlot().getTo());
+        }
+
         Map<String, MetricCardVO> byCode = new LinkedHashMap<>();
         if (vo.getBlocks().get("METRICS") instanceof MetricsBlockVO)
         {
@@ -154,6 +201,10 @@ public final class SubscriptionBrief
             String prev = noValue ? DASH : formatValue(c.getPrevValue(), f, c.getDecimals(), ctx.currencySymbol);
             b.facts.add(row.get("label") + "｜" + row.get("value") + "｜" + prev + "｜" + change + "｜" + directionText(c.getDirection())
                 + "｜" + alertText(c.getAlert()));
+            if (!noValue)
+            {
+                b.changes.add(new Change(code, String.valueOf(row.get("label")), change, c.getDeltaPct(), c.getDeltaPt(), c.getDirection()));
+            }
         }
         b.card = card(b, ctx.overviewUrl);
         return b;
@@ -172,6 +223,32 @@ public final class SubscriptionBrief
         this.aiModelLabel = modelLabel;
         this.aiNote = this.aiSummary == null ? note : null;
         this.card = card(this, overviewUrl);
+    }
+
+    /**
+     * 加上数据异动分析后重新生成卡片。
+     *
+     * @param analysis 通过校验的分析；null 表示没有（note 说明原因，只在预览里显示）
+     */
+    public void applyAnomaly(String analysis, String modelLabel, String note)
+    {
+        this.anomalyRequested = true;
+        this.anomaly = analysis == null || analysis.trim().isEmpty() ? null : analysis.trim();
+        this.aiModelLabel = this.aiModelLabel == null ? modelLabel : this.aiModelLabel;
+        this.anomalyNote = this.anomaly == null ? note : null;
+        this.card = card(this, overviewUrl);
+    }
+
+    private static java.time.LocalDateTime parseSlot(String text)
+    {
+        try
+        {
+            return text == null ? null : java.time.LocalDateTime.parse(text.trim(), SLOT);
+        }
+        catch (RuntimeException e)
+        {
+            return null;
+        }
     }
 
     static String directionText(String direction)
@@ -238,6 +315,18 @@ public final class SubscriptionBrief
             aiNoteEl.put("tag", "note");
             aiNoteEl.put("elements", List.of(aiText));
             elements.add(aiNoteEl);
+            elements.add(Map.of("tag", "hr"));
+        }
+        if (b.anomaly != null)
+        {
+            elements.add(div(md("**數據異動分析**\n" + escape(b.anomaly))));
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("tag", "plain_text");
+            t.put("content", "由 " + nvl(b.aiModelLabel) + " 結合指標變化與告警事件生成，僅供參考");
+            Map<String, Object> n = new LinkedHashMap<>();
+            n.put("tag", "note");
+            n.put("elements", List.of(t));
+            elements.add(n);
             elements.add(Map.of("tag", "hr"));
         }
         if (b.rows.isEmpty())
@@ -505,6 +594,14 @@ public final class SubscriptionBrief
 
     public String getAiSummary() { return aiSummary; }
 
+    public String getAnomaly() { return anomaly; }
+
+    public List<Change> getChanges() { return changes; }
+
+    public java.time.LocalDateTime getWindowFrom() { return windowFrom; }
+
+    public java.time.LocalDateTime getWindowTo() { return windowTo; }
+
     /** 给管理后台预览用：标题、说明、周期、对比、资料截至、指标行、底注 */
     public Map<String, Object> toPreview()
     {
@@ -524,6 +621,13 @@ public final class SubscriptionBrief
             ai.put("summary", aiSummary);
             ai.put("note", aiNote);
             m.put("ai", ai);
+        }
+        if (anomalyRequested)
+        {
+            Map<String, Object> an = new LinkedHashMap<>();
+            an.put("analysis", anomaly);
+            an.put("note", anomalyNote);
+            m.put("anomaly", an);
         }
         return m;
     }

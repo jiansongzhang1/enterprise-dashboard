@@ -15,4 +15,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		select count(*) from copilot_usage_log
 		 where feature = #{feature} and create_time &gt;= current_date
 	</select>
+	<select id="countTodayByOperator" resultType="int">
+		select count(*) from copilot_usage_log
+		 where feature = #{feature} and operator = #{operator} and create_time &gt;= current_date
+	</select>
 </mapper>

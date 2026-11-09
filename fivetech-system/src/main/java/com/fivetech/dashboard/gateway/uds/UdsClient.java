@@ -185,6 +185,12 @@ public class UdsClient
             firstText(meta, "dataVersion", "data_version", "version"),
             stale,
             parseWatermark(freshness));
+        // 导入类数据集（预算 / 消耗）：meta.imported.complete = false 表示被 limit 截断，不能当完整数据
+        JsonNode imported = meta.path("imported").path("complete");
+        if (imported.isBoolean())
+        {
+            result.setImportedComplete(imported.asBoolean());
+        }
         // 多站点（UDS 公共契约，2026-10-28）：本站不提供的指标不返回这一列，原因写在 meta.omitted；
         // 带 metric 的是按列省略，带 dataset 不带 metric 的是整个数据集本站未实现
         JsonNode omitted = meta.path("omitted");

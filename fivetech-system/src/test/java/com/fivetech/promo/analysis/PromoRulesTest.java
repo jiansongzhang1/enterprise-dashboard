@@ -132,20 +132,94 @@ class PromoRulesTest
         PromoScope android = PromoScope.resolve(DICT, List.of(), List.of(), TERMINALS, "android");
         PromoMetricCatalog.Metric spend = metric("spend");
         PromoMetricCatalog.Metric reg = metric("reg");
-        assertEquals("NOT_BY_TERMINAL", PromoOverviewService.attribution(spend, "terminal", all).get("reason"));
-        assertEquals("TERMINAL_SELECTED", PromoOverviewService.attribution(reg, "terminal", android).get("reason"));
+        Map<String, Object> notByTerminal = PromoOverviewService.attribution(spend, "terminal", all);
+        assertEquals("NOT_BY_TERMINAL", notByTerminal.get("reasonCode"));
+        assertEquals("spend不區分終端統計，不能按終端拆分。", notByTerminal.get("reason"));
+        assertFalse(notByTerminal.containsKey("total"));
+        assertFalse(notByTerminal.containsKey("rows"));
+        Map<String, Object> selected = PromoOverviewService.attribution(reg, "terminal", android);
+        assertEquals("TERMINAL_SELECTED", selected.get("reasonCode"));
+        assertEquals("已篩選單個終端，不能再按終端拆分；終端選「全部」後可查看。", selected.get("reason"));
         Map<String, Object> ok = PromoOverviewService.attribution(reg, "channel", android);
         assertEquals(true, ok.get("supported"));
+        assertNull(ok.get("reasonCode"));
+        assertNull(ok.get("reason"));
         assertTrue(((List<?>) ok.get("rows")).isEmpty());
-        assertFalse(PromoOverviewService.attribution(metric("dl"), "terminal", all).get("supported").equals(true));
+        Map<String, Object> dl = PromoOverviewService.attribution(metric("dl"), "terminal", all);
+        assertEquals(false, dl.get("supported"));
+        assertEquals("NOT_BY_TERMINAL", dl.get("reasonCode"));
+        assertEquals("dl只統計 Android，不能按終端拆分。", dl.get("reason"));
+    }
+
+    /** 指标管理里没打开「可歸因」：任何维度都返回 supported = false、NOT_CONFIGURED，原因文字带指标名，且优先于其他原因 */
+    @Test
+    void attributionNotConfigured()
+    {
+        PromoScope all = PromoScope.resolve(DICT, List.of(), List.of(), TERMINALS, null);
+        PromoScope android = PromoScope.resolve(DICT, List.of(), List.of(), TERMINALS, "android");
+        PromoMetricCatalog.Metric roi = metric("roi", false);
+        String text = "roi是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。"
+            + "整體變化見上方趨勢；各渠道的值可在渠道表現查看。";
+        for (String d : List.of("agent", "channel", "terminal"))
+        {
+            Map<String, Object> a = PromoOverviewService.attribution(roi, d, all);
+            assertEquals(d, a.get("dimension"));
+            assertEquals(false, a.get("supported"), d);
+            assertEquals("NOT_CONFIGURED", a.get("reasonCode"), d);
+            assertEquals(text, a.get("reason"), d);
+            assertFalse(a.containsKey("total"), d);
+            assertFalse(a.containsKey("rows"), d);
+        }
+        // 已选终端又按终端拆：仍按「没配置」提示
+        assertEquals("NOT_CONFIGURED", PromoOverviewService.attribution(roi, "terminal", android).get("reasonCode"));
+        // fillAttribution 不覆盖已有的原因
+        Map<String, Object> a = PromoOverviewService.attribution(roi, "terminal", all);
+        PromoOverviewService.fillAttribution(a, roi, new com.fivetech.dashboard.domain.vo.MetricCardVO(),
+            new PromoOverviewService.Data(), TERMINALS);
+        assertEquals("NOT_CONFIGURED", a.get("reasonCode"));
+    }
+
+    /** 可归因但拆分数据待接入：PENDING_SOURCE，原因按维度 / 筛选写 */
+    @Test
+    void attributionPendingSource()
+    {
+        PromoScope all = PromoScope.resolve(DICT, List.of(), List.of(), TERMINALS, null);
+        PromoMetricCatalog.Metric reg = metric("reg");
+        com.fivetech.dashboard.domain.vo.MetricCardVO card = new com.fivetech.dashboard.domain.vo.MetricCardVO();
+
+        Map<String, Object> agent = PromoOverviewService.attribution(reg, "agent", all);
+        PromoOverviewService.fillAttribution(agent, reg, card, new PromoOverviewService.Data(), TERMINALS);
+        assertEquals(false, agent.get("supported"));
+        assertEquals("PENDING_SOURCE", agent.get("reasonCode"));
+        assertEquals("數據平台還沒有按推廣商拆分的數據，暫不能歸因。", agent.get("reason"));
+        assertFalse(agent.containsKey("total"));
+        assertFalse(agent.containsKey("rows"));
+
+        Map<String, Object> channel = PromoOverviewService.attribution(reg, "channel", all);
+        PromoOverviewService.fillAttribution(channel, reg, card, new PromoOverviewService.Data(), TERMINALS);
+        assertEquals("數據平台還沒有按推廣渠道拆分的數據，暫不能歸因。", channel.get("reason"));
+
+        PromoOverviewService.Data pending = new PromoOverviewService.Data();
+        pending.channelPending = true;
+        Map<String, Object> terminal = PromoOverviewService.attribution(reg, "terminal", all);
+        PromoOverviewService.fillAttribution(terminal, reg, card, pending, TERMINALS);
+        assertEquals("PENDING_SOURCE", terminal.get("reasonCode"));
+        assertEquals("已篩選推廣商 / 推廣渠道，數據平台還沒有推廣渠道映射，暫不能歸因。", terminal.get("reason"));
     }
 
     private static PromoMetricCatalog.Metric metric(String code)
     {
+        return metric(code, true);
+    }
+
+    /** 测试用指标：名称 = 接口编码，attributable 按参数 */
+    private static PromoMetricCatalog.Metric metric(String code, boolean attributable)
+    {
         com.fivetech.dashboard.domain.MetricDictItem card = new com.fivetech.dashboard.domain.MetricDictItem();
         card.setMetricCode(PromoMetricCatalog.spec(code).getDbCode());
+        card.setMetricName(code);
         card.setValueFormat("INT");
-        card.setAttributable(true);
+        card.setAttributable(attributable);
         com.fivetech.dashboard.domain.PageMetricConfig page = new com.fivetech.dashboard.domain.PageMetricConfig();
         page.setPageCode("PROMO");
         page.setMetricCode(card.getMetricCode());
@@ -193,8 +267,24 @@ class PromoRulesTest
         assertEquals("PENDING", roas.get("state"));                 // 10-30 + 7 > 11-04
         @SuppressWarnings("unchecked")
         Map<String, Object> ret1 = (Map<String, Object>) cells.get("regRet1");
-        assertEquals("OK", ret1.get("state"));
+        assertEquals("NO_SOURCE", ret1.get("state"));                // 已到期，但注册分群数据集未接入
         assertEquals(Map.of("m", 3, "n", 3), ret1.get("matured"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> regByAgent = (Map<String, Object>) tree.cells(cols, List.of(new PathItem("agent", "1001"))).get("reg");
+        assertEquals("NO_SOURCE", regByAgent.get("state"));            // 渠道映射待接入
+        @SuppressWarnings("unchecked")
+        Map<String, Object> regTotal = (Map<String, Object>) cells.get("reg");
+        assertEquals("OK", regTotal.get("state"));
+        assertNull(regTotal.get("value"));                              // 没装数据
+        assertEquals(false, regTotal.get("drillable"));                 // 没有值不能下钻
+        assertEquals("INT", regTotal.get("format"));
+        assertEquals("MONEY", spendByTerminal.get("format"));
+        assertEquals("PCT", roas.get("format"));
+        assertEquals(false, regByAgent.get("drillable"));
+        assertEquals(false, roas.get("drillable"));
+        assertTrue(PromoMetricCatalog.column("reg").isDrillable());
+        assertTrue(PromoMetricCatalog.column("ftd").isDrillable());
+        assertFalse(PromoMetricCatalog.column("dep").isDrillable());
         assertEquals(4003, code(() -> PromoAnalysisService.columns(List.of("reg", "nope"))));
         assertEquals(4003, code(() -> PromoAnalysisService.sortOf(null, "nope")));
     }
@@ -236,5 +326,38 @@ class PromoRulesTest
             states.add(LocalDate.of(2026, 10, 28).plusDays(n).isAfter(yesterday) ? "PENDING" : "OK");
         }
         assertEquals(List.of("OK", "OK", "OK", "PENDING", "PENDING"), states);
+    }
+
+    @Test
+    void funnelStepsNamesRatesAndDrill()
+    {
+        com.fivetech.promo.analysis.market.MarketCube cube = new com.fivetech.promo.analysis.market.MarketCube();
+        LocalDateTime d = LocalDateTime.of(2026, 11, 1, 0, 0);
+        cube.add(d, "all", "android_first_open", new BigDecimal("50"));
+        cube.add(d, "android", "reg", new BigDecimal("20"));
+        cube.add(d, "android", "ftd_players", new BigDecimal("5"));
+        List<PromoTerminalDictionary.Step> defs = List.of(
+            new PromoTerminalDictionary.Step("lpUV", "ENTRY", true),
+            new PromoTerminalDictionary.Step("dl", null, false),
+            new PromoTerminalDictionary.Step("act", null, false),
+            new PromoTerminalDictionary.Step("reg", null, true),
+            new PromoTerminalDictionary.Step("ftd", null, true));
+        java.util.Map<String, String[]> meta = new java.util.LinkedHashMap<>();
+        meta.put("reg", new String[] { "註冊人數", "註冊說明" });
+        meta.put(PromoAnalysisService.LOST, new String[] { "流失", "流失說明" });
+        List<Map<String, Object>> steps = PromoAnalysisService.steps(defs, cube, "android", meta);
+        assertEquals("NO_SOURCE", steps.get(0).get("state"));
+        assertNull(steps.get(2).get("rate"));                       // 非严格步
+        assertEquals(new BigDecimal("40.00"), steps.get(3).get("rate")); // 20 ÷ 激活 50（跳过没有来源的步骤）
+        assertEquals("act", steps.get(3).get("rateFrom"));
+        assertEquals(new BigDecimal("25.00"), steps.get(4).get("rate")); // 5 ÷ 20
+        assertEquals("註冊人數", steps.get(3).get("name"));
+        assertEquals("註冊說明", steps.get(3).get("description"));
+        assertEquals(true, steps.get(3).get("drillable"));
+        assertEquals(true, steps.get(4).get("drillable"));
+        assertEquals(false, steps.get(2).get("drillable"));
+        Map<String, Object> lost = PromoAnalysisService.funnelItem(PromoAnalysisService.LOST, meta, new BigDecimal("12"));
+        assertEquals("流失", lost.get("name"));
+        assertEquals(true, lost.get("drillable"));
     }
 }

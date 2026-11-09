@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import com.fivetech.common.exception.ServiceException;
 import com.fivetech.dashboard.config.DashboardProperties;
@@ -29,6 +31,9 @@ import com.fivetech.dashboard.enums.CompareType;
 import com.fivetech.dashboard.enums.Granularity;
 import com.fivetech.dashboard.enums.OverviewBlock;
 import com.fivetech.dashboard.service.impl.OverviewServiceImpl;
+import com.fivetech.promo.analysis.market.MarketCube;
+import com.fivetech.promo.analysis.market.MarketGateway;
+import com.fivetech.promo.analysis.market.MarketValues;
 import com.fivetech.promo.budget.PromoChannelDictionary;
 
 /**
@@ -38,16 +43,40 @@ import com.fivetech.promo.budget.PromoChannelDictionary;
  * baselineSeries 一律为 null；卡片多 state、note、seriesUnavailable、spendCompare、drillable、attribution；
  * compare 多 cutAt。</p>
  *
- * <p><b>数据未接入</b>：UDS 的推广数据集还没定（设计文档第 8 节），现在所有数值、序列、归因成员都是空
- * （value / prevValue 为 null、series 全为 null、rows 为空），并在 notices 里写 PROMO_DATA_PENDING。
- * 请求校验、指标与粒度规则、对比期、终端适用性等结构已按设计实现，接入数据时只补取数。</p>
+ * <p><b>数据</b>：UDS 市场数据集 {@code dashboard_market_hour_v1}（见 {@link MarketValues}）。已接：注册、首存、首存转化率、
+ * 首存金额、复存人数、淨充值（= 存款总额）、激活，以及按终端的变化归因。其余（消耗、预算、成本类、UV、下载点击、
+ * 注册转化率）没有来源或口径不同：value 为 null、state = NO_SOURCE、note 写原因，notices 写 PROMO_DATA_PARTIAL。
+ * 选了推广商 / 推广渠道时，渠道映射还没有，全部为 NO_SOURCE（不返回未筛选的数）。</p>
  *
  * @author fivetech
  */
 @Service
 public class PromoOverviewService
 {
+    private static final Logger log = LoggerFactory.getLogger(PromoOverviewService.class);
+
     public static final Set<String> DIMENSIONS = Set.of("agent", "channel", "terminal");
+
+    static final String NOTE_CHANNEL_PENDING = "按推廣渠道篩選待數據平台提供渠道映射";
+
+    /** 一次请求取到的市场数据：主区间 / 对比期 × 按日（合计）/ 按所选粒度（序列） */
+    static final class Data
+    {
+        MarketCube day;
+        MarketCube prevDay;
+        MarketCube series;
+        MarketCube prevSeries;
+        LocalDateTime prevFrom;
+        /** 渠道筛选无法应用 */
+        boolean channelPending;
+        /** 终端键（all / web / android / ios / unknown）；null = 终端认不出 */
+        String terminalKey;
+
+        boolean has()
+        {
+            return day != null && !channelPending && terminalKey != null;
+        }
+    }
 
     private final DashboardProperties properties;
 
@@ -57,13 +86,16 @@ public class PromoOverviewService
 
     private final PromoTerminalDictionary terminals;
 
+    private final MarketGateway market;
+
     public PromoOverviewService(DashboardProperties properties, PromoMetricCatalog catalog, PromoChannelDictionary channels,
-        PromoTerminalDictionary terminals)
+        PromoTerminalDictionary terminals, MarketGateway market)
     {
         this.properties = properties;
         this.catalog = catalog;
         this.channels = channels;
         this.terminals = terminals;
+        this.market = market;
     }
 
     public OverviewVO query(OverviewQuery query)
@@ -74,13 +106,14 @@ public class PromoOverviewService
 
         // ---------- 1. 时间：主区间、截到当前整点、粒度规则 ----------
         PromoTime.Range requested = PromoTime.range(query.getSlotFrom(), query.getSlotTo());
-        LocalDateTime now = LocalDateTime.now(properties.currentZone()).truncatedTo(ChronoUnit.HOURS);
+        // 终点截到当前时间向右取整的整点（UDS 实时数据：正在进行的小时一起返回，16:50 → 17:00）
+        LocalDateTime now = com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(LocalDateTime.now(properties.currentZone()));
         PromoTime.Range range = requested;
         if (requested.to.isAfter(now) && now.isAfter(requested.from))
         {
             range = new PromoTime.Range(requested.from, now);
-            notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至最近完整小時",
-                "統計區間終點調整為 " + now.format(PromoTime.SLOT) + "（當前小時尚未結束）"));
+            notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至當前時間",
+                "統計區間終點調整為 " + now.format(PromoTime.SLOT) + "（當前小時為實時數據，尚未結束）"));
         }
         Granularity asked = query.getGranularity() == null ? Granularity.HOUR : query.getGranularity();
         // 粒度按用户所选的整段区间判断（与页面的可选粒度一致），不受截到当前整点影响
@@ -109,8 +142,9 @@ public class PromoOverviewService
         vo.setCompare(compare);
 
         // ---------- 3. 筛选 ----------
+        PromoTerminalDictionary.Config terminalConfig = terminals.of(site);
         PromoScope scope = PromoScope.resolve(channels.promotersOf(site), query.getAgents(), query.getChannels(),
-            terminals.of(site), query.getTerminal());
+            terminalConfig, query.getTerminal());
         String dimension = dimension(query);
 
         // ---------- 4. 上下文：监控相关一律为 null ----------
@@ -128,12 +162,57 @@ public class PromoOverviewService
             vo.setEmpty(true);
             return vo;
         }
+        // ---------- 6. 取数（UDS 市场数据集） ----------
+        Data data = new Data();
+        data.channelPending = !scope.isAll();
+        data.terminalKey = MarketValues.terminalKey(scope.getTerminal());
+        boolean needData = selected.stream().anyMatch(m -> MarketValues.AVAILABLE.contains(m.getCode()));
+        if (market != null && market.isEnabled() && needData && !data.channelPending && data.terminalKey != null)
+        {
+            try
+            {
+                data.day = market.cube(range.from, range.to, Granularity.DAY);
+                if (compare != null)
+                {
+                    data.prevFrom = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT);
+                    LocalDateTime prevTo = LocalDateTime.parse(compare.getTo(), PromoTime.SLOT);
+                    data.prevDay = market.cube(data.prevFrom, prevTo, Granularity.DAY);
+                    if (query.isIncludeSeries() && granularity == Granularity.HOUR)
+                    {
+                        data.prevSeries = market.cube(data.prevFrom, prevTo, Granularity.HOUR);
+                    }
+                    else
+                    {
+                        data.prevSeries = data.prevDay;
+                    }
+                }
+                data.series = query.isIncludeSeries() && granularity == Granularity.HOUR
+                    ? market.cube(range.from, range.to, Granularity.HOUR) : data.day;
+                if (data.day.getWatermark() != null)
+                {
+                    vo.setAsOf(data.day.getWatermark().format(PromoTime.SLOT));
+                }
+                if (data.day.isOmitted())
+                {
+                    notices.add(OverviewNoticeVO.warn("PROMO_SITE_NO_DATA", "本站暫無推廣數據", "數據平台未提供本站的市場數據集"));
+                }
+            }
+            catch (RuntimeException e)
+            {
+                log.error("[promo] 概览取数失败：{}", e.getMessage(), e);
+                vo.getBlockErrors().put(OverviewBlock.METRICS.name(),
+                    com.fivetech.dashboard.domain.vo.OverviewBlockErrorVO.of(PromoErrors.DATA_FAILED, "資料平台取數失敗"));
+                vo.setEmpty(true);
+                return vo;
+            }
+        }
+
         MetricsBlockVO block = new MetricsBlockVO();
         Map<String, MetricGroupConfig> groupConfigs = catalog.groups();
         List<MetricCardVO> items = new ArrayList<>();
         for (PromoMetricCatalog.Metric m : selected)
         {
-            items.add(card(m, query, slot, range, compare, now, scope, dimension, groupConfigs));
+            items.add(card(m, query, slot, range, compare, now, scope, dimension, groupConfigs, data, terminalConfig));
         }
         block.setItems(items);
         block.setTotal(items.size());
@@ -141,10 +220,19 @@ public class PromoOverviewService
         block.setGroups(groups(all, groupConfigs));
         vo.getBlocks().put(OverviewBlock.METRICS.name(), block);
 
-        // ---------- 6. 数据未接入 ----------
-        notices.add(OverviewNoticeVO.warn("PROMO_DATA_PENDING", "推廣數據尚未接入",
-            "數據平台的推廣數據集還在確定中，指標暫無數值"));
-        vo.setEmpty(true);
+        // ---------- 7. 没有来源的指标 ----------
+        List<String> pending = new ArrayList<>();
+        items.stream().filter(c -> "NO_SOURCE".equals(c.getState())).forEach(c -> pending.add(c.getLabel()));
+        if (data.channelPending)
+        {
+            notices.add(OverviewNoticeVO.warn("PROMO_CHANNEL_PENDING", "暫不能按推廣商 / 推廣渠道篩選",
+                "數據平台還沒有推廣渠道映射，所選渠道範圍的指標暫無數值"));
+        }
+        else if (!pending.isEmpty())
+        {
+            notices.add(OverviewNoticeVO.info("PROMO_DATA_PARTIAL", "部分指標暫無數據", String.join("、", pending) + "：數據待接入或口徑待確認"));
+        }
+        vo.setEmpty(items.stream().allMatch(c -> c.getValue() == null));
         return vo;
     }
 
@@ -227,7 +315,8 @@ public class PromoOverviewService
     }
 
     private MetricCardVO card(PromoMetricCatalog.Metric m, OverviewQuery query, OverviewSlotVO slot, PromoTime.Range range,
-        OverviewCompareVO compare, LocalDateTime now, PromoScope scope, String dimension, Map<String, MetricGroupConfig> groups)
+        OverviewCompareVO compare, LocalDateTime now, PromoScope scope, String dimension, Map<String, MetricGroupConfig> groups,
+        Data data, PromoTerminalDictionary.Config terminalConfig)
     {
         PromoMetricCatalog.Spec spec = m.getSpec();
         MetricCardVO c = new MetricCardVO();
@@ -264,15 +353,42 @@ public class PromoOverviewService
                 c.setNote(spec.getTerminalNote());
             }
         }
-        c.setState(na ? "NA" : "OK");
-        // 数据未接入：值一律为 null
-        c.setValue(null);
-        c.setPrevValue(null);
+        String code = m.getCode();
+        boolean available = MarketValues.AVAILABLE.contains(code);
+        String state = na ? "NA" : "OK";
+        if (!na && (!available || data.channelPending))
+        {
+            state = "NO_SOURCE";
+            c.setNote(data.channelPending ? NOTE_CHANNEL_PENDING : MarketValues.noSourceNote(code));
+        }
+        c.setState(state);
+        boolean fill = "OK".equals(state) && data.has();
+        BigDecimal value = fill ? MarketValues.value(code, data.day, data.terminalKey, null) : null;
+        BigDecimal prev = fill && data.prevDay != null ? MarketValues.value(code, data.prevDay, data.terminalKey, null) : null;
+        c.setValue(value);
+        c.setPrevValue(prev);
+        if (value != null && prev != null)
+        {
+            c.setDelta(value.subtract(prev));
+            BigDecimal[] d = MarketValues.delta(code, value, prev);
+            c.setDeltaPct(d[0]);
+            c.setDeltaPt(d[1]);
+        }
         if (query.isIncludeSeries())
         {
-            List<BigDecimal> empty = new ArrayList<>(Collections.nCopies(Math.max(0, slot.getPoints()), null));
-            c.setSeries(empty);
-            c.setPrevSeries(compare == null ? new ArrayList<>() : new ArrayList<>(empty));
+            int points = Math.max(0, slot.getPoints());
+            c.setSeries(fill ? series(code, data.series, data.terminalKey, range.from, slot.getGranularity(), points)
+                : new ArrayList<>(Collections.nCopies(points, null)));
+            if (compare == null)
+            {
+                c.setPrevSeries(new ArrayList<>());
+            }
+            else
+            {
+                c.setPrevSeries(fill && data.prevSeries != null
+                    ? series(code, data.prevSeries, data.terminalKey, data.prevFrom, slot.getGranularity(), points)
+                    : new ArrayList<>(Collections.nCopies(points, null)));
+            }
         }
         if (!spec.isHourly() && slot.getGranularity() == Granularity.HOUR)
         {
@@ -283,11 +399,97 @@ public class PromoOverviewService
         {
             c.setSpendCompare(spendCompare(range, compare, now));
         }
-        if (dimension != null && m.isAttributable())
+        if (dimension != null)
         {
-            c.setAttribution(attribution(m, dimension, scope));
+            // 带了 attribution 时每张卡都返回：不可归因的 supported = false，reason 写给用户看的原因
+            Map<String, Object> a = attribution(m, dimension, scope);
+            fillAttribution(a, m, c, data, terminalConfig);
+            c.setAttribution(a);
         }
         return c;
+    }
+
+    /** 序列：每个时间片的值（与 slot.points 等长，缺的为 null） */
+    static List<BigDecimal> series(String code, MarketCube cube, String terminal, LocalDateTime from, Granularity g, int points)
+    {
+        List<BigDecimal> out = new ArrayList<>(Collections.nCopies(points, null));
+        if (cube == null)
+        {
+            return out;
+        }
+        for (int i = 0; i < points; i++)
+        {
+            int idx = i;
+            out.set(i, MarketValues.value(code, cube, terminal, b -> index(b, from, g) == idx));
+        }
+        return out;
+    }
+
+    static int index(LocalDateTime bucket, LocalDateTime from, Granularity g)
+    {
+        if (g == Granularity.HOUR)
+        {
+            return (int) ChronoUnit.HOURS.between(from, bucket);
+        }
+        long days = ChronoUnit.DAYS.between(from.toLocalDate(), bucket.toLocalDate());
+        return (int) (g == Granularity.WEEK ? Math.floorDiv(days, 7) : days);
+    }
+
+    /**
+     * 归因成员：按终端拆时取市场数据（字典里的终端 + 未識別），两期都为空或 0 的成员不返回；
+     * 按推广商 / 推广渠道拆、或该指标没有来源时 supported = false、reasonCode = PENDING_SOURCE。
+     */
+    static void fillAttribution(Map<String, Object> a, PromoMetricCatalog.Metric m, MetricCardVO card, Data data,
+        PromoTerminalDictionary.Config terminalConfig)
+    {
+        if (!Boolean.TRUE.equals(a.get("supported")))
+        {
+            return;
+        }
+        String dimension = (String) a.get("dimension");
+        if (!"terminal".equals(dimension) || !MarketValues.AVAILABLE.contains(m.getCode()) || data.channelPending)
+        {
+            String text = !"terminal".equals(dimension)
+                ? "數據平台還沒有按" + DIMENSION_NAMES.get(dimension) + "拆分的數據，暫不能歸因。"
+                : data.channelPending
+                    ? "已篩選推廣商 / 推廣渠道，數據平台還沒有推廣渠道映射，暫不能歸因。"
+                    : m.getName() + "的數據待接入，暫不能按終端拆分。";
+            unsupported(a, "PENDING_SOURCE", text);
+            return;
+        }
+        Map<String, Object> total = new LinkedHashMap<>();
+        total.put("value", card.getValue());
+        total.put("prevValue", card.getPrevValue());
+        a.put("total", total);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (data.has())
+        {
+            List<String[]> members = new ArrayList<>();
+            terminalConfig.getTerminals().forEach(t -> members.add(new String[] { t.getCode(), t.getName() }));
+            members.add(new String[] { PromoTerminalDictionary.UNIDENTIFIED, PromoTerminalDictionary.UNIDENTIFIED_NAME });
+            for (String[] t : members)
+            {
+                String key = MarketValues.terminalKey(t[0]);
+                if (key == null || MarketCube.ALL.equals(key))
+                {
+                    continue;
+                }
+                BigDecimal v = MarketValues.value(m.getCode(), data.day, key, null);
+                BigDecimal p = data.prevDay == null ? null : MarketValues.value(m.getCode(), data.prevDay, key, null);
+                if ((v == null || v.signum() == 0) && (p == null || p.signum() == 0))
+                {
+                    continue;
+                }
+                Map<String, Object> r = new LinkedHashMap<>();
+                r.put("key", t[0]);
+                r.put("name", t[1]);
+                r.put("agent", null);
+                r.put("value", v);
+                r.put("prevValue", p);
+                rows.add(r);
+            }
+        }
+        a.put("rows", rows);
     }
 
     /**
@@ -295,7 +497,8 @@ public class PromoOverviewService
      */
     static Map<String, Object> spendCompare(PromoTime.Range range, OverviewCompareVO compare, LocalDateTime now)
     {
-        LocalDate today = now.toLocalDate();
+        // now 是向右取整的整点（不含），23:xx 时为次日 00:00：往回 1 纳秒取日期
+        LocalDate today = now.minusNanos(1).toLocalDate();
         if (!range.lastDay().equals(today) || !range.firstDay().isBefore(today))
         {
             return null;
@@ -311,34 +514,67 @@ public class PromoOverviewService
         return m;
     }
 
-    /** 变化归因：成员值待数据接入（rows 为空，total 为 null） */
+    /** 归因维度的显示名（拼原因文字用） */
+    static final Map<String, String> DIMENSION_NAMES = Map.of("agent", "推廣商", "channel", "推廣渠道", "terminal", "終端");
+
+    /**
+     * 变化归因：请求带了 attribution 时每张卡都有。
+     * <p>supported = false 时 reasonCode 给前端判断、reason 是直接展示的文字，没有 total / rows：</p>
+     * <ul>
+     *   <li>NOT_CONFIGURED：指标管理里没打开「可歸因」；</li>
+     *   <li>TERMINAL_SELECTED：已筛选单个终端，又按终端拆；</li>
+     *   <li>NOT_BY_TERMINAL：指标不区分终端，或只统计 Android；</li>
+     *   <li>PENDING_SOURCE：拆分数据待接入（{@link #fillAttribution} 判断）。</li>
+     * </ul>
+     * <p>supported = true 时 reasonCode、reason 为 null，成员值由 {@link #fillAttribution} 填（这里 rows 为空，total 为 null）。</p>
+     */
     static Map<String, Object> attribution(PromoMetricCatalog.Metric m, String dimension, PromoScope scope)
     {
         Map<String, Object> a = new LinkedHashMap<>();
         a.put("dimension", dimension);
-        String reason = null;
+        a.put("supported", true);
+        a.put("reasonCode", null);
+        a.put("reason", null);
+        if (!m.isAttributable())
+        {
+            unsupported(a, "NOT_CONFIGURED", m.getName() + "是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，"
+                + "不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。");
+            return a;
+        }
         if ("terminal".equals(dimension))
         {
             if (scope.isTerminalSelected())
             {
-                reason = "TERMINAL_SELECTED";
+                unsupported(a, "TERMINAL_SELECTED", "已篩選單個終端，不能再按終端拆分；終端選「全部」後可查看。");
+                return a;
             }
-            else if (!m.getSpec().isByTerminal() || m.getSpec().isAndroidOnly())
+            if (!m.getSpec().isByTerminal())
             {
-                reason = "NOT_BY_TERMINAL";
+                unsupported(a, "NOT_BY_TERMINAL", m.getName() + "不區分終端統計，不能按終端拆分。");
+                return a;
+            }
+            if (m.getSpec().isAndroidOnly())
+            {
+                unsupported(a, "NOT_BY_TERMINAL", m.getName() + "只統計 Android，不能按終端拆分。");
+                return a;
             }
         }
-        a.put("supported", reason == null);
-        a.put("reason", reason);
-        if (reason == null)
-        {
-            Map<String, Object> total = new LinkedHashMap<>();
-            total.put("value", null);
-            total.put("prevValue", null);
-            a.put("total", total);
-            a.put("rows", new ArrayList<>());
-        }
+        Map<String, Object> total = new LinkedHashMap<>();
+        total.put("value", null);
+        total.put("prevValue", null);
+        a.put("total", total);
+        a.put("rows", new ArrayList<>());
         return a;
+    }
+
+    /** 不支持归因：supported = false，写原因，去掉 total / rows */
+    private static void unsupported(Map<String, Object> a, String code, String text)
+    {
+        a.put("supported", false);
+        a.put("reasonCode", code);
+        a.put("reason", text);
+        a.remove("total");
+        a.remove("rows");
     }
 
     /** 分组按钮：推广分析页面上至少有一张卡的分组，count 按页面配置 */

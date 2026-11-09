@@ -77,7 +77,7 @@ public final class ConfigCodes
                 + "]",
             ConfigCodes::validatePromoChannels));
         add(new Def(PROMO_TERMINALS, "推廣分析",
-            "終端字典與獲客漏斗：terminals 按順序為篩選項與漏斗卡片的順序；steps 為該終端的漏斗步驟（指標編碼 lpUV / hUV / dl / act / reg / ftd），"
+            "終端字典與獲客漏斗：terminals 按順序為篩選項與漏斗卡片的順序；code 用 web / android / ios（與數據平台的註冊終端 Web / Android / iOS 對應，h5、pc 視同 web），未識別由系統自動加；steps 為該終端的漏斗步驟（指標編碼 lpUV / hUV / dl / act / reg / ftd），"
                 + "role = ENTRY 表示入口步，strict = false 表示非嚴格轉化（不畫轉化率）；landingMinPct：落地頁 UV 佔入口的比例低於它時視為不經過落地頁（去掉第一步）",
             "{\n"
                 + "  \"landingMinPct\": 20,\n"
@@ -85,9 +85,7 @@ public final class ConfigCodes
                 + "    { \"code\": \"android\", \"name\": \"Android\", \"steps\": [\n"
                 + "      { \"code\": \"lpUV\", \"role\": \"ENTRY\" }, { \"code\": \"dl\", \"strict\": false },\n"
                 + "      { \"code\": \"act\", \"strict\": false }, { \"code\": \"reg\" }, { \"code\": \"ftd\" } ] },\n"
-                + "    { \"code\": \"ios\", \"name\": \"iOS\", \"steps\": [\n"
-                + "      { \"code\": \"lpUV\", \"role\": \"ENTRY\" }, { \"code\": \"hUV\", \"strict\": false }, { \"code\": \"reg\" }, { \"code\": \"ftd\" } ] },\n"
-                + "    { \"code\": \"h5\", \"name\": \"H5\", \"steps\": [\n"
+                + "    { \"code\": \"web\", \"name\": \"Web\", \"steps\": [\n"
                 + "      { \"code\": \"lpUV\", \"role\": \"ENTRY\" }, { \"code\": \"hUV\", \"strict\": false }, { \"code\": \"reg\" }, { \"code\": \"ftd\" } ] }\n"
                 + "  ]\n"
                 + "}",

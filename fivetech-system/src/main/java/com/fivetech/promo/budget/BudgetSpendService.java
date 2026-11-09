@@ -1,6 +1,7 @@
 package com.fivetech.promo.budget;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -13,14 +14,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import com.fivetech.common.exception.ServiceException;
 import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.monitor.exception.MonitorFieldException;
 
 /**
- * 推广分析 · 预算与消耗（FY-56）：页面配置、下载模板、导入校验。
+ * 推广分析 · 预算与消耗（FY-56）：页面配置、表格数据、下载模板、导入。
  *
- * <p>本系统只做校验，不存上传的文件、不落库；有效行交给 {@link BudgetSpendWriter} 写到 UDS（暂未接入）。
- * 站点取当前请求的 X-Site-Code；「今天」按站点时区；数据起始日取 dashboard.launch-date。</p>
+ * <p>数据存放在数据平台：读走 UDS（{@link BudgetDataReader}）；写由 {@link BudgetSpendWriter} 同步提交到采集平台。
+ * 本系统不存上传的文件、不落库。站点取当前请求的 X-Site-Code；「今天」按站点时区；数据起始日取 dashboard.launch-date。</p>
  *
  * @author fivetech
  */
@@ -37,11 +39,18 @@ public class BudgetSpendService
 
     private final BudgetSpendWriter writer;
 
-    public BudgetSpendService(DashboardProperties dashboard, PromoChannelDictionary channels, BudgetSpendWriter writer)
+    private final BudgetDataReader reader;
+
+    private final BudgetImportProperties props;
+
+    public BudgetSpendService(DashboardProperties dashboard, PromoChannelDictionary channels, BudgetSpendWriter writer,
+        BudgetDataReader reader, BudgetImportProperties props)
     {
         this.dashboard = dashboard;
         this.channels = channels;
         this.writer = writer;
+        this.reader = reader;
+        this.props = props;
     }
 
     /**
@@ -88,6 +97,7 @@ public class BudgetSpendService
         }
         m.put("promoters", promoters);
         m.put("writeEnabled", writer.isEnabled());
+        m.put("readEnabled", props.isReadEnabled());
         return m;
     }
 
@@ -120,32 +130,26 @@ public class BudgetSpendService
 
     /**
      * 下载模板（R6）：CSV（UTF-8 带 BOM，Excel 直接打开不乱码），六列 日期, 推廣商 ID, 推廣商名稱, 推廣渠道 ID, 推廣渠道名稱, 消耗 / 預算；
-     * 按所选日期每天 × 全部推广渠道一行，金额留空。预算模板应预填已有预算，数据在 UDS 侧、暂未接入，目前留空。
+     * 按所选日期每天 × 全部推广渠道一行；消耗金额留空，预算预填已有预算（读 UDS，没有的留空）。
      */
     public Template template(String kindCode, String fromText, String toText)
     {
         BudgetKind kind = kind(kindCode);
         String site = dashboard.currentSite();
-        LocalDate today = today(site);
-        LocalDate from = date("from", fromText);
-        LocalDate to = date("to", toText);
-        if (to.isBefore(from))
+        LocalDate[] r = range(kind, site, fromText, toText);
+        LocalDate from = r[0];
+        LocalDate to = r[1];
+        // 预算模板预填已有预算（R6）；读不到时不给模板，免得填错
+        Map<String, BigDecimal> existing = new LinkedHashMap<>();
+        if (kind == BudgetKind.BUDGET && props.isReadEnabled())
         {
-            throw MonitorFieldException.of("to", "結束日期不能早於開始日期");
-        }
-        if (ChronoUnit.DAYS.between(from, to) + 1 > BudgetImportValidator.MAX_DAYS)
-        {
-            throw MonitorFieldException.of("to", "單次最多 " + BudgetImportValidator.MAX_DAYS + " 天");
-        }
-        LocalDate start = dataStart();
-        if (start != null && from.isBefore(start))
-        {
-            throw MonitorFieldException.of("from", "早於數據起始日 " + start);
-        }
-        LocalDate max = kind == BudgetKind.SPEND ? today.minusDays(1) : today.plusDays(BudgetImportValidator.BUDGET_AHEAD_DAYS);
-        if (to.isAfter(max))
-        {
-            throw MonitorFieldException.of("to", kind == BudgetKind.SPEND ? "消耗只能選到昨天" : "預算最遠到今天起 90 天");
+            for (BudgetDataReader.Row row : readRows(kind, from, to))
+            {
+                if (row.getAmount() != null)
+                {
+                    existing.put(row.getDate() + "|" + row.getChannelId(), row.getAmount());
+                }
+            }
         }
 
         StringBuilder sb = new StringBuilder("﻿");
@@ -157,8 +161,10 @@ public class BudgetSpendService
             {
                 for (PromoChannelDictionary.Channel ch : p.getChannels())
                 {
+                    BigDecimal v = existing.get(d + "|" + ch.getId());
                     sb.append(d).append(',').append(csv(p.getId())).append(',').append(csv(p.getName())).append(',')
-                        .append(csv(ch.getId())).append(',').append(csv(ch.getName())).append(",\r\n");
+                        .append(csv(ch.getId())).append(',').append(csv(ch.getName())).append(',')
+                        .append(v == null ? "" : BudgetDataReader.amountText(v)).append("\r\n");
                 }
             }
         }
@@ -167,7 +173,7 @@ public class BudgetSpendService
     }
 
     /**
-     * 导入（R7–R10）：校验后把有效行交给 writer；文件只在内存里处理，不保存。
+     * 导入（R7–R10）：校验后把有效行同步写到数据平台（可能要用户确认覆盖，见 {@link #resume}）；文件只在内存里处理，不保存。
      */
     public BudgetImportResult importFile(String kindCode, MultipartFile file, String operator)
     {
@@ -193,17 +199,118 @@ public class BudgetSpendService
         boolean written = false;
         if (!out.getRecords().isEmpty())
         {
-            written = writer.write(site, kind, out.getRecords(), operator);
+            BudgetWriteOutcome w = writer.write(site, kind, out.getRecords(), operator);
+            r.setWrite(w);
+            written = w.isWritten();
+            if (BudgetWriteOutcome.DISABLED.equals(w.getStatus()))
+            {
+                r.setWriteNote(w.getMessage());
+            }
         }
         r.setWritten(written);
-        if (!written && !out.getRecords().isEmpty())
-        {
-            r.setWriteNote("數據寫入（UDS）尚未接入，本次只做了校驗，沒有寫入數據。");
-        }
         log.info("[promo-budget] 导入 site={} kind={} file={} status={} total={} valid={} failed={} empty={} written={} operator={}",
             site, kind, file.getOriginalFilename(), r.getStatus(), r.getTotal(), r.getValid(), r.getFailed(), r.getEmpty(),
             written, operator);
         return r;
+    }
+
+    // ------------------------------------------------------------------ 表格数据
+
+    /**
+     * 表格数据：所选日期范围（单次最多 31 天）的已发布行 rows[]：{date, promoterId, promoterName, channelId, channelName, amount}
+     * （amount 为十进制字符串）。某格没有行显示「—」，不补零。
+     */
+    public Map<String, Object> data(String kindCode, String fromText, String toText)
+    {
+        BudgetKind kind = kind(kindCode);
+        String site = dashboard.currentSite();
+        LocalDate[] r = range(kind, site, fromText, toText);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("kind", kind.name());
+        out.put("from", r[0].toString());
+        out.put("to", r[1].toString());
+        out.put("readEnabled", props.isReadEnabled());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (props.isReadEnabled())
+        {
+            List<BudgetDataReader.Row> list;
+            try
+            {
+                list = reader.rows(kind, r[0], r[1]);
+            }
+            catch (RuntimeException e)
+            {
+                log.warn("[promo-budget] 读取 {} 失败 site={} {}~{}：{}", kind, site, r[0], r[1], e.getMessage());
+                throw new ServiceException("讀取數據平台的" + kind.getLabel() + "失敗：" + e.getMessage());
+            }
+            for (BudgetDataReader.Row row : list)
+            {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("date", row.getDate().toString());
+                m.put("promoterId", row.getPromoterId());
+                m.put("promoterName", row.getPromoterName());
+                m.put("channelId", row.getChannelId());
+                m.put("channelName", row.getChannelName());
+                m.put("amount", row.getAmount() == null ? null : BudgetDataReader.amountText(row.getAmount()));
+                rows.add(m);
+            }
+        }
+        out.put("rows", rows);
+        return out;
+    }
+
+    private List<BudgetDataReader.Row> readRows(BudgetKind kind, LocalDate from, LocalDate to)
+    {
+        try
+        {
+            return reader.rows(kind, from, to);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[promo-budget] 读取已有{}失败 {}~{}：{}", kind.getLabel(), from, to, e.getMessage());
+            throw new ServiceException("讀取已有" + kind.getLabel() + "失敗，暫時不能下載預填模板：" + e.getMessage());
+        }
+    }
+
+    /** 模板、表格共用的日期范围校验：格式、先后、最多 31 天、不早于数据起始日、消耗到昨天 / 预算到今天 + 90 天 */
+    private LocalDate[] range(BudgetKind kind, String site, String fromText, String toText)
+    {
+        LocalDate today = today(site);
+        LocalDate from = date("from", fromText);
+        LocalDate to = date("to", toText);
+        if (to.isBefore(from))
+        {
+            throw MonitorFieldException.of("to", "結束日期不能早於開始日期");
+        }
+        if (ChronoUnit.DAYS.between(from, to) + 1 > BudgetImportValidator.MAX_DAYS)
+        {
+            throw MonitorFieldException.of("to", "單次最多 " + BudgetImportValidator.MAX_DAYS + " 天");
+        }
+        LocalDate start = dataStart();
+        if (start != null && from.isBefore(start))
+        {
+            throw MonitorFieldException.of("from", "早於數據起始日 " + start);
+        }
+        LocalDate max = kind == BudgetKind.SPEND ? today.minusDays(1) : today.plusDays(BudgetImportValidator.BUDGET_AHEAD_DAYS);
+        if (to.isAfter(max))
+        {
+            throw MonitorFieldException.of("to", kind == BudgetKind.SPEND ? "消耗只能選到昨天" : "預算最遠到今天起 90 天");
+        }
+        return new LocalDate[] { from, to };
+    }
+
+    /**
+     * 接着上一次导入的写入：确认覆盖（confirm = true）/ 取消（false），或在「處理中」时原样重发查结果。
+     */
+    public BudgetWriteOutcome resume(String token, Boolean confirm, String operator)
+    {
+        if (token == null || token.isBlank())
+        {
+            throw MonitorFieldException.of("token", "缺少 token");
+        }
+        BudgetWriteOutcome o = writer.resume(token.trim(), Boolean.TRUE.equals(confirm), dashboard.currentSite(), operator);
+        log.info("[promo-budget] 继续写入 site={} confirm={} → {} operator={}", dashboard.currentSite(), confirm, o.getStatus(), operator);
+        return o;
     }
 
     // ------------------------------------------------------------------ helpers

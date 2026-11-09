@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "推广分析 · 后端接口（UDS 未接入版）",
-    "description": "推广分析 FY-46 的接口联调：概览（scene = PROMO）、渠道表现、获客与留存、裂变层级、投放日报导出（FY-57）、用户明细的终端与推广筛选、预算与消耗 6 列模板。\n\n全部只读（不写库）。UDS 推广数据未接入：数值为 null、列表为空，dataPending = true。\n\n执行前：先执行 sql/release_next_postgresql.sql ⑤；在「系统管理 › 配置中心」把 PROMO_CHANNELS 改成带 id 的格式，并新增 PROMO_TERMINALS（示例在新增页）。\n变量：baseUrl、username、password、totp（或直接填 token 跳过 0.1）、siteCode；tzOffsetMin 为站点时区相对 UTC 的分钟数（印度 330）。\n权限：dashboard:promo:view、dashboard:record:member、promo:budget:view。",
+    "name": "推广分析 · 后端接口（UDS 市场数据集）",
+    "description": "推广分析 FY-46 的接口联调（2026-11-05 晚版，已接 UDS dashboard_market_hour_v1 / dashboard_market_member_snapshot_v1）。\n\n全部只读（2.3 需先在指标管理打开 promoReg 的「可歸因」，那一步会写库，请在测试环境做）。\n已接：注册、首存、首存转化率 / 金额、复存人数 / 金额、存款人数 / 总额、淨充值、ARPPU、投注人数 / 总额、激活、按终端归因、流失人数、裂变层级进入某用户。\n仍为空（state = NO_SOURCE）：消耗、预算、成本类、UV、下载点击、注册转化率、留存与回收、推广商 / 推广渠道维度。\n\n执行前：执行 sql/release_next_postgresql.sql ⑤；配置中心 PROMO_CHANNELS 改成带 id 的格式，PROMO_TERMINALS 的 code 用 web / android / ios；后端能连上 UDS（UDS_BASE_URL）。\n变量：baseUrl、username、password、totp（或直接填 token 跳过 0.1）、siteCode（SITE-IN）；tzOffsetMin 站点时区分钟数（印度 330）；fissionUserId 一个有下级的代理。\n对数方法见 doc/promo/推广分析-联调测试说明.md。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -30,7 +30,8 @@
           "pm.collectionVariables.set('todayEnd', d(1) + ' 00:00');",
           "pm.collectionVariables.set('d7From', d(-6) + ' 00:00');",
           "pm.collectionVariables.set('reg30From', d(-30));",
-          "pm.collectionVariables.set('reg90From', d(-90));"
+          "pm.collectionVariables.set('reg90From', d(-90));",
+          "pm.collectionVariables.set('d3From', d(-3) + ' 00:00');"
         ]
       }
     },
@@ -124,8 +125,9 @@
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
                   "pm.test('有 agents / terminals / metrics', () => { pm.expect(j.data.agents).to.be.an('array'); pm.expect(j.data.terminals).to.be.an('array'); pm.expect(j.data.metrics).to.be.an('array'); });",
                   "const a = (j.data.agents || [])[0]; if (a) { pm.collectionVariables.set('agentId', a.code); if (a.channels[0]) pm.collectionVariables.set('channelId', a.channels[0].code); }",
-                  "const t = (j.data.terminals || [])[0]; if (t) pm.collectionVariables.set('terminal', t.code);",
-                  "pm.test('metrics 16 个（执行过 release_next ⑤）', () => pm.expect(j.data.metrics.length).to.eql(16));"
+                  "pm.test('终端 code 用 web / android / ios', () => j.data.terminals.forEach(t => pm.expect(['web','android','ios']).to.include(t.code)));",
+                  "pm.test('metrics 16 个（执行过 release_next ⑤）', () => pm.expect(j.data.metrics.length).to.eql(16));",
+                  "const reg = j.data.metrics.find(m => m.code === 'reg'); pm.collectionVariables.set('regAttributable', String(!!(reg && reg.attributable)));"
                 ]
               }
             }
@@ -134,10 +136,10 @@
       ]
     },
     {
-      "name": "2. 概览（复用 /dashboard/metrics/overview，scene = PROMO）",
+      "name": "2. 概览（scene = PROMO，UDS 市场数据）",
       "item": [
         {
-          "name": "2.1 默认指标（近 7 天、按日）",
+          "name": "2.1 默认 10 个指标（近 7 天、按日）",
           "request": {
             "method": "POST",
             "header": [
@@ -159,7 +161,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "对照 UDS 联调包：reg ≈ 06 区间总览的 reg 合计；淨充值 ≈ 11 区间精确的 deposit_amount（时间窗相同时）。"
           },
           "event": [
             {
@@ -170,18 +173,28 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "const b = j.data.blocks.METRICS;",
+                  "const b = j.data.blocks.METRICS; pm.test('METRICS 没有取数错误', () => pm.expect(j.data.blockErrors).to.not.have.property('METRICS'));",
                   "pm.test('默认 10 张卡', () => pm.expect(b.items.length).to.eql(10));",
                   "pm.test('监控字段为 null', () => { pm.expect(j.data.monitoring).to.eql(null); pm.expect(j.data.anomalies).to.eql(null); b.items.forEach(c => pm.expect(c.alert).to.eql(null)); });",
-                  "pm.test('数据未接入提示', () => pm.expect(j.data.notices.map(n => n.code)).to.include('PROMO_DATA_PENDING'));",
-                  "pm.test('含今天：compare.cutAt 有值', () => pm.expect(j.data.compare.cutAt).to.match(/^\\d{2}:\\d{2}$/));"
+                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
+                  "const c_ftd = j.data.blocks.METRICS.items.find(c => c.code === 'ftd');",
+                  "const c_net = j.data.blocks.METRICS.items.find(c => c.code === 'net');",
+                  "const c_spend = j.data.blocks.METRICS.items.find(c => c.code === 'spend');",
+                  "const c_regR = j.data.blocks.METRICS.items.find(c => c.code === 'regR');",
+                  "pm.test('注册 / 首存 / 淨充值 已接（state OK，有数值）', () => [c_reg, c_ftd, c_net].forEach(c => { pm.expect(c.state).to.eql('OK'); pm.expect(c.value).to.be.a('number'); }));",
+                  "pm.test('series 长度 = slot.points', () => pm.expect(c_reg.series.length).to.eql(j.data.slot.points));",
+                  "pm.test('消耗待接入 NO_SOURCE', () => { pm.expect(c_spend.state).to.eql('NO_SOURCE'); pm.expect(c_spend.value).to.eql(null); });",
+                  "pm.test('注册转化率口径待确认 NO_SOURCE', () => pm.expect(c_regR.note).to.include('口徑'));",
+                  "pm.test('notices 有 PROMO_DATA_PARTIAL', () => pm.expect(j.data.notices.map(n => n.code)).to.include('PROMO_DATA_PARTIAL'));",
+                  "pm.test('含今天：compare.cutAt 有值', () => pm.expect(j.data.compare.cutAt).to.match(/^\\d{2}:\\d{2}$/));",
+                  "pm.test('asOf 取 UDS 新鲜度', () => pm.expect(j.data.asOf).to.be.a('string'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "2.2 选终端 + 按终端归因",
+          "name": "2.2 已接指标全量 + 选终端 Web",
           "request": {
             "method": "POST",
             "header": [
@@ -197,14 +210,13 @@
             "url": "{{baseUrl}}/dashboard/metrics/overview",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"terminal\": \"{{terminal}}\",\n  \"metrics\": [\n    \"spend\",\n    \"reg\",\n    \"regR\"\n  ],\n  \"includeSeries\": false,\n  \"attribution\": {\n    \"dimension\": \"terminal\"\n  }\n}",
+              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"terminal\": \"web\",\n  \"metrics\": [\n    \"reg\",\n    \"ftd\",\n    \"ftdR\",\n    \"ftdAmt\",\n    \"rd\",\n    \"net\",\n    \"act\",\n    \"spend\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            },
-            "description": "attribution 只在「指标管理」里打开了「可歸因」的指标返回；选了终端再按终端拆 → supported=false, reason=TERMINAL_SELECTED"
+            }
           },
           "event": [
             {
@@ -215,16 +227,106 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "const items = j.data.blocks.METRICS.items;",
-                  "pm.test('消耗卡 NA', () => pm.expect(items.find(c => c.code === 'spend').state).to.eql('NA'));",
-                  "console.log(JSON.stringify(items.map(c => ({code: c.code, state: c.state, note: c.note, attribution: c.attribution}))));"
+                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
+                  "const c_act = j.data.blocks.METRICS.items.find(c => c.code === 'act');",
+                  "const c_spend = j.data.blocks.METRICS.items.find(c => c.code === 'spend');",
+                  "const c_rd = j.data.blocks.METRICS.items.find(c => c.code === 'rd');",
+                  "pm.test('Web 注册有值（web_reg）', () => pm.expect(c_reg.value).to.be.a('number'));",
+                  "pm.test('复存人数（精确，按日累加）有值', () => pm.expect(c_rd.value).to.be.a('number'));",
+                  "pm.test('激活只有 Android：NA', () => pm.expect(c_act.state).to.eql('NA'));",
+                  "pm.test('消耗不按终端：NA', () => pm.expect(c_spend.state).to.eql('NA'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "2.3 按小时：消耗类 DAILY_ONLY",
+          "name": "2.3 按终端归因（注册）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/metrics/overview",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"metrics\": [\n    \"reg\"\n  ],\n  \"includeSeries\": false,\n  \"attribution\": {\n    \"dimension\": \"terminal\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "需要先在「系统管理 › 指标管理」把 promoReg 的「可歸因」打开（会写库，请在测试环境操作）。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ct = pm.response.headers.get('Content-Type') || '';",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
+                  "if (pm.collectionVariables.get('regAttributable') === 'true') {",
+                  "  pm.test('supported，成员合计 = 卡片值', () => { const a = c_reg.attribution; pm.expect(a.supported).to.eql(true); const s = a.rows.reduce((x, r) => x + (r.value || 0), 0); pm.expect(s).to.eql(c_reg.value); });",
+                  "} else { pm.test('reg 没打开「可歸因」→ 不返回 attribution（在指标管理打开后重跑）', () => pm.expect(c_reg.attribution).to.eql(undefined)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 按推广渠道归因 → PENDING_SOURCE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/metrics/overview",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"metrics\": [\n    \"reg\"\n  ],\n  \"includeSeries\": false,\n  \"attribution\": {\n    \"dimension\": \"channel\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ct = pm.response.headers.get('Content-Type') || '';",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
+                  "if (c_reg.attribution) pm.test('渠道映射待补', () => pm.expect(c_reg.attribution.reason).to.eql('PENDING_SOURCE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 按小时：消耗类 DAILY_ONLY，注册有小时序列",
           "request": {
             "method": "POST",
             "header": [
@@ -257,15 +359,58 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "const items = j.data.blocks.METRICS.items;",
-                  "pm.test('spend 无小时数据', () => pm.expect(items.find(c => c.code === 'spend').seriesUnavailable).to.eql('DAILY_ONLY'));"
+                  "const c_spend = j.data.blocks.METRICS.items.find(c => c.code === 'spend');",
+                  "const c_reg = j.data.blocks.METRICS.items.find(c => c.code === 'reg');",
+                  "pm.test('spend 无小时数据', () => pm.expect(c_spend.seriesUnavailable).to.eql('DAILY_ONLY'));",
+                  "pm.test('reg 有小时序列', () => pm.expect(c_reg.series.length).to.eql(j.data.slot.points));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "2.4 去年同期 → 4002",
+          "name": "2.6 选推广商 → 不返回未筛选的数",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/metrics/overview",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"agents\": [\n    \"{{agentId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ct = pm.response.headers.get('Content-Type') || '';",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('PROMO_CHANNEL_PENDING', () => pm.expect(j.data.notices.map(n => n.code)).to.include('PROMO_CHANNEL_PENDING'));",
+                  "pm.test('全部没有数值', () => j.data.blocks.METRICS.items.forEach(c => pm.expect(c.value).to.eql(null)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.7 去年同期 → 4002",
           "request": {
             "method": "POST",
             "header": [
@@ -304,7 +449,7 @@
           ]
         },
         {
-          "name": "2.5 不认识的指标 → 4003",
+          "name": "2.8 不认识的指标 → 4003",
           "request": {
             "method": "POST",
             "header": [
@@ -343,7 +488,7 @@
           ]
         },
         {
-          "name": "2.6 不认识的推广商 → 4004",
+          "name": "2.9 不认识的推广商 → 4004",
           "request": {
             "method": "POST",
             "header": [
@@ -382,7 +527,7 @@
           ]
         },
         {
-          "name": "2.7 概览导出 xlsx",
+          "name": "2.10 概览导出 xlsx",
           "request": {
             "method": "POST",
             "header": [
@@ -427,7 +572,7 @@
       "name": "3. 渠道表现",
       "item": [
         {
-          "name": "3.1 第 1 层（推广商）",
+          "name": "3.1 日期 › 终端：合计与日期行有值",
           "request": {
             "method": "POST",
             "header": [
@@ -443,7 +588,7 @@
             "url": "{{baseUrl}}/dashboard/promo/channels/table",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"rows\": [\n    \"agent\",\n    \"channel\",\n    \"date\"\n  ],\n  \"columns\": [\n    \"spend\",\n    \"reg\",\n    \"regR\",\n    \"cpa\",\n    \"roas7\",\n    \"regRet1\"\n  ]\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\",\n  \"rows\": [\n    \"date\",\n    \"terminal\"\n  ],\n  \"columns\": [\n    \"reg\",\n    \"ftd\",\n    \"ftdR\",\n    \"rd\",\n    \"depU\",\n    \"dep\",\n    \"arppu\",\n    \"bet\",\n    \"act\",\n    \"spend\",\n    \"roas7\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -460,15 +605,21 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "pm.test('有合计行', () => pm.expect(j.data.total).to.be.an('object'));",
-                  "pm.test('dataPending', () => pm.expect(j.data.dataPending).to.eql(true));"
+                  "pm.test('已取到数据', () => pm.expect(j.data.dataPending).to.eql(false));",
+                  "pm.test('合计注册有值', () => pm.expect(j.data.total.cells.reg.value).to.be.a('number'));",
+                  "pm.test('消耗 NO_SOURCE', () => pm.expect(j.data.total.cells.spend.state).to.eql('NO_SOURCE'));",
+                  "pm.test('日期行从新到旧', () => pm.expect(j.data.rows[0].key > j.data.rows[j.data.rows.length - 1].key).to.eql(j.data.rows.length > 1));",
+                  "pm.test('columns：注册、首存可下钻，其他不可', () => j.data.columns.forEach(c => pm.expect(c.drillable).to.eql(['reg','ftd'].includes(c.code))));",
+                  "pm.test('合计注册格子可下钻、消耗不可', () => { pm.expect(j.data.total.cells.reg.drillable).to.eql(true); pm.expect(j.data.total.cells.spend.drillable).to.eql(false); });",
+                  "pm.test('单元格带 format：注册 INT、首存转化率 PCT、存款总额 MONEY', () => { const c = j.data.total.cells; pm.expect(c.reg.format).to.eql('INT'); pm.expect(c.ftdR.format).to.eql('PCT'); pm.expect(c.dep.format).to.eql('MONEY'); });",
+                  "pm.collectionVariables.set('rowDate', j.data.rows[0].key);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "3.2 展开推广商（第 2 层）",
+          "name": "3.2 展开日期 → 终端行",
           "request": {
             "method": "POST",
             "header": [
@@ -484,7 +635,7 @@
             "url": "{{baseUrl}}/dashboard/promo/channels/table",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"rows\": [\n    \"agent\",\n    \"channel\",\n    \"date\"\n  ],\n  \"columns\": [\n    \"spend\",\n    \"reg\"\n  ],\n  \"parent\": [\n    {\n      \"dim\": \"agent\",\n      \"key\": \"{{agentId}}\"\n    }\n  ]\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\",\n  \"rows\": [\n    \"date\",\n    \"terminal\"\n  ],\n  \"columns\": [\n    \"reg\",\n    \"act\",\n    \"spend\"\n  ],\n  \"parent\": [\n    {\n      \"dim\": \"date\",\n      \"key\": \"{{rowDate}}\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -501,14 +652,15 @@
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
-                  "pm.test('第 2 层是推广渠道', () => pm.expect(j.data.dim).to.eql('channel'));"
+                  "pm.test('第 2 层是终端', () => pm.expect(j.data.dim).to.eql('terminal'));",
+                  "const w = j.data.rows.find(r => r.key === 'web'); if (w) pm.test('Web 行激活 NA、消耗 NA', () => { pm.expect(w.cells.act.state).to.eql('NA'); pm.expect(w.cells.spend.state).to.eql('NA'); });"
                 ]
               }
             }
           ]
         },
         {
-          "name": "3.3 推广渠道在推广商前 → 4003",
+          "name": "3.3 推广商 › 推广渠道：合计有值、渠道行待映射",
           "request": {
             "method": "POST",
             "header": [
@@ -524,7 +676,49 @@
             "url": "{{baseUrl}}/dashboard/promo/channels/table",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"rows\": [\n    \"channel\",\n    \"agent\"\n  ],\n  \"columns\": [\n    \"reg\"\n  ]\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\",\n  \"rows\": [\n    \"agent\",\n    \"channel\"\n  ],\n  \"columns\": [\n    \"reg\",\n    \"spend\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ct = pm.response.headers.get('Content-Type') || '';",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('合计注册有值', () => pm.expect(j.data.total.cells.reg.value).to.be.a('number'));",
+                  "if (j.data.rows[0]) pm.test('推广商行 NO_SOURCE', () => pm.expect(j.data.rows[0].cells.reg.state).to.eql('NO_SOURCE'));",
+                  "if (j.data.rows[0]) pm.test('推广商行注册不可下钻（NO_SOURCE）', () => pm.expect(j.data.rows[0].cells.reg.drillable).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 推广渠道在推广商前 → 4003",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/promo/channels/table",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\",\n  \"rows\": [\n    \"channel\",\n    \"agent\"\n  ],\n  \"columns\": [\n    \"reg\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -547,7 +741,7 @@
           ]
         },
         {
-          "name": "3.4 导出",
+          "name": "3.5 导出（日期 › 终端）",
           "request": {
             "method": "POST",
             "header": [
@@ -563,7 +757,7 @@
             "url": "{{baseUrl}}/dashboard/promo/channels/export",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"rows\": [\n    \"agent\",\n    \"channel\"\n  ],\n  \"columns\": [\n    \"spend\",\n    \"reg\",\n    \"roas7\"\n  ]\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\",\n  \"rows\": [\n    \"date\",\n    \"terminal\"\n  ],\n  \"columns\": [\n    \"reg\",\n    \"ftd\",\n    \"dep\",\n    \"spend\",\n    \"roas7\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -608,13 +802,14 @@
             "url": "{{baseUrl}}/dashboard/promo/acquisition/funnel",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\"\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "流失人数 ≈ UDS 联调包 23「已注册尚未首存名单」按终端的 record_count。"
           },
           "event": [
             {
@@ -624,14 +819,21 @@
                 "exec": [
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
-                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('已取到数据', () => pm.expect(j.data.dataPending).to.eql(false));",
+                  "const reg = j.data.overall.find(x => x.code === 'reg'); pm.test('整体注册有值', () => pm.expect(reg.value).to.be.a('number'));",
+                  "pm.test('UV-落地頁口径待确认', () => pm.expect(j.data.overall.find(x => x.code === 'lpUV').state).to.eql('NO_SOURCE'));",
+                  "pm.test('各终端流失人数（会员快照）', () => j.data.terminals.forEach(t => pm.expect(t.lost.value).to.be.a('number')));",
+                  "pm.test('每项都有 name / description / drillable', () => j.data.overall.concat(...j.data.terminals.map(t => t.steps)).forEach(x => { pm.expect(x.name).to.be.a('string'); pm.expect(x).to.have.property('description'); pm.expect(x.drillable).to.be.a('boolean'); }));",
+                  "pm.test('注册、首存、流失可下钻', () => { pm.expect(reg.drillable).to.eql(true); pm.expect(j.data.overall.find(x => x.code === 'ftd').drillable).to.eql(true); j.data.terminals.forEach(t => { pm.expect(t.lost.code).to.eql('lost'); pm.expect(t.lost.drillable).to.eql(true); pm.expect(t.reg.drillable).to.eql(true); }); });",
+                  "pm.test('首存步有转化率（相对 rateFrom）', () => j.data.terminals.forEach(t => { const f = t.steps.find(s => s.code === 'ftd'); if (f && f.value !== null) { pm.expect(f.rateFrom).to.eql('reg'); pm.expect(f.rate).to.be.a('number'); } }));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "4.2 留存概要",
+          "name": "4.2 留存概要（分群数据集未接入）",
           "request": {
             "method": "POST",
             "header": [
@@ -663,7 +865,8 @@
                 "exec": [
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
-                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('到期的卡为 NO_SOURCE', () => j.data.cards.forEach(c => pm.expect(['NO_SOURCE','PENDING']).to.include(c.state)));"
                 ]
               }
             }
@@ -792,7 +995,7 @@
       "name": "5. 裂变层级",
       "item": [
         {
-          "name": "5.1 顶层",
+          "name": "5.1 顶层（一级代理清单待补源）",
           "request": {
             "method": "POST",
             "header": [
@@ -824,14 +1027,59 @@
                 "exec": [
                   "const ct = pm.response.headers.get('Content-Type') || '';",
                   "const j = pm.response.json();",
-                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));"
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('FISSION_TOP_PENDING', () => pm.expect(j.data.notices.map(n => n.code)).to.include('FISSION_TOP_PENDING'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "5.2 定位",
+          "name": "5.2 进入某用户（直属下级）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/promo/fission/agents",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"parentId\": \"{{fissionUserId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "变量 fissionUserId 填一个有下级的代理的用户 ID（或帐号）。可用 UDS 联调包 09「代理推荐码排行」里的 agent_login 找一个。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ct = pm.response.headers.get('Content-Type') || '';",
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "if (j.data.current) {",
+                  "  pm.test('当前用户有帐号与直属下级人数', () => { pm.expect(j.data.current.account).to.be.a('string'); pm.expect(j.data.current.directCount).to.be.a('number'); });",
+                  "  pm.test('分页总数 = 直属下级行数', () => pm.expect(j.data.page.total).to.be.at.least(j.data.rows.length));",
+                  "} else { pm.test('找不到用户时有 NOT_FOUND', () => pm.expect(j.data.notices.map(n => n.code)).to.include('NOT_FOUND')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 定位（待补源）",
           "request": {
             "method": "GET",
             "header": [
@@ -861,7 +1109,7 @@
           ]
         },
         {
-          "name": "5.3 导出",
+          "name": "5.4 导出（进入某用户）",
           "request": {
             "method": "POST",
             "header": [
@@ -877,7 +1125,7 @@
             "url": "{{baseUrl}}/dashboard/promo/fission/export",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\"\n}",
+              "raw": "{\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"parentId\": \"{{fissionUserId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -928,7 +1176,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "渠道映射与消耗未进生产，只有标题、表头与合计行。"
           },
           "event": [
             {
@@ -1061,7 +1310,7 @@
           ]
         },
         {
-          "name": "7.2 按终端筛选（UDS 字段未映射时报错）",
+          "name": "7.2 按终端筛选（用户明细数据集还没有终端字段 → 5001）",
           "request": {
             "method": "POST",
             "header": [
@@ -1084,7 +1333,7 @@
                 }
               }
             },
-            "description": "application.yml 的 details.member.filter-fields 还没有 registerTerminal 时返回 5001「暫時不能按它篩選」；配好后应为 200"
+            "description": "用户明细读的是 dashboard_player_snapshot_v3，没有注册终端字段；application.yml details.member.filter-fields 配好后应为 200"
           },
           "event": [
             {
@@ -1202,6 +1451,65 @@
               }
             }
           ]
+        },
+        {
+          "name": "8.3 表格数据：消耗（昨天，读 UDS）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/promo/budget/data?kind=SPEND&from={{yesterday}}&to={{yesterday}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('有 rows 数组', () => pm.expect(j.data.rows).to.be.an('array'));",
+                  "pm.test('金额是十进制字符串', () => j.data.rows.forEach(r => pm.expect(r.amount === null || typeof r.amount === 'string').to.eql(true)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.4 下载预算模板（昨天，预填已有预算）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/promo/budget/template?kind=BUDGET&from={{yesterday}}&to={{yesterday}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('6 列表头', () => pm.expect(pm.response.text()).to.include('日期,推廣商 ID,推廣商名稱,推廣渠道 ID,推廣渠道名稱,預算'));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }
@@ -1229,7 +1537,7 @@
     },
     {
       "key": "siteCode",
-      "value": ""
+      "value": "SITE-IN"
     },
     {
       "key": "tzOffsetMin",
@@ -1244,8 +1552,16 @@
       "value": ""
     },
     {
-      "key": "terminal",
-      "value": "android"
+      "key": "fissionUserId",
+      "value": ""
+    },
+    {
+      "key": "regAttributable",
+      "value": "false"
+    },
+    {
+      "key": "rowDate",
+      "value": ""
     }
   ]
 }

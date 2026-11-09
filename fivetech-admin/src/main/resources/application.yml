@@ -373,9 +373,10 @@ dashboard:
           dT: [dep_time_sum, dep_time_count]
           wT: [wd_time_sum, wd_time_count]
         # 区间只在一个自然日内（完整一天，或今天截至当前）时，这些去重人数指标的区间值取日数据集当天的值
-        # （active → dashboard_overview_day_v2.active_day）。多天区间仍按各日日去重值取平均；
-        # 未列出的（arppu、depU）不完整的一天保持 NULL
-        single-day-from-day: [active]
+        # （active → active_day、arppu → arppu_day、depU → dep_users_day，dashboard_overview_day_v2）。多天区间仍按各日日去重值取平均。
+        # 2026-11-09：UDS 支持实时数据，今日的 ARPPU、存款人数（含 ARPPU 构成里的存款人数）也取日数据集当天截至当前的值；
+        # 未列出的指标不完整的一天保持 NULL
+        single-day-from-day: [active, arppu, depU]
       # 回测预览「平时水平」（POST /monitor/rules/preview 的 usual）：UDS metric_distribution_v1 直接给出
       # 每个指标按检测周期切分后的 p5 / p95 / min / max / min_at / max_at，以及有效周期数 valid_point_count（平时水平的 sampleHours），
       # 后端不再统计（UDS 20 指标四值联调文档，2026-10-26）。
@@ -681,6 +682,46 @@ dashboard:
 
 # 健康检查与监控端点
 # 独立端口 8081，安全组只对内网/探活来源开放，绝不暴露公网
+# 推广分析 · UDS 市场数据集（《推广分析：页面指标与数据集字段对照》2026-11-05）。
+# 走上面 dashboard.gateway.uds 的地址、证书与 X-Uds-Site 站点头；宽表与精确人数拆成两个请求用 /query/batch 发出
+promo:
+  market:
+    # 关闭后推广分析不调 UDS，指标全部按「数据待接入」返回
+    enabled: ${PROMO_MARKET_ENABLED:true}
+    hour-dataset: ${PROMO_MARKET_HOUR_DATASET:dashboard_market_hour_v1}
+    member-dataset: ${PROMO_MARKET_MEMBER_DATASET:dashboard_market_member_snapshot_v1}
+    # 可选：merchant_code 过滤（UDS 联调包里的 merchant_code）；为空只按站点头区分
+    merchant-code: ${PROMO_MARKET_MERCHANT_CODE:}
+    # 单次 limit（UDS 上限 1000），满页自动翻页
+    page-size: 1000
+    # 裂变层级进入某用户时最多读取的直属下级人数
+    max-children: 1000
+  # 预算与消耗（FY-56）读写数据平台（《市场预算、消耗：后端端到端联调手册》2026-11-06）。
+  # 写：采集平台统一提交接口 /v1/imports/market-cost:submit、market-budget:submit，同步返回；整日替换，后端先合并当天已有数据再提交。
+  # 读：UDS import_yata_promo_cost / budget（走上面的 UDS 客户端，地址、证书、X-Uds-* 身份头相同；采集 token 与 UDS 身份须指向同一站点）
+  budget-import:
+    # 写入开关：关闭时导入只做校验、不写
+    enabled: ${PROMO_BUDGET_IMPORT_ENABLED:false}
+    # 读取开关：关闭时表格不查 UDS、预算模板不预填（写入也不可用：整日替换前要读已有数据）
+    read-enabled: ${PROMO_BUDGET_READ_ENABLED:true}
+    # 采集接口地址，不带 /v1：内网 http://10.32.16.5:8090，本机转发 http://127.0.0.1:18090
+    collect-base-url: ${COLLECT_BASE_URL:}
+    # 采集 Bearer token 只从环境变量读
+    token: ${COLLECT_TOKEN:}
+    # 多个站点各有 token 时再加（按站点编码，值引用环境变量）；不要写成 site-tokens: {}，空的 {} 会被当成字符串导致启动失败
+    # site-tokens:
+    #   SITE-BR: ${COLLECT_TOKEN_SITE_BR:}
+    # 单次提交超时（手册建议 ≥ 20 秒）；202 / 429 / 503 / 超时在一次导入里最多重发多久，超过后页面「重新查詢結果」
+    request-timeout-seconds: 20
+    submit-wait-seconds: 60
+    # 待确认覆盖、处理中的提交在内存里保留多久（平台确认编号默认 10 分钟有效）
+    pending-ttl-minutes: 30
+    # 单次提交上限（手册默认 5000 行、2 MiB；超限不拆同一天，提示缩短日期范围）
+    max-rows: 5000
+    max-bytes: 2097152
+    uds-spend-dataset: import_yata_promo_cost
+    uds-budget-dataset: import_yata_promo_budget
+
 management:
   server:
     port: ${MANAGEMENT_PORT:8081}
@@ -796,6 +837,31 @@ copilot:
     # 每天最多调用几次（全部站点；定时、立即发送、测试、预览合计），用完后当天的简报不带摘要
     daily-limit: ${COPILOT_BRIEF_DAILY_LIMIT:20}
     max-tokens: 800
+  # 订阅简报 · 数据异动分析：周期内有告警事件或指标明显波动时，结合告警写一段变化原因（与 AI 摘要共用订阅上的 AI 开关、模型）
+  anomaly:
+    # 每天最多调用几次（全部站点，与 AI 摘要分开计数）
+    daily-limit: ${COPILOT_ANOMALY_DAILY_LIMIT:20}
+    max-tokens: 400
+    # 分析最多几个字（不计空白），超过不采用
+    max-chars: 100
+    # 明显波动：变化率绝对值 ≥ change-pct（%），比率类 ≥ change-pt（百分点）
+    change-pct: ${COPILOT_ANOMALY_CHANGE_PCT:20}
+    change-pt: ${COPILOT_ANOMALY_CHANGE_PT:5}
+    # 最多给模型几条告警事件（异常中的在前）
+    max-events: 10
+  # 管理后台 · AI 助手（右下角聊天，权限 copilot:chat:use）：每次提问带本站今日、昨日指标与告警；对话不落库
+  chat:
+    # 模型，为空用 default-model
+    model: ${COPILOT_CHAT_MODEL:}
+    # 每人每天最多问几次
+    daily-limit-per-user: ${COPILOT_CHAT_DAILY_LIMIT:50}
+    max-tokens: 1500
+    # 最多带最近几条消息（含本次提问）
+    max-messages: 20
+    # 单条提问最多几个字
+    max-chars: 2000
+    # 站点数据缓存秒数
+    context-cache-seconds: 300
 
 token:
   # 令牌自定义标识return userId != null && 1L == userId;

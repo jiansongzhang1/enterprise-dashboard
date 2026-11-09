@@ -109,6 +109,28 @@ public class MonitorEventServiceImpl implements IMonitorEventService
     }
 
     @Override
+    public List<MonitorEventVO> eventsInWindow(MonitorScope scope, LocalDateTime from, LocalDateTime to, int limit)
+    {
+        MonitorEventQuery q = new MonitorEventQuery();
+        q.setRangeFrom(from);
+        q.setRangeTo(to);
+        LocalDateTime lastJudged = overviewMapper.selectLastJudgedHour(scope);
+        LocalDateTime asOf = lastJudged == null ? null : lastJudged.plusHours(1);
+        List<MonitorEventVO> out = new ArrayList<>();
+        try (Page<MonitorEventRow> page = PageHelper.startPage(1, Math.max(1, limit), false))
+        {
+            for (MonitorEventRow row : eventMapper.selectEventList(scope, q))
+            {
+                MonitorEventVO vo = toVO(row, asOf);
+                vo.setCurrentText(row.getCurrentValue() == null ? null
+                    : MonitorMessageBuilder.display(row.getValueFormat(), row.getCurrentValue()));
+                out.add(vo);
+            }
+        }
+        return out;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public int handle(MonitorScope scope, List<Long> eventIds, String note)
     {
