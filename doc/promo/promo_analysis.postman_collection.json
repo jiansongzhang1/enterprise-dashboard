@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "推广分析 · 后端接口（UDS 市场数据集）",
-    "description": "推广分析 FY-46 的接口联调（2026-11-05 晚版，已接 UDS dashboard_market_hour_v1 / dashboard_market_member_snapshot_v1）。\n\n全部只读（2.3 需先在指标管理打开 promoReg 的「可歸因」，那一步会写库，请在测试环境做）。\n已接：注册、首存、首存转化率 / 金额、复存人数 / 金额、存款人数 / 总额、淨充值、ARPPU、投注人数 / 总额、激活、按终端归因、流失人数、裂变层级进入某用户。\n仍为空（state = NO_SOURCE）：消耗、预算、成本类、UV、下载点击、注册转化率、留存与回收、推广商 / 推广渠道维度。\n\n执行前：执行 sql/release_next_postgresql.sql ⑤；配置中心 PROMO_CHANNELS 改成带 id 的格式，PROMO_TERMINALS 的 code 用 web / android / ios；后端能连上 UDS（UDS_BASE_URL）。\n变量：baseUrl、username、password、totp（或直接填 token 跳过 0.1）、siteCode（SITE-IN）；tzOffsetMin 站点时区分钟数（印度 330）；fissionUserId 一个有下级的代理。\n对数方法见 doc/promo/推广分析-联调测试说明.md。",
+    "description": "推广分析 FY-46 的接口联调（2026-11-05 晚版，已接 UDS dashboard_market_hour_v1 / dashboard_market_member_snapshot_v1）。\n\n全部只读（2.3 需先在指标管理打开 promoReg 的「可歸因」，那一步会写库，请在测试环境做）。\n已接：注册、首存、首存转化率 / 金额、复存人数 / 金额、存款人数 / 总额、淨充值、ARPPU、投注人数 / 总额、激活、按终端归因、流失人数、裂变层级进入某用户。\n仍为空（state = NO_SOURCE）：消耗、预算、成本类、UV、下载点击、注册转化率、留存与回收、推广商 / 推广渠道维度。\n\n执行前：执行 sql/release_next_postgresql.sql ⑤；配置中心 PROMO_CHANNELS 改成带 id 的格式，PROMO_TERMINALS 的 code 用 web / android / ios；后端能连上 UDS（UDS_BASE_URL）。\n变量：baseUrl、username、password、totp（或直接填 token 跳过 0.1）、siteCode（SITE-IN）；tzOffsetMin 站点时区分钟数（印度 330）；fissionUserId 一个有下级的代理。\n对数方法见 doc/promo/推广分析-联调测试说明.md。\n\n9. 个人视图：先执行 sql/release_next_postgresql.sql ⑦；只读写当前登录用户自己的个人视图，首尾各重置一次。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -1466,7 +1466,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/promo/budget/data?kind=SPEND&from={{yesterday}}&to={{yesterday}}"
+            "url": "{{baseUrl}}/promo/budget/table?kind=SPEND&from={{yesterday}}&to={{yesterday}}"
           },
           "event": [
             {
@@ -1506,6 +1506,613 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('6 列表头', () => pm.expect(pm.response.text()).to.include('日期,推廣商 ID,推廣商名稱,推廣渠道 ID,推廣渠道名稱,預算'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. 个人视图（个人自定义指标集一期）",
+      "description": "GET/POST /dashboard/views：每人在每个站点、每个配置位上存一份自己的选择。执行前：sql/release_next_postgresql.sql ⑦。会写 dashboard_user_view（只写当前登录用户自己的记录），9.0 与 9.15 会重置，跑完不影响其他用例。",
+      "item": [
+        {
+          "name": "9.0 先清空（重置 3 个配置位）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.overview.cards/reset"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.sendRequest({url: pm.variables.replaceIn('{{baseUrl}}/dashboard/views/promo.channel.columns/reset'), method: 'POST', header: {'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': pm.variables.get('siteCode')}});",
+                  "pm.sendRequest({url: pm.variables.replaceIn('{{baseUrl}}/dashboard/views/promo.channel.rows/reset'), method: 'POST', header: {'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': pm.variables.get('siteCode')}});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.1 本页全部配置位（新用户 = 默认）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views?page=PROMO"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "const s = {}; j.data.slots.forEach(x => s[x.slotCode] = x);",
+                  "pm.test('3 个配置位', () => pm.expect(Object.keys(s)).to.eql(['promo.overview.cards', 'promo.channel.columns', 'promo.channel.rows']));",
+                  "pm.test('siteCode = 请求头站点', () => pm.expect(j.data.siteCode).to.eql(pm.variables.get('siteCode').toUpperCase()));",
+                  "pm.test('核心指标默认 10 张，1–10', () => { const c = s['promo.overview.cards']; pm.expect(c.items.length).to.eql(10); pm.expect(c.maxItems).to.eql(10); pm.expect(c.items).to.eql(c.defaultItems); });",
+                  "pm.test('表格列默认 = 標準，同组相邻', () => { const c = s['promo.channel.columns']; pm.expect(c.defaultPresetCode).to.eql('standard'); pm.expect(c.groupAdjacent).to.eql(true); pm.expect(c.presets.map(p => p.code)).to.eql(['standard', 'daily']); pm.expect(c.items).to.eql(c.presets[0].items); });",
+                  "pm.test('行维度默认 推廣商 › 推廣渠道，规则 1 条', () => { const c = s['promo.channel.rows']; pm.expect(c.items).to.eql(['agent', 'channel']); pm.expect(c.rules[0].before).to.eql('agent'); });",
+                  "pm.test('新用户没有 lastCustom、attrs 为空', () => j.data.slots.forEach(x => { pm.expect(x.lastCustom).to.eql(null); pm.expect(x.attrs).to.eql({}); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.2 核心指标：自己挑 4 张 + 选中的卡",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.overview.cards",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"roi\",\n    \"reg\",\n    \"ftd\",\n    \"spend\"\n  ],\n  \"attrs\": {\n    \"selected\": \"reg\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items 按保存的顺序', () => pm.expect(j.data.items).to.eql(['roi', 'reg', 'ftd', 'spend']));",
+                  "pm.test('lastCustom 记下', () => pm.expect(j.data.lastCustom).to.eql(['roi', 'reg', 'ftd', 'spend']));",
+                  "pm.test('attrs 原样返回', () => pm.expect(j.data.attrs).to.eql({selected: 'reg'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.3 概览不传 metrics → 按我的核心指标卡",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/metrics/overview",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"PROMO\",\n  \"slotFrom\": \"{{d7From}}\",\n  \"slotTo\": \"{{todayEnd}}\",\n  \"granularity\": \"DAY\",\n  \"compareType\": \"PREV_PERIOD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('卡片 = 个人视图，顺序一致', () => pm.expect(j.data.blocks.METRICS.items.map(c => c.code)).to.eql(['roi', 'reg', 'ftd', 'spend']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.4 只改小状态（不传 mode = 项不动）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.overview.cards",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attrs\": {\n    \"selected\": \"ftd\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items 不变', () => pm.expect(j.data.items).to.eql(['roi', 'reg', 'ftd', 'spend']));",
+                  "pm.test('attrs 整体替换', () => pm.expect(j.data.attrs).to.eql({selected: 'ftd'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.5 核心指标 11 张 → 400 fields.items",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.overview.cards",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"spend\",\n    \"budget\",\n    \"cpa\",\n    \"ftdCost\",\n    \"net\",\n    \"roi\",\n    \"lpUV\",\n    \"hUV\",\n    \"dl\",\n    \"act\",\n    \"reg\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('fields.items 提示上限', () => pm.expect(j.data.fields.items).to.include('10'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.6 表格列：选「投放日報」",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.columns",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"PRESET\",\n  \"presetCode\": \"daily\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items = 投放日報 17 列', () => { pm.expect(j.data.items.length).to.eql(17); pm.expect(j.data.items).to.eql(j.data.presets.find(p => p.code === 'daily').items); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.7 表格列：自定义（与某组合相同时自动归为 PRESET）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.columns",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"reg\",\n    \"ftd\",\n    \"spend\",\n    \"cpa\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items 按保存的顺序', () => pm.expect(j.data.items).to.eql(['reg', 'ftd', 'spend', 'cpa']));",
+                  "pm.test('lastCustom', () => pm.expect(j.data.lastCustom).to.eql(['reg', 'ftd', 'spend', 'cpa']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.8 表格列：同组不相邻 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.columns",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"reg\",\n    \"spend\",\n    \"ftd\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('fields.items', () => pm.expect(j.data.fields.items).to.include('相鄰'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.9 行维度：推廣渠道在推廣商上面 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.rows",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"channel\",\n    \"agent\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code).to.eql(400));",
+                  "pm.test('提示规则文案', () => pm.expect(j.data.fields.items).to.eql('推廣渠道須在推廣商之下'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.10 行维度：日期 › 终端",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.rows",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"CUSTOM\",\n  \"items\": [\n    \"date\",\n    \"terminal\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items', () => pm.expect(j.data.items).to.eql(['date', 'terminal']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.11 渠道表现不传 rows / columns → 按我的视图",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/promo/channels/table",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d3From}}\",\n  \"slotTo\": \"{{todayDate}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('列 = 我的表格列', () => pm.expect(j.data.columns.map(c => c.code)).to.eql(['reg', 'ftd', 'spend', 'cpa']));",
+                  "pm.test('第 1 层是日期', () => pm.expect(j.data.dim).to.eql('date'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.12 不存在的配置位 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.nope",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"DEFAULT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.13 不认识的页面 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views?page=NOPE"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.14 恢复默认（mode = DEFAULT）：lastCustom 保留",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.channel.columns",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"DEFAULT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('items = 默认（標準）', () => pm.expect(j.data.items).to.eql(j.data.defaultItems));",
+                  "pm.test('「自定义」按钮还能切回', () => pm.expect(j.data.lastCustom).to.eql(['reg', 'ftd', 'spend', 'cpa']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.15 重置 3 个配置位（收尾，免得影响 2.1 / 3.x）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/views/promo.overview.cards/reset"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "pm.test('回到默认 10 张、attrs 清空', () => { pm.expect(j.data.items.length).to.eql(10); pm.expect(j.data.attrs).to.eql({}); pm.expect(j.data.lastCustom).to.eql(null); });",
+                  "pm.sendRequest({url: pm.variables.replaceIn('{{baseUrl}}/dashboard/views/promo.channel.columns/reset'), method: 'POST', header: {'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': pm.variables.get('siteCode')}});",
+                  "pm.sendRequest({url: pm.variables.replaceIn('{{baseUrl}}/dashboard/views/promo.channel.rows/reset'), method: 'POST', header: {'Authorization': 'Bearer ' + pm.variables.get('token'), 'X-Site-Code': pm.variables.get('siteCode')}});"
                 ]
               }
             }

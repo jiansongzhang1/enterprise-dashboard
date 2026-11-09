@@ -39,7 +39,8 @@ public final class BudgetImportValidator
 {
     public static final int MAX_ROWS = 10_000;
 
-    public static final int MAX_DAYS = 31;
+    /** 单次最多几天的默认值；实际值取配置 promo.budget-import.max-days（{@link Context#maxDays}） */
+    public static final int DEFAULT_MAX_DAYS = 31;
 
     /** 预算最远到今天起 90 天（当天可以导入） */
     public static final int BUDGET_AHEAD_DAYS = 90;
@@ -74,12 +75,22 @@ public final class BudgetImportValidator
 
         final List<PromoChannelDictionary.Promoter> promoters;
 
+        /** 单个文件的日期跨度上限（F7），首尾都算 */
+        final int maxDays;
+
         public Context(BudgetKind kind, LocalDate today, LocalDate dataStart, List<PromoChannelDictionary.Promoter> promoters)
+        {
+            this(kind, today, dataStart, promoters, DEFAULT_MAX_DAYS);
+        }
+
+        public Context(BudgetKind kind, LocalDate today, LocalDate dataStart, List<PromoChannelDictionary.Promoter> promoters,
+            int maxDays)
         {
             this.kind = kind;
             this.today = today;
             this.dataStart = dataStart;
             this.promoters = promoters == null ? List.of() : promoters;
+            this.maxDays = maxDays < 1 ? DEFAULT_MAX_DAYS : maxDays;
         }
     }
 
@@ -219,9 +230,12 @@ public final class BudgetImportValidator
             }
         }
         // F7：有效日期（通过 V1–V6）的跨度，首尾都算
-        if (minDate != null && ChronoUnit.DAYS.between(minDate, maxDate) + 1 > MAX_DAYS)
+        long span = minDate == null ? 0 : ChronoUnit.DAYS.between(minDate, maxDate) + 1;
+        if (span > ctx.maxDays)
         {
-            return reject(r, "F7", "日期跨度太大", "單個文件最多 31 天，請拆分後分別匯入。");
+            // 写出文件里实际的首尾日期：常见原因是拖动单元格带出了意外的日期，用户一眼能看出多了哪几天
+            return reject(r, "F7", "日期跨度太大", "文件裡的日期從 " + minDate + " 到 " + maxDate + "，共 " + span
+                + " 天；單個文件最多 " + ctx.maxDays + " 天，請拆分後分別匯入。");
         }
         // V17：有效行与金额为空的行一起判重（按推广渠道 ID）
         Map<String, List<Checked>> groups = new LinkedHashMap<>();

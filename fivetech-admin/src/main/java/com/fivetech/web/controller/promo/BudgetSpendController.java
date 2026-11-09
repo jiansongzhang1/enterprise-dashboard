@@ -25,7 +25,8 @@ import com.fivetech.promo.budget.BudgetSpendService;
  *
  * <ul>
  *   <li>GET  /promo/budget/meta      页面配置：站点、币种、今天、两个页签的可选 / 默认日期、上限、渠道字典、writeEnabled</li>
- *   <li>GET  /promo/budget/data      表格数据：kind、from、to → 已发布的行与每天的发布状态（读 UDS）</li>
+ *   <li>GET|POST /promo/budget/table 表格数据：kind、from、to（GET 用查询参数，POST 用 JSON）→ 已发布的行（查 UDS import_yata_promo_cost / budget）；
+ *       旧路径 GET /promo/budget/data 相同</li>
  *   <li>GET  /promo/budget/template  下载模板（CSV）：kind=SPEND|BUDGET&amp;from=yyyy-MM-dd&amp;to=yyyy-MM-dd（预算预填已有预算）</li>
  *   <li>POST /promo/budget/import    导入：multipart，kind=SPEND|BUDGET，file=.xlsx/.csv → 结果页数据（BudgetImportResult，含 write）</li>
  *   <li>POST /promo/budget/import/resume  {token, confirm}：确认覆盖 / 取消，或「處理中」时重新查询结果 → BudgetWriteOutcome</li>
@@ -52,6 +53,30 @@ public class BudgetSpendController extends BaseController
         return success(service.meta());
     }
 
+    /** 表格数据：GET 用查询参数 kind、from、to */
+    @PreAuthorize("@ss.hasPermi('promo:budget:view')")
+    @GetMapping("/table")
+    public AjaxResult table(@RequestParam(value = "kind", required = false) String kind,
+            @RequestParam(value = "from", required = false) String from, @RequestParam(value = "to", required = false) String to)
+    {
+        return success(service.table(kind, from, to));
+    }
+
+    /** 表格数据：POST JSON {"kind":"SPEND","from":"2026-11-01","to":"2026-11-07"} */
+    @PreAuthorize("@ss.hasPermi('promo:budget:view')")
+    @PostMapping("/table")
+    public AjaxResult tablePost(@RequestBody(required = false) Map<String, Object> body)
+    {
+        return success(service.table(text(body, "kind"), text(body, "from"), text(body, "to")));
+    }
+
+    private static String text(Map<String, Object> body, String key)
+    {
+        Object v = body == null ? null : body.get(key);
+        return v == null ? null : String.valueOf(v);
+    }
+
+    /** 旧路径，同 GET /table */
     @PreAuthorize("@ss.hasPermi('promo:budget:view')")
     @GetMapping("/data")
     public AjaxResult data(@RequestParam(value = "kind", required = false) String kind,

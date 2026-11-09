@@ -115,6 +115,33 @@ class BudgetImportValidatorTest
         assertEquals("V2", r.getFailures().get(0).getCode());
     }
 
+    @Test
+    void f7UsesConfiguredMaxDaysAndShowsActualRange()
+    {
+        BudgetImportValidator.Context week = new BudgetImportValidator.Context(BudgetKind.SPEND, TODAY, START, DICT, 7);
+        // 7 天（首尾都算）可以，8 天拒绝
+        assertEquals("SUCCESS", run(week, H, "2026-10-26,1001,hada,2001,DSP-hada,1", "2026-11-01,1001,hada,2001,DSP-hada,1").getStatus());
+        BudgetImportResult r = run(week, H, "2026-10-25,1001,hada,2001,DSP-hada,1", "2026-11-01,1001,hada,2001,DSP-hada,1");
+        assertEquals("F7", r.getFileCode());
+        assertEquals("文件裡的日期從 2026-10-25 到 2026-11-01，共 8 天；單個文件最多 7 天，請拆分後分別匯入。", r.getFileMessage());
+        // 配置不合法（< 1）按默认 31 天
+        BudgetImportValidator.Context bad = new BudgetImportValidator.Context(BudgetKind.SPEND, TODAY, START, DICT, 0);
+        assertEquals("SUCCESS", run(bad, H, "2026-10-02,1001,hada,2001,DSP-hada,1", "2026-11-01,1001,hada,2001,DSP-hada,1").getStatus());
+    }
+
+    @Test
+    void maxDaysPropertyFallsBackToDefaultOutsideRange()
+    {
+        BudgetImportProperties p = new BudgetImportProperties();
+        assertEquals(31, p.maxDays());
+        p.setMaxDays(62);
+        assertEquals(62, p.maxDays());
+        p.setMaxDays(0);
+        assertEquals(31, p.maxDays());
+        p.setMaxDays(1000);
+        assertEquals(31, p.maxDays());
+    }
+
     // ------------------------------------------------------------------ 行级
 
     @Test

@@ -20,6 +20,8 @@
 --   ⑤ 2026-11-05  推广分析 · 概览指标与可歸因开关        dashboard_metric_card.attributable；推广分析分组 inv / flow 与 16 个指标（仅登记）；
 --                                                       页面 PROMO（dashboard_page_metric 的 CHECK 放开）；菜单「推广分析」dashboard:promo:view
 --   ⑥ 2026-11-05  管理后台 · AI 助手                      按钮权限 copilot:chat:use（系统管理下，无新表；对话不落库，次数记在 copilot_usage_log）
+--   ⑦ 2026-11-09  个人自定义指标集（个人视图）一期        新表 dashboard_view_slot / _slot_item / _preset / dashboard_user_view；
+--                                                       推广分析 3 个配置位（核心指标卡、渠道表现表格列、行维度）的可选项、默认与预置组合
 --
 -- 上线记录：
 --   （尚未上线）
@@ -324,7 +326,7 @@ INSERT INTO dashboard_metric_card (
 ('promoBudget',  '預算',       'Budget',              'inv', 'day',  FALSE, 'LINE', 'MONEY', NULL, 'flat', TRUE, 1020, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 budget：运营导入的预算合计，按日'),
 ('promoCpa',     'CPA',        'CPA',                 'inv', 'day',  FALSE, 'LINE', 'MONEY', 2,    'down', TRUE, 1030, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 cpa：有效格子的消耗 ÷ 有效格子的注册人数'),
 ('promoFtdCost', '首存成本',   'FTD cost',            'inv', 'day',  FALSE, 'LINE', 'MONEY', 2,    'down', TRUE, 1040, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 ftdCost：有效格子的消耗 ÷ 有效格子的首存人数'),
-('promoNet',     '淨充值',     'Net deposit',         'inv', 'hour', FALSE, 'LINE', 'MONEY', NULL, 'up',   TRUE, 1050, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 net：暂定＝存款總額（与运营总览的存提差 net 不同）'),
+('promoNet',     '淨充值',     'Net deposit',         'inv', 'hour', FALSE, 'LINE', 'MONEY', NULL, 'up',   TRUE, 1050, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 net：＝存款總額 deposit_amount（2026-11-09 已确认；与运营总览的存提差 net 不同）'),
 ('promoRoi',     'D0 ROI',     'D0 ROI',              'inv', 'day',  FALSE, 'LINE', 'PCT',   NULL, 'up',   TRUE, 1060, 'NONE', 'FORMULA', FALSE, TRUE,  FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 roi：有效格子的淨充值 ÷ 有效格子的消耗 − 1'),
 ('promoLpUV',    'UV-落地頁',  'Landing page UV',     'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1110, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 lpUV：落地页去重访问人数'),
 ('promoHUV',     'UV-主頁',    'Home page UV',        'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1120, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 hUV：主页去重访问人数（含 Web 与 APP 内打开）'),
@@ -443,5 +445,200 @@ SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms
 
 
 -- ----------------------------------------------------------------------------
--- 新的改动从这里往下追加（⑦ …）
+-- ⑦ 2026-11-09 · 个人自定义指标集（个人视图）一期（新 JAR 启动前执行；没执行时视图接口 404、取数接口按原来的默认，不影响启动）
+--   1. 定义表（研发 / 管理员维护，改了 1 分钟内热加载）：
+--        dashboard_view_slot       配置位：页面上一处可自定义的列表（上下限、同组相邻、顺序规则、是否叠加站点排列）
+--        dashboard_view_slot_item  可选项与全站默认（default_sort 不为空 = 默认选中，按它排序）
+--        dashboard_view_preset     预置组合（如表格列的「標準」「投放日報」；is_default = 就是全站默认）
+--   2. dashboard_user_view：个人视图，用户 + 站点 + 配置位唯一；等于默认且没有小状态时不存（管理员改默认，没自定义的人自动跟上）
+--   3. 初始数据：推广分析 promo.overview.cards（16 选 1–10，默认 10 张，同推广分析页 is_default）、
+--      promo.channel.columns（38 列 5 组，同组相邻；標準 / 投放日報）、promo.channel.rows（5 个维度选 1–4 层，推廣渠道在推廣商之下）
+--   回滚：DROP TABLE IF EXISTS dashboard_user_view, dashboard_view_preset, dashboard_view_slot_item, dashboard_view_slot;
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS dashboard_view_slot (
+    slot_code         VARCHAR(64)   PRIMARY KEY,
+    page_code         VARCHAR(32)   NOT NULL,
+    name              VARCHAR(50)   NOT NULL,
+    kind              VARCHAR(16)   NOT NULL,
+    min_items         SMALLINT      NOT NULL DEFAULT 1,
+    max_items         SMALLINT,
+    group_adjacent    BOOLEAN       NOT NULL DEFAULT FALSE,
+    rules             TEXT,
+    site_layout_page  VARCHAR(32),
+    sort_no           INTEGER       NOT NULL DEFAULT 0,
+    status            CHAR(1)       NOT NULL DEFAULT '0',
+    create_by         VARCHAR(64)   DEFAULT '',
+    create_time       TIMESTAMP     NOT NULL DEFAULT localtimestamp,
+    update_time       TIMESTAMP     NOT NULL DEFAULT localtimestamp,
+    CONSTRAINT ck_view_slot_kind   CHECK (kind IN ('METRICS', 'COLUMNS', 'DIMENSIONS')),
+    CONSTRAINT ck_view_slot_status CHECK (status IN ('0', '1')),
+    CONSTRAINT ck_view_slot_range  CHECK (min_items >= 0 AND (max_items IS NULL OR max_items >= min_items))
+);
+COMMENT ON TABLE  dashboard_view_slot                  IS '个人视图 · 配置位：页面上一处可自定义的列表';
+COMMENT ON COLUMN dashboard_view_slot.slot_code        IS '如 promo.overview.cards；前端用它读写';
+COMMENT ON COLUMN dashboard_view_slot.page_code        IS '所属页面（PROMO / OVERVIEW / SUMMARY）；读写需要该页面的查看权限';
+COMMENT ON COLUMN dashboard_view_slot.kind             IS 'METRICS 指标卡 / COLUMNS 表格列 / DIMENSIONS 行维度路径';
+COMMENT ON COLUMN dashboard_view_slot.max_items        IS '最多选几个；为空 = 不限';
+COMMENT ON COLUMN dashboard_view_slot.group_adjacent   IS '同组的项必须相邻（表格列）';
+COMMENT ON COLUMN dashboard_view_slot.rules            IS '顺序规则 JSON：[{"before":"agent","after":"channel","message":"…"}]';
+COMMENT ON COLUMN dashboard_view_slot.site_layout_page IS '叠加哪个页面的站点排列（OVERVIEW / SUMMARY）；为空不叠加';
+COMMENT ON COLUMN dashboard_view_slot.status           IS '0 启用 / 1 停用（停用后 GET 不返回、保存 404，个人记录保留）';
+
+CREATE TABLE IF NOT EXISTS dashboard_view_slot_item (
+    slot_code     VARCHAR(64)   NOT NULL,
+    item_code     VARCHAR(64)   NOT NULL,
+    item_name     VARCHAR(50),
+    group_code    VARCHAR(32),
+    group_name    VARCHAR(50),
+    sort_no       INTEGER       NOT NULL DEFAULT 0,
+    default_sort  INTEGER,
+    status        CHAR(1)       NOT NULL DEFAULT '0',
+    update_time   TIMESTAMP     NOT NULL DEFAULT localtimestamp,
+    PRIMARY KEY (slot_code, item_code),
+    CONSTRAINT ck_view_item_status CHECK (status IN ('0', '1'))
+);
+COMMENT ON TABLE  dashboard_view_slot_item              IS '个人视图 · 配置位的可选项与全站默认';
+COMMENT ON COLUMN dashboard_view_slot_item.item_code    IS '项编码，与取数接口一致（推广分析：spend、reg …；列 lpPV …；维度 agent …）';
+COMMENT ON COLUMN dashboard_view_slot_item.item_name    IS '显示名；为空取项来源（指标字典 / 推广分析列定义）的名称';
+COMMENT ON COLUMN dashboard_view_slot_item.default_sort IS '全站默认里的顺序；为空 = 默认不选（配置位有 is_default 的预置组合时以组合为准）';
+COMMENT ON COLUMN dashboard_view_slot_item.status       IS '0 启用 / 1 停用（停用即对所有人下线）';
+
+CREATE TABLE IF NOT EXISTS dashboard_view_preset (
+    slot_code    VARCHAR(64)   NOT NULL,
+    preset_code  VARCHAR(32)   NOT NULL,
+    name         VARCHAR(50)   NOT NULL,
+    tip          VARCHAR(200),
+    items        TEXT          NOT NULL,
+    is_default   BOOLEAN       NOT NULL DEFAULT FALSE,
+    sort_no      INTEGER       NOT NULL DEFAULT 0,
+    update_time  TIMESTAMP     NOT NULL DEFAULT localtimestamp,
+    PRIMARY KEY (slot_code, preset_code)
+);
+COMMENT ON TABLE  dashboard_view_preset            IS '个人视图 · 预置组合（如表格列的標準、投放日報）';
+COMMENT ON COLUMN dashboard_view_preset.items      IS '按顺序的项编码，逗号分隔';
+COMMENT ON COLUMN dashboard_view_preset.is_default IS '是否就是该配置位的全站默认；为 true 时优先于 slot_item.default_sort';
+
+CREATE TABLE IF NOT EXISTS dashboard_user_view (
+    id           BIGSERIAL     PRIMARY KEY,
+    user_id      BIGINT        NOT NULL,
+    site_code    VARCHAR(32)   NOT NULL,
+    slot_code    VARCHAR(64)   NOT NULL,
+    mode         VARCHAR(8)    NOT NULL DEFAULT 'DEFAULT',
+    preset_code  VARCHAR(32),
+    items        TEXT,
+    last_custom  TEXT,
+    attrs        TEXT,
+    update_time  TIMESTAMP     NOT NULL DEFAULT localtimestamp,
+    CONSTRAINT uk_user_view UNIQUE (user_id, site_code, slot_code),
+    CONSTRAINT ck_user_view_mode CHECK (mode IN ('DEFAULT', 'PRESET', 'CUSTOM'))
+);
+COMMENT ON TABLE  dashboard_user_view             IS '个人视图：某人在某站点、某配置位上的选择（只对自己生效）';
+COMMENT ON COLUMN dashboard_user_view.user_id     IS 'sys_user.user_id，取自登录令牌';
+COMMENT ON COLUMN dashboard_user_view.site_code   IS '站点编码（大写），取自请求头 X-Site-Code；每个站点各存一份';
+COMMENT ON COLUMN dashboard_user_view.mode        IS 'DEFAULT 跟随默认（只存了小状态）/ CUSTOM 自己挑的 / PRESET 跟随某个预置组合';
+COMMENT ON COLUMN dashboard_user_view.items       IS 'mode = CUSTOM 时的项编码 JSON 数组，按显示顺序';
+COMMENT ON COLUMN dashboard_user_view.last_custom IS '最近一次自定义（JSON 数组），切到预置组合后仍可切回';
+COMMENT ON COLUMN dashboard_user_view.attrs       IS '小状态 JSON 对象（如 {"selected":"spend","spark":true}），服务端只限 4 KB、不解读';
+
+-- 配置位
+INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
+('promo.overview.cards',  'PROMO', '核心指標', 'METRICS',    1, 10,   FALSE, '[]', NULL, 10, 'admin'),
+('promo.channel.columns', 'PROMO', '表格列',   'COLUMNS',    1, NULL, TRUE,  '[]', NULL, 20, 'admin'),
+('promo.channel.rows',    'PROMO', '行維度',   'DIMENSIONS', 1, 4,    FALSE, '[{"before":"agent","after":"channel","message":"推廣渠道須在推廣商之下"}]', NULL, 30, 'admin')
+ON CONFLICT (slot_code) DO NOTHING;
+
+-- 核心指标卡：编码同概览接口 metrics；名称取指标字典（item_name 为空）；默认 10 张同推广分析页 is_default
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('promo.overview.cards', 'spend',   NULL, 'inv',  '投放',     10,  10),
+('promo.overview.cards', 'budget',  NULL, 'inv',  '投放',     20,  20),
+('promo.overview.cards', 'cpa',     NULL, 'inv',  '投放',     30,  30),
+('promo.overview.cards', 'ftdCost', NULL, 'inv',  '投放',     40,  40),
+('promo.overview.cards', 'net',     NULL, 'inv',  '投放',     50,  50),
+('promo.overview.cards', 'roi',     NULL, 'inv',  '投放',     60,  60),
+('promo.overview.cards', 'lpUV',    NULL, 'flow', '流量轉化', 70,  NULL),
+('promo.overview.cards', 'hUV',     NULL, 'flow', '流量轉化', 80,  NULL),
+('promo.overview.cards', 'dl',      NULL, 'flow', '流量轉化', 90,  NULL),
+('promo.overview.cards', 'act',     NULL, 'flow', '流量轉化', 100, NULL),
+('promo.overview.cards', 'reg',     NULL, 'flow', '流量轉化', 110, 110),
+('promo.overview.cards', 'regR',    NULL, 'flow', '流量轉化', 120, 120),
+('promo.overview.cards', 'ftd',     NULL, 'flow', '流量轉化', 130, 130),
+('promo.overview.cards', 'ftdR',    NULL, 'flow', '流量轉化', 140, 140),
+('promo.overview.cards', 'ftdAmt',  NULL, 'flow', '流量轉化', 150, NULL),
+('promo.overview.cards', 'rd',      NULL, 'flow', '流量轉化', 160, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 渠道表现 · 表格列：编码同 /dashboard/promo/channels/table 的 columns；名称取列定义；默认 = 預置組合「標準」
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('promo.channel.columns', 'lpPV',     NULL, 'traffic',    '流量',       10,  NULL),
+('promo.channel.columns', 'lpUV',     NULL, 'traffic',    '流量',       20,  NULL),
+('promo.channel.columns', 'hPV',      NULL, 'traffic',    '流量',       30,  NULL),
+('promo.channel.columns', 'hUV',      NULL, 'traffic',    '流量',       40,  NULL),
+('promo.channel.columns', 'dl',       NULL, 'traffic',    '流量',       50,  NULL),
+('promo.channel.columns', 'act',      NULL, 'traffic',    '流量',       60,  NULL),
+('promo.channel.columns', 'reg',      NULL, 'conversion', '轉化',       70,  NULL),
+('promo.channel.columns', 'regR',     NULL, 'conversion', '轉化',       80,  NULL),
+('promo.channel.columns', 'ftd',      NULL, 'conversion', '轉化',       90,  NULL),
+('promo.channel.columns', 'ftdR',     NULL, 'conversion', '轉化',       100, NULL),
+('promo.channel.columns', 'depR',     NULL, 'conversion', '轉化',       110, NULL),
+('promo.channel.columns', 'ftdAmt',   NULL, 'conversion', '轉化',       120, NULL),
+('promo.channel.columns', 'rd',       NULL, 'conversion', '轉化',       130, NULL),
+('promo.channel.columns', 'rdAmt',    NULL, 'conversion', '轉化',       140, NULL),
+('promo.channel.columns', 'rdR',      NULL, 'conversion', '轉化',       150, NULL),
+('promo.channel.columns', 'spend',    NULL, 'spend',      '投放',       160, NULL),
+('promo.channel.columns', 'budget',   NULL, 'spend',      '投放',       170, NULL),
+('promo.channel.columns', 'uvCost',   NULL, 'spend',      '投放',       180, NULL),
+('promo.channel.columns', 'cpa',      NULL, 'spend',      '投放',       190, NULL),
+('promo.channel.columns', 'ftdCost',  NULL, 'spend',      '投放',       200, NULL),
+('promo.channel.columns', 'roi',      NULL, 'spend',      '投放',       210, NULL),
+('promo.channel.columns', 'roas7',    NULL, 'retention',  '留存與回收', 220, NULL),
+('promo.channel.columns', 'roas30',   NULL, 'retention',  '留存與回收', 230, NULL),
+('promo.channel.columns', 'regRet1',  NULL, 'retention',  '留存與回收', 240, NULL),
+('promo.channel.columns', 'regRet3',  NULL, 'retention',  '留存與回收', 250, NULL),
+('promo.channel.columns', 'regRet7',  NULL, 'retention',  '留存與回收', 260, NULL),
+('promo.channel.columns', 'regRet15', NULL, 'retention',  '留存與回收', 270, NULL),
+('promo.channel.columns', 'regRet30', NULL, 'retention',  '留存與回收', 280, NULL),
+('promo.channel.columns', 'depU',     NULL, 'value',      '價值',       290, NULL),
+('promo.channel.columns', 'dep',      NULL, 'value',      '價值',       300, NULL),
+('promo.channel.columns', 'wdU',      NULL, 'value',      '價值',       310, NULL),
+('promo.channel.columns', 'wd',       NULL, 'value',      '價值',       320, NULL),
+('promo.channel.columns', 'net',      NULL, 'value',      '價值',       330, NULL),
+('promo.channel.columns', 'arppu',    NULL, 'value',      '價值',       340, NULL),
+('promo.channel.columns', 'betU',     NULL, 'value',      '價值',       350, NULL),
+('promo.channel.columns', 'bet',      NULL, 'value',      '價值',       360, NULL),
+('promo.channel.columns', 'vbet',     NULL, 'value',      '價值',       370, NULL),
+('promo.channel.columns', 'ggr',      NULL, 'value',      '價值',       380, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 預置組合：標準（全站默认）、投放日報（同投放日报导出的 17 列，按组靠拢）
+INSERT INTO dashboard_view_preset (slot_code, preset_code, name, tip, items, is_default, sort_no) VALUES
+('promo.channel.columns', 'standard', '標準',     '常用的流量、轉化、投放與價值列',
+ 'lpUV,hUV,reg,regR,ftd,ftdR,ftdAmt,spend,cpa,ftdCost,roi,dep,net', TRUE, 10),
+('promo.channel.columns', 'daily',    '投放日報', '與投放日報導出同一組指標',
+ 'spend,uvCost,cpa,roi,lpUV,hUV,dl,act,dep,wd,depU,wdU,arppu,reg,ftd,ftdR,depR', FALSE, 20)
+ON CONFLICT (slot_code, preset_code) DO NOTHING;
+
+-- 行维度：编码同 rows；默认 推廣商 › 推廣渠道
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('promo.channel.rows', 'agent',    NULL, 'dim', '維度', 10, 10),
+('promo.channel.rows', 'channel',  NULL, 'dim', '維度', 20, 20),
+('promo.channel.rows', 'terminal', NULL, 'dim', '維度', 30, NULL),
+('promo.channel.rows', 'relation', NULL, 'dim', '維度', 40, NULL),
+('promo.channel.rows', 'date',     NULL, 'dim', '維度', 50, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+COMMIT;
+
+-- ⑦ 自检：配置位 3 个；可选项 16 / 38 / 5；预置组合 2 个；个人视图表已建
+SELECT s.slot_code, s.name, s.min_items, s.max_items, s.group_adjacent,
+       (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code) AS items,
+       (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code AND i.default_sort IS NOT NULL) AS defaults,
+       (SELECT count(*) FROM dashboard_view_preset p WHERE p.slot_code = s.slot_code) AS presets
+FROM dashboard_view_slot s ORDER BY s.sort_no;
+SELECT to_regclass('dashboard_user_view') AS user_view_table;
+
+
+-- ----------------------------------------------------------------------------
+-- 新的改动从这里往下追加（⑧ …）
 -- ----------------------------------------------------------------------------

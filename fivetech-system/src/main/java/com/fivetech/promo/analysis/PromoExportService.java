@@ -162,6 +162,7 @@ public class PromoExportService
 
     public PromoFile channels(ChannelTableQuery q)
     {
+        analysis.applyView(q);
         PromoTime.Range range = PromoAnalysisService.wholeDays(PromoTime.range(q.getSlotFrom(), q.getSlotTo()));
         List<PromoMetricCatalog.Column> cols = PromoAnalysisService.columns(q.getColumns());
         ChannelTree tree = analysis.tree(q, range);

@@ -13,13 +13,13 @@ public class ChannelTableQuery extends PromoFilter
 {
     private static final long serialVersionUID = 1L;
 
-    /** 行维度路径，1–5 层：agent / channel / date / terminal / relation；不重复；channel 须在 agent 之后 */
+    /** 行维度路径，1–5 层：agent / channel / date / terminal / relation；不重复；channel 须在 agent 之后；不传 = 个人视图 promo.channel.rows */
     private List<String> rows = new ArrayList<>();
 
     /** 要展开的那一行的完整路径（上一层返回的 rows[].path）；空 = 第 1 层 */
     private List<PathItem> parent = new ArrayList<>();
 
-    /** 列编码，按显示顺序 */
+    /** 列编码，按显示顺序；不传 = 个人视图 promo.channel.columns */
     private List<String> columns = new ArrayList<>();
 
     private Sort sort;

@@ -155,7 +155,7 @@ public class PromoOverviewService
 
         // ---------- 5. 指标 ----------
         List<PromoMetricCatalog.Metric> all = catalog.overviewMetrics();
-        List<PromoMetricCatalog.Metric> selected = resolveMetrics(query, all, notices);
+        List<PromoMetricCatalog.Metric> selected = resolveMetrics(query, all, notices, viewCards(query));
 
         if (!resolveBlocks(query, notices).contains(OverviewBlock.METRICS))
         {
@@ -252,14 +252,47 @@ public class PromoOverviewService
         return d;
     }
 
-    /** 请求的指标：为空取默认；不认识的编码整个请求 4003；按 group 筛；最多 10 个 */
-    private static List<PromoMetricCatalog.Metric> resolveMetrics(OverviewQuery query, List<PromoMetricCatalog.Metric> all,
-        List<OverviewNoticeVO> notices)
+    /** 个人视图（可选）：概览不传 metrics 时按「我在本站」的核心指标卡取数 */
+    private com.fivetech.dashboard.view.UserViewService views;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setViews(com.fivetech.dashboard.view.UserViewService views)
+    {
+        this.views = views;
+    }
+
+    /** 不传 metrics 时我的核心指标卡（个人视图 promo.overview.cards）；没有个人视图能力或取不到为 null */
+    private List<String> viewCards(OverviewQuery query)
+    {
+        if (views == null || (query.getMetrics() != null && !query.getMetrics().isEmpty()))
+        {
+            return null;
+        }
+        return views.itemsOf(PromoViewItemSource.CARDS);
+    }
+
+    /**
+     * 请求的指标：不传时按个人视图（viewCards，顺序即卡片顺序），没有个人视图取页面默认；
+     * 不认识的编码整个请求 4003；按 group 筛；最多 10 个
+     */
+    static List<PromoMetricCatalog.Metric> resolveMetrics(OverviewQuery query, List<PromoMetricCatalog.Metric> all,
+        List<OverviewNoticeVO> notices, List<String> viewCards)
     {
         Map<String, PromoMetricCatalog.Metric> byCode = new LinkedHashMap<>();
         all.forEach(m -> byCode.put(m.getCode(), m));
         List<PromoMetricCatalog.Metric> out = new ArrayList<>();
-        if (query.getMetrics() == null || query.getMetrics().isEmpty())
+        if ((query.getMetrics() == null || query.getMetrics().isEmpty()) && viewCards != null && !viewCards.isEmpty())
+        {
+            for (String code : viewCards)
+            {
+                PromoMetricCatalog.Metric m = byCode.get(code);
+                if (m != null && !out.contains(m))
+                {
+                    out.add(m);
+                }
+            }
+        }
+        if (out.isEmpty() && (query.getMetrics() == null || query.getMetrics().isEmpty()))
         {
             all.stream().filter(PromoMetricCatalog.Metric::isDefault).forEach(out::add);
         }

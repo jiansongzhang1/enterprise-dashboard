@@ -65,7 +65,8 @@ class BudgetDataReaderTest
     void rowsInOneQueryWithOffsetZeroAndContractBody()
     {
         FakeClient c = new FakeClient();
-        c.answers.add(result(true, cost("2026-12-01", "2001", "1.5"), cost("2026-12-01", "2002", "0"), cost("2026-12-02", "007", "3")));
+        // UDS 不保证顺序：后端按 日期 → 推广商 → 推广渠道 排
+        c.answers.add(result(true, cost("2026-12-02", "007", "3"), cost("2026-12-01", "2002", "0"), cost("2026-12-01", "2001", "1.5")));
         BudgetDataReader r = new BudgetDataReader(c, new BudgetImportProperties());
         List<BudgetDataReader.Row> rows = r.rows(BudgetKind.SPEND, LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 2));
         assertEquals(3, rows.size());
@@ -75,6 +76,11 @@ class BudgetDataReaderTest
         Map<String, Object> b = c.bodies.get(0);
         assertEquals("import_yata_promo_cost", b.get("dataset"));
         assertEquals(List.of("cost_amount", "row_count"), b.get("metrics"));
+        // 维度带名称：整日替换时已有行的名称原样带回，不会被写成 null
+        assertEquals(List.of("biz_date", "promoter_id", "promoter_name", "channel_id", "channel_name"), b.get("dimensions"));
+        assertEquals(false, b.containsKey("orderBy"));
+        assertEquals("hada", rows.get(0).getPromoterName());
+        assertEquals("n2001", rows.get(0).getChannelName());
         assertEquals(Map.of("channel", "ONLINE"), b.get("options"));
         assertEquals(10000, b.get("limit"));
         assertEquals(0, b.get("offset"));

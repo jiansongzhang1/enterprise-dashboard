@@ -60,6 +60,9 @@ public class BudgetImportProperties
     /** 读 UDS 的 limit（ONLINE 单次最多 10000 行，不偏移翻页） */
     private int udsLimit = 10_000;
 
+    /** 单次最多几天（导入文件的日期跨度 F7、模板与表格的日期范围、meta.maxDays），默认 31，取值 1–366 */
+    private int maxDays = BudgetImportValidator.DEFAULT_MAX_DAYS;
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public boolean isReadEnabled() { return readEnabled; }
@@ -90,6 +93,14 @@ public class BudgetImportProperties
     public void setUdsBudgetDataset(String udsBudgetDataset) { this.udsBudgetDataset = udsBudgetDataset; }
     public int getUdsLimit() { return udsLimit; }
     public void setUdsLimit(int udsLimit) { this.udsLimit = udsLimit; }
+    public int getMaxDays() { return maxDays; }
+    public void setMaxDays(int maxDays) { this.maxDays = maxDays; }
+
+    /** 生效的单次最多天数：配置不在 1–366 时按默认 31 */
+    public int maxDays()
+    {
+        return maxDays >= 1 && maxDays <= 366 ? maxDays : BudgetImportValidator.DEFAULT_MAX_DAYS;
+    }
 
     /** UDS 数据集 */
     public String udsDataset(BudgetKind kind)

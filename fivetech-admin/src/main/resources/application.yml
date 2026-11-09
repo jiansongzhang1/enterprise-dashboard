@@ -724,6 +724,8 @@ promo:
     # 单次提交上限（手册默认 5000 行、2 MiB；超限不拆同一天，提示缩短日期范围）
     max-rows: 5000
     max-bytes: 2097152
+    # 单次最多几天：导入文件的日期跨度（F7）、模板与表格可选的日期范围，前端从 /promo/budget/meta 的 maxDays 取；取值 1–366
+    max-days: ${PROMO_BUDGET_MAX_DAYS:31}
     uds-spend-dataset: import_yata_promo_cost
     uds-budget-dataset: import_yata_promo_budget
 

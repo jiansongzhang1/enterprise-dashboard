@@ -307,8 +307,43 @@ public class PromoAnalysisService
         return new PromoTime.Range(r.firstDay().atStartOfDay(), r.lastDay().plusDays(1).atStartOfDay());
     }
 
+    /** 个人视图（可选）：渠道表现不传 columns / rows 时按「我在本站」的表格列、行维度 */
+    private com.fivetech.dashboard.view.UserViewService views;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setViews(com.fivetech.dashboard.view.UserViewService views)
+    {
+        this.views = views;
+    }
+
+    /** 渠道表现 / 导出：columns、rows 为空时用个人视图补上（取不到就保持为空，照常 4003） */
+    void applyView(ChannelTableQuery q)
+    {
+        if (views == null)
+        {
+            return;
+        }
+        if (q.getColumns().isEmpty())
+        {
+            List<String> cols = views.itemsOf(PromoViewItemSource.COLUMNS);
+            if (cols != null)
+            {
+                q.setColumns(new ArrayList<>(cols));
+            }
+        }
+        if (q.getRows().isEmpty())
+        {
+            List<String> rows = views.itemsOf(PromoViewItemSource.ROWS);
+            if (rows != null)
+            {
+                q.setRows(new ArrayList<>(rows));
+            }
+        }
+    }
+
     public Map<String, Object> channelTable(ChannelTableQuery q)
     {
+        applyView(q);
         PromoTime.Range range = wholeDays(PromoTime.range(q.getSlotFrom(), q.getSlotTo()));
         List<PromoMetricCatalog.Column> cols = columns(q.getColumns());
         ChannelTree tree = tree(q, range);

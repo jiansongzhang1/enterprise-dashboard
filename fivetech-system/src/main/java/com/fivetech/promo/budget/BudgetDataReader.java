@@ -16,6 +16,10 @@ import com.fivetech.dashboard.gateway.uds.UdsRow;
 /**
  * 从 UDS 读已发布的消耗 / 预算（《市场预算、消耗：后端端到端联调手册》2026-11-06 第 4 节）。
  *
+ * <p>请求体同《市场预算消耗端到端联调》第 4 节与《cmp1 端到端联调》第 3、4 条：维度带上推广商 / 推广渠道名称
+ * （promoter_name、channel_name，导入时随行保存的名称快照）。导入整日替换时，当天已有的行要连同名称原样带回去，
+ * 否则重新提交会把名称写成 null。不带 orderBy，后端自己排序。</p>
+ *
  * <ul>
  *   <li>数据集 {@code import_yata_promo_cost / budget}，按 biz_date、推广商、推广渠道明细；站点走 UDS 客户端的 X-Uds-Site；</li>
  *   <li>一次查询、{@code offset = 0}，不做偏移翻页（手册 4.5）；ONLINE 单次最多 10000 行，
@@ -72,8 +76,8 @@ public class BudgetDataReader
         String amount = BudgetImportProperties.amountField(kind);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dataset", props.udsDataset(kind));
-        body.put("dimensions", List.of("biz_date", "promoter_id", "promoter_name", "channel_id", "channel_name"));
         body.put("metrics", List.of(amount, "row_count"));
+        body.put("dimensions", List.of("biz_date", "promoter_id", "promoter_name", "channel_id", "channel_name"));
         Map<String, Object> time = new LinkedHashMap<>();
         time.put("dimension", "biz_date");
         time.put("granularity", "DAY");
@@ -83,7 +87,6 @@ public class BudgetDataReader
         body.put("limit", Math.max(1, Math.min(10_000, props.getUdsLimit())));
         body.put("offset", 0);
         body.put("options", Map.of("channel", "ONLINE"));
-        body.put("orderBy", List.of(order("biz_date"), order("promoter_id"), order("channel_id")));
         UdsQueryResult r = client.queryWithMeta(body);
         if (Boolean.FALSE.equals(r.getImportedComplete()))
         {
@@ -99,15 +102,11 @@ public class BudgetDataReader
                     u.num(amount)));
             }
         }
+        // 不向 UDS 要排序：按 日期 → 推广商 → 推广渠道 排好
+        out.sort(java.util.Comparator.comparing(Row::getDate)
+            .thenComparing(x -> x.getPromoterId() == null ? "" : x.getPromoterId())
+            .thenComparing(x -> x.getChannelId() == null ? "" : x.getChannelId()));
         return out;
-    }
-
-    private static Map<String, Object> order(String field)
-    {
-        Map<String, Object> o = new LinkedHashMap<>();
-        o.put("field", field);
-        o.put("dir", "ASC");
-        return o;
     }
 
     /** biz_date：yyyy-MM-dd（也接受带时间的写法，只取前 10 位） */

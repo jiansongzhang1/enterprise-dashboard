@@ -69,13 +69,15 @@ public class BudgetSpendService
         m.put("timezone", dashboard.siteTimezone(site));
         m.put("today", today.toString());
         m.put("dataStart", start == null ? null : start.toString());
-        m.put("maxDays", BudgetImportValidator.MAX_DAYS);
+        m.put("maxDays", props.maxDays());
         m.put("maxRows", BudgetImportValidator.MAX_ROWS);
 
         LocalDate yesterday = today.minusDays(1);
-        m.put("spend", range(start, yesterday, yesterday.minusDays(6), yesterday));
+        // 默认近 7 天 / 未来 7 天；max-days 配得比 7 小时缩到 max-days 天
+        int defaultDays = Math.min(7, props.maxDays());
+        m.put("spend", range(start, yesterday, yesterday.minusDays(defaultDays - 1), yesterday));
         LocalDate budgetMax = today.plusDays(BudgetImportValidator.BUDGET_AHEAD_DAYS);
-        m.put("budget", range(start, budgetMax, today.plusDays(1), today.plusDays(7)));
+        m.put("budget", range(start, budgetMax, today.plusDays(1), today.plusDays(defaultDays)));
 
         List<Map<String, Object>> promoters = new ArrayList<>();
         for (PromoChannelDictionary.Promoter p : channels.promotersOf(site))
@@ -193,7 +195,7 @@ public class BudgetSpendService
             throw MonitorFieldException.of("file", "文件讀取失敗，請重新上傳");
         }
         BudgetImportValidator.Context ctx = new BudgetImportValidator.Context(kind, today(site), dataStart(),
-            channels.promotersOf(site));
+            channels.promotersOf(site), props.maxDays());
         BudgetImportValidator.Outcome out = BudgetImportValidator.validate(file.getOriginalFilename(), bytes, ctx);
         BudgetImportResult r = out.getResult();
         boolean written = false;
@@ -217,9 +219,14 @@ public class BudgetSpendService
     // ------------------------------------------------------------------ 表格数据
 
     /**
-     * 表格数据：所选日期范围（单次最多 31 天）的已发布行 rows[]：{date, promoterId, promoterName, channelId, channelName, amount}
-     * （amount 为十进制字符串）。某格没有行显示「—」，不补零。
+     * 表格数据（GET|POST /promo/budget/table）：查 UDS 已发布的消耗 / 预算，
+     * [from, to] 两端都含；按 /promo/budget/meta 的渠道全集逐日补齐，没有数据的 amount = null（见 {@link #fill}）。
      */
+    public Map<String, Object> table(String kindCode, String fromText, String toText)
+    {
+        return data(kindCode, fromText, toText);
+    }
+
     public Map<String, Object> data(String kindCode, String fromText, String toText)
     {
         BudgetKind kind = kind(kindCode);
@@ -230,10 +237,9 @@ public class BudgetSpendService
         out.put("from", r[0].toString());
         out.put("to", r[1].toString());
         out.put("readEnabled", props.isReadEnabled());
-        List<Map<String, Object>> rows = new ArrayList<>();
+        List<BudgetDataReader.Row> list = List.of();
         if (props.isReadEnabled())
         {
-            List<BudgetDataReader.Row> list;
             try
             {
                 list = reader.rows(kind, r[0], r[1]);
@@ -243,20 +249,76 @@ public class BudgetSpendService
                 log.warn("[promo-budget] 读取 {} 失败 site={} {}~{}：{}", kind, site, r[0], r[1], e.getMessage());
                 throw new ServiceException("讀取數據平台的" + kind.getLabel() + "失敗：" + e.getMessage());
             }
-            for (BudgetDataReader.Row row : list)
-            {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("date", row.getDate().toString());
-                m.put("promoterId", row.getPromoterId());
-                m.put("promoterName", row.getPromoterName());
-                m.put("channelId", row.getChannelId());
-                m.put("channelName", row.getChannelName());
-                m.put("amount", row.getAmount() == null ? null : BudgetDataReader.amountText(row.getAmount()));
-                rows.add(m);
-            }
         }
+        List<Map<String, Object>> rows = fill(list, channels.promotersOf(site), r[0], r[1]);
         out.put("rows", rows);
         return out;
+    }
+
+    /**
+     * 表格的行：查询区间每一天 × 渠道字典全集（与 /promo/budget/meta 的 promoters 同序，含停用的推广渠道），
+     * UDS 有数的填金额，没有的 amount = null（页面显示「—」，不补零）；UDS 里有、字典里没有的推广渠道排在当天最后。
+     * 名称：UDS 里随行保存的 → 字典 → ID。包内可见供测试。
+     */
+    static List<Map<String, Object>> fill(List<BudgetDataReader.Row> uds, List<PromoChannelDictionary.Promoter> dict, LocalDate from,
+        LocalDate to)
+    {
+        Map<String, BudgetDataReader.Row> byKey = new LinkedHashMap<>();
+        for (BudgetDataReader.Row row : uds)
+        {
+            byKey.put(row.getDate() + "|" + row.getPromoterId() + "|" + row.getChannelId(), row);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
+        {
+            for (PromoChannelDictionary.Promoter p : dict)
+            {
+                for (PromoChannelDictionary.Channel c : p.getChannels())
+                {
+                    BudgetDataReader.Row hit = byKey.remove(d + "|" + p.getId() + "|" + c.getId());
+                    out.add(tableRow(d, p.getId(), nameOr(hit == null ? null : hit.getPromoterName(), p.getName(), p.getId()),
+                        c.getId(), nameOr(hit == null ? null : hit.getChannelName(), c.getName(), c.getId()),
+                        hit == null ? null : hit.getAmount()));
+                }
+            }
+            for (java.util.Iterator<BudgetDataReader.Row> it = byKey.values().iterator(); it.hasNext();)
+            {
+                BudgetDataReader.Row row = it.next();
+                if (row.getDate().equals(d))
+                {
+                    out.add(tableRow(d, row.getPromoterId(), nameOr(row.getPromoterName(), row.getPromoterId()), row.getChannelId(),
+                        nameOr(row.getChannelName(), row.getChannelId()), row.getAmount()));
+                    it.remove();
+                }
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, Object> tableRow(LocalDate date, String promoterId, String promoterName, String channelId,
+        String channelName, java.math.BigDecimal amount)
+    {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("date", date.toString());
+        m.put("promoterId", promoterId);
+        m.put("promoterName", promoterName);
+        m.put("channelId", channelId);
+        m.put("channelName", channelName);
+        m.put("amount", amount == null ? null : BudgetDataReader.amountText(amount));
+        return m;
+    }
+
+    /** 第一个不为空的名称 */
+    static String nameOr(String... names)
+    {
+        for (String n : names)
+        {
+            if (n != null && !n.isBlank())
+            {
+                return n;
+            }
+        }
+        return null;
     }
 
     private List<BudgetDataReader.Row> readRows(BudgetKind kind, LocalDate from, LocalDate to)
@@ -272,7 +334,7 @@ public class BudgetSpendService
         }
     }
 
-    /** 模板、表格共用的日期范围校验：格式、先后、最多 31 天、不早于数据起始日、消耗到昨天 / 预算到今天 + 90 天 */
+    /** 模板、表格共用的日期范围校验：格式、先后、最多 max-days 天（默认 31）、不早于数据起始日、消耗到昨天 / 预算到今天 + 90 天 */
     private LocalDate[] range(BudgetKind kind, String site, String fromText, String toText)
     {
         LocalDate today = today(site);
@@ -282,9 +344,9 @@ public class BudgetSpendService
         {
             throw MonitorFieldException.of("to", "結束日期不能早於開始日期");
         }
-        if (ChronoUnit.DAYS.between(from, to) + 1 > BudgetImportValidator.MAX_DAYS)
+        if (ChronoUnit.DAYS.between(from, to) + 1 > props.maxDays())
         {
-            throw MonitorFieldException.of("to", "單次最多 " + BudgetImportValidator.MAX_DAYS + " 天");
+            throw MonitorFieldException.of("to", "單次最多 " + props.maxDays() + " 天");
         }
         LocalDate start = dataStart();
         if (start != null && from.isBefore(start))
