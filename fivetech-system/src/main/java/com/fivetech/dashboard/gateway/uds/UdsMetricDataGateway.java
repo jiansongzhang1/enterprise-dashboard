@@ -89,6 +89,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
     /** 站点上线日 / 统计时区：明细不带时间时，用来补 UDS 必填的 time 主轴 */
     private final DashboardProperties dashboard;
 
+    /** 测试注入：站点时区的「现在」；null 时按站点时区取系统时间（见 {@link #siteNow()}） */
+    java.util.function.Supplier<LocalDateTime> clock;
+
     public UdsMetricDataGateway(UdsProperties properties, UdsClient client, DashboardProperties dashboard)
     {
         this.properties = properties;
@@ -1257,7 +1260,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
             time.put("dimension", en.getTimeDimension());
             time.put("granularity", "HOUR");
             LocalDateTime start = from.truncatedTo(ChronoUnit.HOURS);
-            LocalDateTime end = to.minusNanos(1).truncatedTo(ChronoUnit.HOURS);
+            LocalDateTime end = UdsRealtime.hourTo(to, to.minusNanos(1).truncatedTo(ChronoUnit.HOURS), siteNow());
             time.put("from", start.format(DATETIME));
             time.put("to", (end.isBefore(start) ? start : end).format(DATETIME));
 
@@ -1919,7 +1922,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
             time.put("dimension", d.getTimeDimension());
             time.put("granularity", "HOUR");
             LocalDateTime start = axisFrom.truncatedTo(ChronoUnit.HOURS);
-            LocalDateTime end = axisTo.minusNanos(1).truncatedTo(ChronoUnit.HOURS);   // 含 to 所在小时的上一个整点
+            // 含 to 所在小时的上一个整点；伸进正在进行的小时时向右取整（实时）
+            LocalDateTime end = UdsRealtime.hourTo(axisTo, axisTo.minusNanos(1).truncatedTo(ChronoUnit.HOURS), siteNow());
             time.put("from", start.format(DATETIME));
             time.put("to", (end.isBefore(start) ? start : end).format(DATETIME));
             body.put("time", time);
@@ -2379,7 +2383,8 @@ public class UdsMetricDataGateway implements MetricDataGateway
     /**
      * 时间节点（联调手册第 7 节）。本系统区间左闭右开，UDS 的 time.to 包含最后一个时间值：
      * <ul>
-     *   <li>DATETIME（uds_hh / India_DDHH 小时列）：from 原样，to 回退一个整点。
+     *   <li>DATETIME（uds_hh / India_DDHH 小时列）：from 原样，to 回退一个整点；
+     *       区间伸进正在进行的小时（查询今日或包含今日）时，to 按当前时间向右取整（16:50 → 17:00，见 {@link UdsRealtime}）。
      *       上卷到 DAY / WEEK 也写完整时间戳——只写日期会漏最后一天的小时，UDS 会拒绝（4001）；</li>
      *   <li>DATE（uds_dt）：只写日期，to 为最后一个包含的日期。</li>
      * </ul>
@@ -2399,13 +2404,30 @@ public class UdsMetricDataGateway implements MetricDataGateway
             return time;
         }
         time.put("from", from.format(DATETIME));
-        LocalDateTime end = to.minusHours(1);
+        LocalDateTime end = UdsRealtime.hourTo(to, to.minusHours(1), siteNow());
         if (end.isBefore(from))
         {
             end = from;
         }
         time.put("to", end.format(DATETIME));
         return time;
+    }
+
+    /** 站点时区的现在（实时 to 用）；取不到时区时返回 null，不做实时调整 */
+    LocalDateTime siteNow()
+    {
+        if (clock != null)
+        {
+            return clock.get();
+        }
+        try
+        {
+            return LocalDateTime.now(dashboard.currentZone());
+        }
+        catch (RuntimeException e)
+        {
+            return null;
+        }
     }
 
 

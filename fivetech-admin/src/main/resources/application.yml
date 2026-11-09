@@ -360,9 +360,10 @@ dashboard:
           dT: [dep_time_sum, dep_time_count]
           wT: [wd_time_sum, wd_time_count]
         # 区间只在一个自然日内（完整一天，或今天截至当前）时，这些去重人数指标的区间值取日数据集当天的值
-        # （active → dashboard_overview_day_v2.active_day）。多天区间仍按各日日去重值取平均；
-        # 未列出的（arppu、depU）不完整的一天保持 NULL
-        single-day-from-day: [active]
+        # （active → active_day、arppu → arppu_day、depU → dep_users_day，dashboard_overview_day_v2）。多天区间仍按各日日去重值取平均。
+        # 2026-11-09：UDS 支持实时数据，今日的 ARPPU、存款人数（含 ARPPU 构成里的存款人数）也取日数据集当天截至当前的值；
+        # 未列出的指标不完整的一天保持 NULL
+        single-day-from-day: [active, arppu, depU]
       # 回测预览「平时水平」（POST /monitor/rules/preview 的 usual）：UDS metric_distribution_v1 直接给出
       # 每个指标按检测周期切分后的 p5 / p95 / min / max / min_at / max_at，以及有效周期数 valid_point_count（平时水平的 sampleHours），
       # 后端不再统计（UDS 20 指标四值联调文档，2026-10-26）。
