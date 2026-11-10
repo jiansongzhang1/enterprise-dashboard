@@ -290,7 +290,11 @@ public class PromoAnalysisService
         {
             try
             {
-                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+                // 只取所选列用到的字段；行维度有终端时才要带终端前缀的宽表字段
+                List<String> codes = new ArrayList<>();
+                cols.forEach(c -> codes.add(c.getCode()));
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY, codes,
+                    tree.dims().contains(ChannelTree.TERMINAL));
             }
             catch (RuntimeException e)
             {
@@ -486,11 +490,15 @@ public class PromoAnalysisService
         {
             try
             {
-                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+                // 漏斗只用到注册、首存、激活与各终端漏斗步骤；各终端的注册、占比要按终端拆
+                java.util.Set<String> codes = new java.util.LinkedHashSet<>(List.of("reg", "ftd", "act"));
+                cfg.getTerminals().forEach(t -> t.getSteps().forEach(s -> codes.add(s.getCode())));
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY, codes, true);
                 if (compare != null)
                 {
                     prev = market.cube(LocalDateTime.parse((String) compare.get("from"), PromoTime.SLOT),
-                        LocalDateTime.parse((String) compare.get("to"), PromoTime.SLOT), com.fivetech.dashboard.enums.Granularity.DAY);
+                        LocalDateTime.parse((String) compare.get("to"), PromoTime.SLOT), com.fivetech.dashboard.enums.Granularity.DAY,
+                        codes, true);
                 }
                 List<String> keys = new ArrayList<>();
                 List<List<Map<String, Object>>> conds = new ArrayList<>();

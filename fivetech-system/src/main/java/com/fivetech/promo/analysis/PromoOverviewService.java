@@ -185,17 +185,21 @@ public class PromoOverviewService
         boolean needData = selected.stream().anyMatch(m -> MarketValues.AVAILABLE.contains(m.getCode()));
         if (market != null && market.isEnabled() && needData && !data.channelPending && data.terminalKey != null)
         {
+            // 只取所选指标用到的字段；选了终端或按终端归因时才要带终端前缀的宽表字段
+            List<String> codes = new ArrayList<>();
+            selected.forEach(m -> codes.add(m.getCode()));
+            boolean byTerminal = scope.isTerminalSelected() || "terminal".equals(dimension);
             try
             {
-                data.day = market.cube(range.from, range.to, Granularity.DAY);
+                data.day = market.cube(range.from, range.to, Granularity.DAY, codes, byTerminal);
                 if (compare != null)
                 {
                     data.prevFrom = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT);
                     LocalDateTime prevTo = LocalDateTime.parse(compare.getTo(), PromoTime.SLOT);
-                    data.prevDay = market.cube(data.prevFrom, prevTo, Granularity.DAY);
+                    data.prevDay = market.cube(data.prevFrom, prevTo, Granularity.DAY, codes, byTerminal);
                     if (query.isIncludeSeries() && granularity == Granularity.HOUR)
                     {
-                        data.prevSeries = market.cube(data.prevFrom, prevTo, Granularity.HOUR);
+                        data.prevSeries = market.cube(data.prevFrom, prevTo, Granularity.HOUR, codes, byTerminal);
                     }
                     else
                     {
@@ -203,7 +207,7 @@ public class PromoOverviewService
                     }
                 }
                 data.series = query.isIncludeSeries() && granularity == Granularity.HOUR
-                    ? market.cube(range.from, range.to, Granularity.HOUR) : data.day;
+                    ? market.cube(range.from, range.to, Granularity.HOUR, codes, byTerminal) : data.day;
                 if (data.day.getWatermark() != null)
                 {
                     vo.setAsOf(data.day.getWatermark().format(PromoTime.SLOT));

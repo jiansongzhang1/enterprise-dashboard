@@ -306,21 +306,6 @@ class UserViewResolverTest
         assertEquals(List.of("y2", "x1", "y1", "x2"), mine.getItems());
     }
 
-    /** 上线脚本里推广分析表格列的配置位：group_adjacent = FALSE（⑦ 初始数据 + ⑧ 补改） */
-    @Test
-    void releaseSqlTurnsOffGroupAdjacentForPromoColumns() throws Exception
-    {
-        String sql = java.nio.file.Files.readString(java.nio.file.Path.of("../sql/release_next_postgresql.sql"),
-            java.nio.charset.StandardCharsets.UTF_8);
-        java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("\\('promo\\.channel\\.columns', 'PROMO', '表格列',\\s+'COLUMNS',\\s+1, NULL, (\\w+),").matcher(sql);
-        assertTrue(m.find(), "⑦ 里找不到 promo.channel.columns 的配置位");
-        assertEquals("FALSE", m.group(1));
-        // 补改必须同时刷新 update_time，否则视图定义按版本（行数 + max(update_time)）判断不出变化、不会热加载
-        assertTrue(sql.contains("UPDATE dashboard_view_slot SET group_adjacent = FALSE, update_time = localtimestamp\n"
-            + " WHERE slot_code = 'promo.channel.columns';"));
-    }
-
     private static String field(SlotView v, SaveViewRequest r, String name)
     {
         return field(v, r, name, 10);

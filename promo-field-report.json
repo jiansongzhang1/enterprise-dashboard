@@ -1,0 +1,1328 @@
+{
+  "base": "https://d3ajrxvlugsarb.cloudfront.net/prod-api",
+  "site": "SITE-IN",
+  "range": {
+    "today": "2026-11-09",
+    "yesterday": "2026-11-08",
+    "from": "2026-11-02",
+    "reg30": "2026-10-10"
+  },
+  "count": {
+    "有值": 64,
+    "未接入": 47,
+    "口径待确认": 18,
+    "提示": 2,
+    "未配置": 42,
+    "未到期": 10,
+    "无数据": 2,
+    "接口报错": 2
+  },
+  "results": [
+    {
+      "area": "选项",
+      "field": "agents（推广商字典）",
+      "status": "有值",
+      "detail": "12 个推广商"
+    },
+    {
+      "area": "选项",
+      "field": "terminals（终端字典）",
+      "status": "有值",
+      "detail": "web,android,ios"
+    },
+    {
+      "area": "选项",
+      "field": "siteLaunchDate",
+      "status": "有值",
+      "detail": "2026-03-01"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "spend 消耗",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "budget 預算",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "cpa CPA",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "ftdCost 首存成本",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "net 淨充值",
+      "status": "有值",
+      "detail": "state=OK；value=205758.838537985 prev=377784.2061303367；走势 7/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "roi D0 ROI",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "lpUV UV-落地頁",
+      "status": "口径待确认",
+      "detail": "state=NO_SOURCE；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "hUV UV-主頁",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE；數據待接入；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "dl 下載點擊",
+      "status": "口径待确认",
+      "detail": "state=NO_SOURCE；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "act 激活",
+      "status": "有值",
+      "detail": "state=OK；value=10464 prev=6167；走势 7/7 点有值"
+    },
+    {
+      "area": "概览提示",
+      "field": "PROMO_DATA_PARTIAL",
+      "status": "提示",
+      "detail": " 部分指標暫無數據"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "reg 註冊人數",
+      "status": "有值",
+      "detail": "state=OK；value=8304 prev=5159；走势 7/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "regR 註冊轉化率",
+      "status": "口径待确认",
+      "detail": "state=NO_SOURCE；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；value=null prev=null；走势 0/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "ftd 首存人數",
+      "status": "有值",
+      "detail": "state=OK；value=367 prev=270；走势 7/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "ftdR 首存轉化率",
+      "status": "有值",
+      "detail": "state=OK；value=4.42 prev=5.23；走势 7/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "ftdAmt 首存金額",
+      "status": "有值",
+      "detail": "state=OK；value=172808.838537985 prev=117803.2061303367；走势 7/7 点有值"
+    },
+    {
+      "area": "概览指标卡",
+      "field": "rd 復存人數",
+      "status": "有值",
+      "detail": "state=OK；value=57 prev=55；走势 7/7 点有值"
+    },
+    {
+      "area": "概览提示",
+      "field": "PROMO_DATA_PARTIAL",
+      "status": "提示",
+      "detail": " 部分指標暫無數據"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "spend 消耗",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：消耗是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "budget 預算",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：預算是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "cpa CPA",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：CPA是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "ftdCost 首存成本",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存成本是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "net 淨充值",
+      "status": "有值",
+      "detail": "3 个成员"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "roi D0 ROI",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：D0 ROI是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "lpUV UV-落地頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-落地頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "hUV UV-主頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-主頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "dl 下載點擊",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：下載點擊是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "act 激活",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：激活是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "reg 註冊人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "regR 註冊轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "ftd 首存人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "ftdR 首存轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "ftdAmt 首存金額",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存金額是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·terminal",
+      "field": "rd 復存人數",
+      "status": "有值",
+      "detail": "2 个成员"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "spend 消耗",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：消耗是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "budget 預算",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：預算是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "cpa CPA",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：CPA是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "ftdCost 首存成本",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存成本是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "net 淨充值",
+      "status": "未接入",
+      "detail": "PENDING_SOURCE：數據平台還沒有按推廣商拆分的數據，暫不能歸因。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "roi D0 ROI",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：D0 ROI是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "lpUV UV-落地頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-落地頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "hUV UV-主頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-主頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "dl 下載點擊",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：下載點擊是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "act 激活",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：激活是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "reg 註冊人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "regR 註冊轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "ftd 首存人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "ftdR 首存轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "ftdAmt 首存金額",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存金額是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·agent",
+      "field": "rd 復存人數",
+      "status": "未接入",
+      "detail": "PENDING_SOURCE：數據平台還沒有按推廣商拆分的數據，暫不能歸因。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "spend 消耗",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：消耗是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "budget 預算",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：預算是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "cpa CPA",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：CPA是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "ftdCost 首存成本",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存成本是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "net 淨充值",
+      "status": "未接入",
+      "detail": "PENDING_SOURCE：數據平台還沒有按推廣渠道拆分的數據，暫不能歸因。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "roi D0 ROI",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：D0 ROI是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "lpUV UV-落地頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-落地頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "hUV UV-主頁",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：UV-主頁是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "dl 下載點擊",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：下載點擊是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "act 激活",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：激活是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "reg 註冊人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "regR 註冊轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：註冊轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "ftd 首存人數",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存人數是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "ftdR 首存轉化率",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存轉化率是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "ftdAmt 首存金額",
+      "status": "未配置",
+      "detail": "NOT_CONFIGURED：首存金額是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+    },
+    {
+      "area": "变化归因·channel",
+      "field": "rd 復存人數",
+      "status": "未接入",
+      "detail": "PENDING_SOURCE：數據平台還沒有按推廣渠道拆分的數據，暫不能歸因。"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "行数（第 1 层）",
+      "status": "有值",
+      "detail": "7 行；dataPending=false"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "lpPV PV-落地頁",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "lpUV UV-落地頁",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "hPV PV-主頁",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "hUV UV-主頁",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "dl 下載點擊",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "act 激活",
+      "status": "有值",
+      "detail": "合计 state=OK value=10464；首行 state=OK value=1329"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "reg 註冊人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=8304；首行 state=OK value=1183"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regR 註冊轉化率",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "ftd 首存人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=367；首行 state=OK value=57"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "ftdR 首存轉化率",
+      "status": "有值",
+      "detail": "合计 state=OK value=4.42；首行 state=OK value=4.82"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "depR 存款率",
+      "status": "有值",
+      "detail": "合计 state=OK value=4.87；首行 state=OK value=5.58"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "ftdAmt 首存金額",
+      "status": "有值",
+      "detail": "合计 state=OK value=172808.838537985；首行 state=OK value=21007.221924396"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "rd 復存人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=57；首行 state=OK value=11"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "rdAmt 復存金額",
+      "status": "有值",
+      "detail": "合计 state=OK value=32950；首行 state=OK value=6900"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "rdR 復存率",
+      "status": "有值",
+      "detail": "合计 state=OK value=15.53；首行 state=OK value=19.3"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "spend 消耗",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "budget 預算",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "uvCost UV 成本",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "cpa CPA",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "ftdCost 首存成本",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "roi D0 ROI",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "roas7 ROAS D7",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "roas30 ROAS D30",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regRet1 次日註冊留存",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regRet3 3 日註冊留存",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regRet7 7 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regRet15 15 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "regRet30 30 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "depU 存款人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=404；首行 state=OK value=66"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "dep 存款總額",
+      "status": "有值",
+      "detail": "合计 state=OK value=205758.838537985；首行 state=OK value=27907.221924396"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "wdU 提款人數",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "wd 提款總額",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "net 淨充值",
+      "status": "有值",
+      "detail": "合计 state=OK value=205758.838537985；首行 state=OK value=27907.221924396"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "arppu ARPPU",
+      "status": "有值",
+      "detail": "合计 state=OK value=509.3；首行 state=OK value=422.84"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "betU 投注人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=1201；首行 state=OK value=189"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "bet 投注總額",
+      "status": "有值",
+      "detail": "合计 state=OK value=1639922.2409278655；首行 state=OK value=178617.677655172"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "vbet 有效投注",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·date›terminal",
+      "field": "ggr GGR",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "行数（第 1 层）",
+      "status": "有值",
+      "detail": "12 行；dataPending=false"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "lpPV PV-落地頁",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "lpUV UV-落地頁",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "hPV PV-主頁",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "hUV UV-主頁",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "dl 下載點擊",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "act 激活",
+      "status": "有值",
+      "detail": "合计 state=OK value=10464；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "reg 註冊人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=8304；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regR 註冊轉化率",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "ftd 首存人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=367；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "ftdR 首存轉化率",
+      "status": "有值",
+      "detail": "合计 state=OK value=4.42；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "depR 存款率",
+      "status": "有值",
+      "detail": "合计 state=OK value=4.87；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "ftdAmt 首存金額",
+      "status": "有值",
+      "detail": "合计 state=OK value=172808.838537985；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "rd 復存人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=57；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "rdAmt 復存金額",
+      "status": "有值",
+      "detail": "合计 state=OK value=32950；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "rdR 復存率",
+      "status": "有值",
+      "detail": "合计 state=OK value=15.53；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "spend 消耗",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "budget 預算",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "uvCost UV 成本",
+      "status": "口径待确认",
+      "detail": "合计 state=NO_SOURCE value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "cpa CPA",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "ftdCost 首存成本",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "roi D0 ROI",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "roas7 ROAS D7",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "roas30 ROAS D30",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regRet1 次日註冊留存",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regRet3 3 日註冊留存",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regRet7 7 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regRet15 15 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "regRet30 30 日註冊留存",
+      "status": "未到期",
+      "detail": "合计 state=PENDING value=null；首行 state=PENDING value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "depU 存款人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=404；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "dep 存款總額",
+      "status": "有值",
+      "detail": "合计 state=OK value=205758.838537985；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "wdU 提款人數",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "wd 提款總額",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "net 淨充值",
+      "status": "有值",
+      "detail": "合计 state=OK value=205758.838537985；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "arppu ARPPU",
+      "status": "有值",
+      "detail": "合计 state=OK value=509.3；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "betU 投注人數",
+      "status": "有值",
+      "detail": "合计 state=OK value=1201；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "bet 投注總額",
+      "status": "有值",
+      "detail": "合计 state=OK value=1639922.2409278655；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "vbet 有效投注",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "渠道表现·agent›channel",
+      "field": "ggr GGR",
+      "status": "未接入",
+      "detail": "合计 state=NO_SOURCE value=null；數據待接入；首行 state=NO_SOURCE value=null"
+    },
+    {
+      "area": "获客漏斗·整体",
+      "field": "lpUV UV-落地頁",
+      "status": "口径待确认",
+      "detail": "value=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示"
+    },
+    {
+      "area": "获客漏斗·整体",
+      "field": "hUV UV-主頁",
+      "status": "未接入",
+      "detail": "value=null；數據待接入"
+    },
+    {
+      "area": "获客漏斗·整体",
+      "field": "reg 註冊人數",
+      "status": "有值",
+      "detail": "value=8304；"
+    },
+    {
+      "area": "获客漏斗·整体",
+      "field": "ftd 首存人數",
+      "status": "有值",
+      "detail": "value=367；"
+    },
+    {
+      "area": "获客漏斗·终端",
+      "field": "web 注册 / 流失",
+      "status": "有值",
+      "detail": "reg=[object Object] lost=[object Object]"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "web · lpUV",
+      "status": "口径待确认",
+      "detail": "value=null rate=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "web · hUV",
+      "status": "未接入",
+      "detail": "value=null rate=null；數據待接入"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "web · reg",
+      "status": "有值",
+      "detail": "value=782 rate=null；"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "web · ftd",
+      "status": "有值",
+      "detail": "value=64 rate=8.18；"
+    },
+    {
+      "area": "获客漏斗·终端",
+      "field": "android 注册 / 流失",
+      "status": "有值",
+      "detail": "reg=[object Object] lost=[object Object]"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "android · lpUV",
+      "status": "口径待确认",
+      "detail": "value=null rate=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "android · dl",
+      "status": "口径待确认",
+      "detail": "value=null rate=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "android · act",
+      "status": "有值",
+      "detail": "value=10464 rate=null；"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "android · reg",
+      "status": "有值",
+      "detail": "value=7507 rate=71.74；"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "android · ftd",
+      "status": "有值",
+      "detail": "value=302 rate=4.02；"
+    },
+    {
+      "area": "获客漏斗·终端",
+      "field": "ios 注册 / 流失",
+      "status": "有值",
+      "detail": "reg=[object Object] lost=[object Object]"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "ios · lpUV",
+      "status": "口径待确认",
+      "detail": "value=null rate=null；口徑待確認（數據平台字段與頁面口徑不同），暫不展示"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "ios · hUV",
+      "status": "未接入",
+      "detail": "value=null rate=null；數據待接入"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "ios · reg",
+      "status": "有值",
+      "detail": "value=4 rate=null；"
+    },
+    {
+      "area": "获客漏斗·终端步骤",
+      "field": "ios · ftd",
+      "status": "有值",
+      "detail": "value=1 rate=25；"
+    },
+    {
+      "area": "获客漏斗",
+      "field": "regShare（各终端注册占比）",
+      "status": "有值",
+      "detail": "[{\"terminal\":\"web\",\"pct\":9.42},{\"terminal\":\"android\",\"pct\":90.4},{\"terminal\":\"ios\",\"pct\":0.05},{\"terminal\":\"unidentified\",\"pct\":0.13}]"
+    },
+    {
+      "area": "留存与回收·概要",
+      "field": "regRet1",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE"
+    },
+    {
+      "area": "留存与回收·概要",
+      "field": "regRet7",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE"
+    },
+    {
+      "area": "留存与回收·概要",
+      "field": "ltv7",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE"
+    },
+    {
+      "area": "留存与回收·概要",
+      "field": "roas7",
+      "status": "未接入",
+      "detail": "state=NO_SOURCE"
+    },
+    {
+      "area": "留存与回收·明细",
+      "field": "regRet",
+      "status": "未接入",
+      "detail": "30 行；dataPending=true"
+    },
+    {
+      "area": "留存与回收·明细",
+      "field": "ltv",
+      "status": "未接入",
+      "detail": "30 行；dataPending=true"
+    },
+    {
+      "area": "留存与回收·明细",
+      "field": "roas",
+      "status": "未接入",
+      "detail": "30 行；dataPending=true"
+    },
+    {
+      "area": "裂变层级",
+      "field": "顶层一级代理清单",
+      "status": "未接入",
+      "detail": "0 行；notices=FISSION_TOP_PENDING"
+    },
+    {
+      "area": "用户明细",
+      "field": "options.terminals / agents",
+      "status": "有值",
+      "detail": "4 个终端，12 个推广商"
+    },
+    {
+      "area": "用户明细·筛选",
+      "field": "默认（近 N 天注册）",
+      "status": "无数据",
+      "detail": "0 行 / total=0"
+    },
+    {
+      "area": "用户明细·筛选",
+      "field": "按终端 Web",
+      "status": "接口报错",
+      "detail": "code=5001 用戶明細的數據還沒有「註冊終端」字段（數據平台待提供），暫時不能按它篩選"
+    },
+    {
+      "area": "用户明细·筛选",
+      "field": "流失 lost=true",
+      "status": "无数据",
+      "detail": "0 行 / total=0"
+    },
+    {
+      "area": "用户明细·筛选",
+      "field": "按推广商",
+      "status": "接口报错",
+      "detail": "code=5001 用戶明細的數據還沒有「註冊推廣渠道」字段（數據平台待提供），暫時不能按它篩選"
+    },
+    {
+      "area": "预算与消耗",
+      "field": "消耗（UDS import_yata_promo_cost）",
+      "status": "有值",
+      "detail": "154 行（2026-11-02~2026-11-08）"
+    },
+    {
+      "area": "预算与消耗",
+      "field": "预算（UDS import_yata_promo_budget）",
+      "status": "有值",
+      "detail": "154 行（2026-11-02~2026-11-08）"
+    },
+    {
+      "area": "投放日报",
+      "field": "昨日导出",
+      "status": "有值",
+      "detail": "export-summary=days=1&channels=0&rows=2"
+    },
+    {
+      "area": "个人视图",
+      "field": "promo.overview.cards",
+      "status": "有值",
+      "detail": "groupAdjacent=false"
+    },
+    {
+      "area": "个人视图",
+      "field": "promo.channel.columns",
+      "status": "有值",
+      "detail": "groupAdjacent=false"
+    },
+    {
+      "area": "个人视图",
+      "field": "promo.channel.rows",
+      "status": "有值",
+      "detail": "groupAdjacent=false"
+    }
+  ],
+  "requests": [
+    {
+      "name": "推广分析选项 /dashboard/promo/options",
+      "http": 200,
+      "code": 200,
+      "ms": 606,
+      "error": null
+    },
+    {
+      "name": "概览 spend,budget,cpa,ftdCost,net,roi,lpUV,hUV,dl,act",
+      "http": 200,
+      "code": 200,
+      "ms": 2465,
+      "error": null
+    },
+    {
+      "name": "概览 reg,regR,ftd,ftdR,ftdAmt,rd",
+      "http": 200,
+      "code": 200,
+      "ms": 116,
+      "error": null
+    },
+    {
+      "name": "概览归因 terminal spend,budget,cpa,ftdCost,net,roi,lpUV,hUV,dl,act",
+      "http": 200,
+      "code": 200,
+      "ms": 119,
+      "error": null
+    },
+    {
+      "name": "概览归因 terminal reg,regR,ftd,ftdR,ftdAmt,rd",
+      "http": 200,
+      "code": 200,
+      "ms": 118,
+      "error": null
+    },
+    {
+      "name": "概览归因 agent spend,budget,cpa,ftdCost,net,roi,lpUV,hUV,dl,act",
+      "http": 200,
+      "code": 200,
+      "ms": 129,
+      "error": null
+    },
+    {
+      "name": "概览归因 agent reg,regR,ftd,ftdR,ftdAmt,rd",
+      "http": 200,
+      "code": 200,
+      "ms": 227,
+      "error": null
+    },
+    {
+      "name": "概览归因 channel spend,budget,cpa,ftdCost,net,roi,lpUV,hUV,dl,act",
+      "http": 200,
+      "code": 200,
+      "ms": 127,
+      "error": null
+    },
+    {
+      "name": "概览归因 channel reg,regR,ftd,ftdR,ftdAmt,rd",
+      "http": 200,
+      "code": 200,
+      "ms": 128,
+      "error": null
+    },
+    {
+      "name": "渠道表现 date›terminal",
+      "http": 200,
+      "code": 200,
+      "ms": 213,
+      "error": null
+    },
+    {
+      "name": "渠道表现 agent›channel",
+      "http": 200,
+      "code": 200,
+      "ms": 211,
+      "error": null
+    },
+    {
+      "name": "获客漏斗",
+      "http": 200,
+      "code": 200,
+      "ms": 373,
+      "error": null
+    },
+    {
+      "name": "留存概要",
+      "http": 200,
+      "code": 200,
+      "ms": 246,
+      "error": null
+    },
+    {
+      "name": "留存明细 regRet",
+      "http": 200,
+      "code": 200,
+      "ms": 119,
+      "error": null
+    },
+    {
+      "name": "留存明细 ltv",
+      "http": 200,
+      "code": 200,
+      "ms": 229,
+      "error": null
+    },
+    {
+      "name": "留存明细 roas",
+      "http": 200,
+      "code": 200,
+      "ms": 201,
+      "error": null
+    },
+    {
+      "name": "裂变层级 顶层",
+      "http": 200,
+      "code": 200,
+      "ms": 128,
+      "error": null
+    },
+    {
+      "name": "用户明细选项",
+      "http": 200,
+      "code": 200,
+      "ms": 126,
+      "error": null
+    },
+    {
+      "name": "用户明细 默认（近 N 天注册）",
+      "http": 200,
+      "code": 200,
+      "ms": 451,
+      "error": null
+    },
+    {
+      "name": "用户明细 按终端 Web",
+      "http": 200,
+      "code": 5001,
+      "ms": 120,
+      "error": null
+    },
+    {
+      "name": "用户明细 流失 lost=true",
+      "http": 200,
+      "code": 200,
+      "ms": 205,
+      "error": null
+    },
+    {
+      "name": "用户明细 按推广商",
+      "http": 200,
+      "code": 5001,
+      "ms": 115,
+      "error": null
+    },
+    {
+      "name": "预算与消耗 SPEND",
+      "http": 200,
+      "code": 200,
+      "ms": 225,
+      "error": null
+    },
+    {
+      "name": "预算与消耗 BUDGET",
+      "http": 200,
+      "code": 200,
+      "ms": 139,
+      "error": null
+    },
+    {
+      "name": "投放日报 昨日导出",
+      "http": 200,
+      "code": null,
+      "ms": 258,
+      "error": null
+    },
+    {
+      "name": "个人视图 PROMO",
+      "http": 200,
+      "code": 200,
+      "ms": 127,
+      "error": null
+    }
+  ]
+}

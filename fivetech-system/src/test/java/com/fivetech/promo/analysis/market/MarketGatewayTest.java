@@ -208,4 +208,128 @@ class MarketGatewayTest
         assertEquals("dashboard_market_member_snapshot_v1", snap.get("dataset"));
         assertEquals("now", ((Map<?, ?>) snap.get("time")).get("from"));
     }
+
+    // ------------------------------------------------------------------ 只取请求的指标用到的字段
+
+    /** 按请求体的维度回答：带 terminal 的是精确来源，否则是宽表（不依赖调用顺序） */
+    static final class RoutedClient extends UdsClient
+    {
+        final List<Map<String, Object>> bodies = new ArrayList<>();
+        int batches;
+        List<UdsRow> wide = List.of();
+        List<UdsRow> precise = List.of();
+
+        RoutedClient()
+        {
+            super(new UdsProperties(), JsonMapper.builder().build(), new DashboardProperties());
+        }
+
+        @Override
+        public List<UdsQueryResult> queryBatch(List<Map<String, Object>> list)
+        {
+            batches++;
+            List<UdsQueryResult> out = new ArrayList<>();
+            for (Map<String, Object> b : list)
+            {
+                out.add(answer(b));
+            }
+            return out;
+        }
+
+        @Override
+        public UdsQueryResult queryWithMeta(Map<String, Object> body)
+        {
+            return answer(body);
+        }
+
+        private UdsQueryResult answer(Map<String, Object> body)
+        {
+            bodies.add(body);
+            boolean isPrecise = ((List<?>) body.get("dimensions")).contains("terminal");
+            return new UdsQueryResult(isPrecise ? precise : wide, "b", "v1", false, LocalDateTime.of(2026, 11, 5, 9, 0));
+        }
+    }
+
+    private RoutedClient routed()
+    {
+        FakeClient f = twoDays();
+        RoutedClient c = new RoutedClient();
+        c.wide = f.answers.get(0);
+        c.precise = f.answers.get(1);
+        return c;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> metricsOf(Map<String, Object> body)
+    {
+        return (List<String>) body.get("metrics");
+    }
+
+    @Test
+    void onlyWideQueryForFtd()
+    {
+        RoutedClient c = routed();
+        MarketCube cube = new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("ftd"), false);
+        assertEquals(1, c.bodies.size(), "用不到精确来源就不发精确那条查询");
+        assertEquals(0, c.batches, "只有一条时走 /query，不走 batch");
+        assertEquals(List.of("ftd_players"), metricsOf(c.bodies.get(0)));
+        assertEquals(List.of("uds_hh"), c.bodies.get(0).get("dimensions"));
+        assertEquals(new BigDecimal("25"), MarketValues.value("ftd", cube, MarketCube.ALL, null));
+    }
+
+    @Test
+    void onlyPreciseQueryForRepeatDepositors()
+    {
+        RoutedClient c = routed();
+        MarketCube cube = new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("rd"), false);
+        assertEquals(1, c.bodies.size(), "用不到宽表就不发宽表那条查询");
+        assertEquals(List.of("redeposit_users"), metricsOf(c.bodies.get(0)));
+        assertEquals(new BigDecimal("17"), MarketValues.value("rd", cube, MarketCube.ALL, null));
+    }
+
+    @Test
+    void terminalPrefixedFieldsOnlyWhenSplittingByTerminal()
+    {
+        RoutedClient c = routed();
+        new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("ftdR", "rd", "lpUV"), true);
+        assertEquals(1, c.batches, "两条都要时一次 batch 发出");
+        assertEquals(List.of("reg", "ftd_players", "web_reg", "web_ftd_players", "android_reg", "android_ftd_players",
+            "ios_reg", "ios_ftd_players", "unknown_reg", "unknown_ftd_players"), metricsOf(c.bodies.get(0)));
+        assertEquals(List.of("redeposit_users"), metricsOf(c.bodies.get(1)));
+        RoutedClient none = routed();
+        MarketCube empty = new MarketGateway(none, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("lpUV", "spend"), true);
+        assertEquals(0, none.bodies.size(), "没有能取的指标：不调 UDS");
+        assertNull(MarketValues.value("reg", empty, MarketCube.ALL, null));
+    }
+
+    /** 每个可取指标只按自己的字段取数，结果与取全部字段时完全一致（FIELDS 与 value() 的算法对得上） */
+    @Test
+    void fieldsCoverEveryAvailableMetric()
+    {
+        assertEquals(MarketValues.AVAILABLE, MarketValues.FIELDS.keySet());
+        MarketCube full = new MarketGateway(routed(), new MarketProperties()).cube(FROM, TO, Granularity.DAY);
+        for (String code : MarketValues.AVAILABLE)
+        {
+            MarketCube only = new MarketGateway(routed(), new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of(code), true);
+            for (String t : List.of(MarketCube.ALL, "web", "android", "unknown"))
+            {
+                assertEquals(MarketValues.value(code, full, t, null), MarketValues.value(code, only, t, null), code + " @ " + t);
+            }
+        }
+    }
+
+    /** 複存率由上游直接给出：后端不算、不取它的分子分母，提供字段前为 NO_SOURCE */
+    @Test
+    void repeatDepositRateComesFromUpstream()
+    {
+        assertTrue(!MarketValues.AVAILABLE.contains("rdR"));
+        assertTrue(MarketValues.UPSTREAM.contains("rdR"));
+        assertTrue(MarketValues.fieldsOf(List.of("rdR")).isEmpty());
+        MarketCube full = new MarketGateway(routed(), new MarketProperties()).cube(FROM, TO, Granularity.DAY);
+        assertNull(MarketValues.value("rdR", full, MarketCube.ALL, null));
+        assertEquals("由數據平台直接提供（不由後端計算），待接入", MarketValues.noSourceNote("rdR"));
+        RoutedClient c = routed();
+        new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("rdR"), false);
+        assertEquals(0, c.bodies.size(), "只选複存率时不调 UDS");
+    }
 }

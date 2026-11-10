@@ -18,7 +18,6 @@ import java.util.function.Predicate;
  *   <tr><td>ftdAmt 首存金額</td><td>宽表 ftd_amount</td></tr>
  *   <tr><td>rdAmt 複存金額</td><td>宽表 redeposit_amount</td></tr>
  *   <tr><td>rd 複存人數</td><td>精确 redeposit_users，逐日相加</td></tr>
- *   <tr><td>rdR 複存率</td><td>Σ redeposit_users ÷ ftd_players</td></tr>
  *   <tr><td>depU 存款人數</td><td>精确 deposit_users，逐日相加</td></tr>
  *   <tr><td>depR 存款率</td><td>Σ deposit_users ÷ reg</td></tr>
  *   <tr><td>dep 存款總額 / net 淨充值（= 存款总额）</td><td>精确 deposit_amount</td></tr>
@@ -29,13 +28,51 @@ import java.util.function.Predicate;
  *
  * <p>比率为百分数（12.3 = 12.3%），保留 2 位；分母为 0 或缺失返回 null。</p>
  *
+ * <p>複存率（rdR）由上游直接给出，后端不计算（{@link #UPSTREAM}）；数据平台提供字段前为 NO_SOURCE。</p>
+ *
  * @author fivetech
  */
 public final class MarketValues
 {
     /** 可以从市场数据集取到的页面指标编码 */
-    public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "rdR", "depU", "depR", "dep",
+    public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "depU", "depR", "dep",
         "net", "arppu", "betU", "bet", "act");
+
+    /** 由上游直接给出、后端不计算的指标（等数据平台提供字段）：複存率 */
+    public static final Set<String> UPSTREAM = Set.of("rdR");
+
+    /**
+     * 页面指标要用的数据平台字段（宽表 reg、ftd_players、ftd_amount、redeposit_amount、android_first_open；
+     * 精确 deposit_users、redeposit_users、bet_users、deposit_amount、bet_amount）。取数时只取请求的指标用到的字段，
+     * 见 {@link MarketGateway#cube(LocalDateTime, LocalDateTime, com.fivetech.dashboard.enums.Granularity, java.util.Collection, boolean)}。
+     * 改 {@link #value} 的算法时同步改这里（单测会核对两者一致）。
+     */
+    public static final Map<String, java.util.List<String>> FIELDS = Map.ofEntries(
+        Map.entry("reg", java.util.List.of("reg")),
+        Map.entry("ftd", java.util.List.of("ftd_players")),
+        Map.entry("ftdR", java.util.List.of("ftd_players", "reg")),
+        Map.entry("ftdAmt", java.util.List.of("ftd_amount")),
+        Map.entry("rdAmt", java.util.List.of("redeposit_amount")),
+        Map.entry("rd", java.util.List.of("redeposit_users")),
+        Map.entry("depU", java.util.List.of("deposit_users")),
+        Map.entry("depR", java.util.List.of("deposit_users", "reg")),
+        Map.entry("dep", java.util.List.of("deposit_amount")),
+        Map.entry("net", java.util.List.of("deposit_amount")),
+        Map.entry("arppu", java.util.List.of("deposit_amount", "deposit_users")),
+        Map.entry("betU", java.util.List.of("bet_users")),
+        Map.entry("bet", java.util.List.of("bet_amount")),
+        Map.entry("act", java.util.List.of("android_first_open")));
+
+    /** 一组页面指标要用的字段（认不出、取不到的指标忽略） */
+    public static Set<String> fieldsOf(java.util.Collection<String> codes)
+    {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        if (codes != null)
+        {
+            codes.forEach(c -> out.addAll(FIELDS.getOrDefault(c, java.util.List.of())));
+        }
+        return out;
+    }
 
     /** 有字段但口径与页面不同（产品确认前不展示） */
     public static final Set<String> CALIBER_DIFF = Set.of("lpPV", "lpUV", "dl", "regR", "uvCost");
@@ -135,8 +172,6 @@ public final class MarketValues
                 return MarketCube.ALL.equals(t) || "android".equals(t) ? cube.sum("android_first_open", MarketCube.ALL, buckets) : null;
             case "ftdR":
                 return pct(cube.sum("ftd_players", t, buckets), cube.sum("reg", t, buckets));
-            case "rdR":
-                return pct(cube.sum("redeposit_users", t, buckets), cube.sum("ftd_players", t, buckets));
             case "depR":
                 return pct(cube.sum("deposit_users", t, buckets), cube.sum("reg", t, buckets));
             case "arppu":
@@ -179,6 +214,10 @@ public final class MarketValues
     /** 状态与说明：拿不到的指标说明原因 */
     public static String noSourceNote(String code)
     {
+        if (UPSTREAM.contains(code))
+        {
+            return "由數據平台直接提供（不由後端計算），待接入";
+        }
         return CALIBER_DIFF.contains(code) ? "口徑待確認（數據平台字段與頁面口徑不同），暫不展示" : "數據待接入";
     }
 
