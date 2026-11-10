@@ -80,6 +80,43 @@ final class ChannelTree
     /** 选了推广商 / 推广渠道：渠道映射还没有，数值都取不到 */
     private boolean channelPending;
 
+    /** 消耗 / 预算；null = 没取（关闭了读取、或列里没有消耗类） */
+    private PromoSpend.Cube spend;
+
+    /** 按推广渠道的行为数据（成本类指标的有效格子） */
+    private PromoCost.ChannelBehavior behavior = PromoCost.ChannelBehavior.NONE;
+
+    void setSpend(PromoSpend.Cube spend, PromoCost.ChannelBehavior behavior)
+    {
+        this.spend = spend;
+        this.behavior = behavior == null ? PromoCost.ChannelBehavior.NONE : behavior;
+    }
+
+    /** 路径上的推广商 / 推广渠道 + 筛选范围内的推广渠道（idKey）；全部且路径上没有时不过滤 */
+    private java.util.function.Predicate<String> channelKeys(String agentKey, String channelKey)
+    {
+        if (scope.isAll() && agentKey == null && channelKey == null)
+        {
+            return k -> true;
+        }
+        Set<String> ids = new HashSet<>();
+        for (PromoChannelDictionary.Promoter p : scope.promotersInScope())
+        {
+            if (agentKey != null && !ConfigCodes.idKey(p.getId()).equals(ConfigCodes.idKey(agentKey)))
+            {
+                continue;
+            }
+            for (PromoChannelDictionary.Channel c : scope.channelsOf(p))
+            {
+                if (channelKey == null || ConfigCodes.idKey(c.getId()).equals(ConfigCodes.idKey(channelKey)))
+                {
+                    ids.add(ConfigCodes.idKey(c.getId()));
+                }
+            }
+        }
+        return ids::contains;
+    }
+
     void setData(com.fivetech.promo.analysis.market.MarketCube cube, boolean channelPending)
     {
         this.cube = cube;
@@ -289,7 +326,39 @@ final class ChannelTree
                     state = "PENDING";
                 }
             }
-            if ("OK".equals(state))
+            boolean spendCol = PromoSpend.CODES.contains(col.getCode());
+            boolean costCol = PromoCost.CODES.contains(col.getCode());
+            if ("OK".equals(state) && (spendCol || costCol))
+            {
+                // 消耗 / 预算按推广商、推广渠道导入：合计、日期、推广商、推广渠道行都能算；成本类按有效格子
+                LocalDate from = dayValue == null ? range.firstDay() : dayValue;
+                LocalDate to = dayValue == null ? range.lastDay() : dayValue;
+                String agentKey = keyOf(path, AGENT);
+                String channelKey = keyOf(path, CHANNEL);
+                java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> f =
+                    PromoSpend.inScope(scope).and(PromoSpend.ofPath(agentKey, channelKey));
+                if (spend == null || spend.isFailed())
+                {
+                    state = "NO_SOURCE";
+                    note = spend != null ? PromoSpend.FAILED_NOTE
+                        : costCol ? PromoCost.note(col.getCode()) : com.fivetech.promo.analysis.market.MarketValues.noSourceNote(col.getCode());
+                }
+                else if (spendCol)
+                {
+                    value = spend.sum(PromoSpend.kind(col.getCode()), from, to, f);
+                }
+                else
+                {
+                    PromoCost.Result r = PromoCost.evaluate(col.getCode(),
+                        spend.cells(com.fivetech.promo.budget.BudgetKind.SPEND, from, to, f),
+                        PromoCost.filter(behavior.byChannel(PromoCost.behaviorMetric(col.getCode()), from, to), from, to,
+                            channelKeys(agentKey, channelKey)));
+                    state = r.state();
+                    value = r.value();
+                    note = r.note();
+                }
+            }
+            else if ("OK".equals(state))
             {
                 boolean available = com.fivetech.promo.analysis.market.MarketValues.AVAILABLE.contains(col.getCode());
                 if (byChannel || channelPending)

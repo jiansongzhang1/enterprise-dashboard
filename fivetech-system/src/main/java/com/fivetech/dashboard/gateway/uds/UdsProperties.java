@@ -875,6 +875,19 @@ public class UdsProperties
         /** 页面列编码 → UDS 导出列代码（visibleColumns），只需写与 fields 不同的项 */
         private Map<String, String> exportColumns = new LinkedHashMap<>();
 
+        /** 只在页面显示的列（不在这个数据集、由后端从别的数据集补）：不进 UDS 导出 */
+        private java.util.List<String> pageOnlyColumns = new java.util.ArrayList<>();
+
+        public java.util.List<String> getPageOnlyColumns()
+        {
+            return pageOnlyColumns;
+        }
+
+        public void setPageOnlyColumns(java.util.List<String> pageOnlyColumns)
+        {
+            this.pageOnlyColumns = pageOnlyColumns == null ? new java.util.ArrayList<>() : pageOnlyColumns;
+        }
+
         public String getExportProfile()
         {
             return exportProfile;

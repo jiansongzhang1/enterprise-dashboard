@@ -473,6 +473,9 @@ dashboard:
             level: player_level           # 0 老铁 / 1 青铜 / 2 白银 / 3 黄金 / 4 铂金1 / 5 铂金2
             country: country_code
             registerTime: register_date_india
+            # 推广分析（FY-55）：注册终端（Web / Android / iOS / Unknown，取值换算见 value-maps）、上级账号
+            registerTerminal: terminal
+            agentAccount: agent_login
             firstDepositTime: first_deposit_time_india
             firstDepositAmount: first_deposit_amount
             firstDepositChannel: first_deposit_channel_name
@@ -501,11 +504,18 @@ dashboard:
             status: { "0": "0", "1": "1" }
             userType: { "0": "0", "1": "1", "2": "2" }
             level: { "0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" }
-          # 用户明细 · 终端与推广筛选（FY-55，推广分析下钻也用）：UDS 提供注册终端、注册推广渠道字段后取消注释并填字段名（Q28）。
-          # 没映射时带 terminals / agents / channels 查询会直接报「暫時不能按它篩選」，不会静默忽略
-          # filter-fields:
-          #   registerTerminal: register_terminal
-          #   registerChannel: register_channel_id
+            # 注册终端：本系统终端编码（终端字典 + unidentified）→ 用户快照 terminal 的取值；映射外的编码筛选时直接报错
+            registerTerminal: { web: Web, android: Android, ios: iOS, unidentified: Unknown }
+          # 最近登录时间不在用户快照，后端按本页用户 ID 从市场会员快照补：不进 UDS 导出
+          page-only-columns: [lastLoginTime]
+          # 用户明细 · 终端与推广筛选（FY-55，推广分析下钻也用）：注册终端按上面 fields.registerTerminal 筛选。
+          # 没映射的筛选带了就直接报「暫時不能按它篩選」，不会静默忽略
+          filter-fields:
+            # 流失用户（请求 lost = true：注册后截至目前还没首存）：UDS 字段待数据平台确认后填（如 is_ftd），
+            # 取值换算加在上面 value-maps（如 lost: { "true": "0" }，不配则按字符串 "true" 下推）
+            lost: ""
+            # 注册推广渠道还没有字段（用户快照 channel 能否对应推广渠道 ID 待数仓确认），确认后取消注释并填字段名
+            # registerChannel: channel
         deposit:
           # 快照（v3）：time 固定 snapshot_at now~now，按约定表示「返回全部数据」；业务日期区间落在 created_date_india 筛选上
           dataset: dashboard_deposit_snapshot_v3

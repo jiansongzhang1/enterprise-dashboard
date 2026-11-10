@@ -454,7 +454,7 @@ SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms
 --        dashboard_view_preset     预置组合（如表格列的「標準」「投放日報」；is_default = 就是全站默认）
 --   2. dashboard_user_view：个人视图，用户 + 站点 + 配置位唯一；等于默认且没有小状态时不存（管理员改默认，没自定义的人自动跟上）
 --   3. 初始数据：推广分析 promo.overview.cards（16 选 1–10，默认 10 张，同推广分析页 is_default）、
---      promo.channel.columns（38 列 5 组，同组相邻；標準 / 投放日報）、promo.channel.rows（5 个维度选 1–4 层，推廣渠道在推廣商之下）
+--      promo.channel.columns（38 列 5 组，顺序完全由用户定、不要求同组相邻；標準 / 投放日報）、promo.channel.rows（5 个维度选 1–4 层，推廣渠道在推廣商之下）
 --   回滚：DROP TABLE IF EXISTS dashboard_user_view, dashboard_view_preset, dashboard_view_slot_item, dashboard_view_slot;
 -- ----------------------------------------------------------------------------
 BEGIN;
@@ -547,7 +547,7 @@ COMMENT ON COLUMN dashboard_user_view.attrs       IS '小状态 JSON 对象（�
 -- 配置位
 INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
 ('promo.overview.cards',  'PROMO', '核心指標', 'METRICS',    1, 10,   FALSE, '[]', NULL, 10, 'admin'),
-('promo.channel.columns', 'PROMO', '表格列',   'COLUMNS',    1, NULL, TRUE,  '[]', NULL, 20, 'admin'),
+('promo.channel.columns', 'PROMO', '表格列',   'COLUMNS',    1, NULL, FALSE, '[]', NULL, 20, 'admin'),
 ('promo.channel.rows',    'PROMO', '行維度',   'DIMENSIONS', 1, 4,    FALSE, '[{"before":"agent","after":"channel","message":"推廣渠道須在推廣商之下"}]', NULL, 30, 'admin')
 ON CONFLICT (slot_code) DO NOTHING;
 
@@ -642,6 +642,7 @@ SELECT to_regclass('dashboard_user_view') AS user_view_table;
 
 
 -- ----------------------------------------------------------------------------
+-- 新的改动从这里往下追加（下一段 ⑧ …）
 -- 新的改动从这里往下追加（⑧ 起，下一段 ⑨ …）
 -- ----------------------------------------------------------------------------
 

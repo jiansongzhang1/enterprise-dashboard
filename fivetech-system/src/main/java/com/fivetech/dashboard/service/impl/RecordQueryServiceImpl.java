@@ -69,6 +69,11 @@ public class RecordQueryServiceImpl implements IRecordQueryService
     {
         Context ctx = memberContext(query);
         RecordPage<MemberRecordVO> page = gateway.queryMemberRecords(ctx.request);
+        if (memberPromoFilter != null && page != null)
+        {
+            // 最近登录时间不在用户快照：按本页用户 ID 从市场会员快照补
+            memberPromoFilter.fillLastLogin(page.getRows());
+        }
         return assemble(ctx, ctx.columns, page, null);
     }
 
@@ -150,6 +155,8 @@ public class RecordQueryServiceImpl implements IRecordQueryService
         if (memberPromoFilter != null)
         {
             request.getFilters().putAll(memberPromoFilter.filters(query.getTerminals(), query.getAgents(), query.getChannels()));
+            // 流失用户（lost = true）；为空 / false 不加条件
+            request.getFilters().putAll(memberPromoFilter.lostFilter(query.getLost()));
         }
         return ctx;
     }

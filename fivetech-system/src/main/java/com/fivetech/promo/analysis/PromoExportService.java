@@ -94,6 +94,30 @@ public class PromoExportService
 
     // ------------------------------------------------------------------ FY-57 投放日报
 
+    /** 投放日报一行的消耗与成本类列（前 4 列是日期、推广商、推广渠道、投放媒体）；成本类按有效格子，行为数据按推广渠道到位前为空 */
+    void fillSpend(Object[] row, PromoSpend.Cube cube, LocalDate from, LocalDate to,
+        java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> filter, java.util.function.Predicate<String> channels)
+    {
+        if (cube == null || cube.isFailed())
+        {
+            return;
+        }
+        for (int i = 0; i < PromoMetricCatalog.DAILY_REPORT_COLUMNS.size(); i++)
+        {
+            String code = PromoMetricCatalog.DAILY_REPORT_COLUMNS.get(i);
+            if (PromoSpend.CODES.contains(code))
+            {
+                row[4 + i] = cube.sum(PromoSpend.kind(code), from, to, filter);
+            }
+            else if (PromoCost.CODES.contains(code))
+            {
+                PromoCost.Result r = PromoCost.evaluate(code, cube.cells(com.fivetech.promo.budget.BudgetKind.SPEND, from, to, filter),
+                    PromoCost.filter(analysis.behavior.byChannel(PromoCost.behaviorMetric(code), from, to), from, to, channels));
+                row[4 + i] = r.value();
+            }
+        }
+    }
+
     public PromoFile dailyReport(DailyReportQuery q)
     {
         String mode = q.getMode() == null ? "" : q.getMode().trim().toLowerCase(Locale.ROOT);
@@ -121,8 +145,16 @@ public class PromoExportService
         }
         PromoScope scope = analysis.scope(q.getAgents(), q.getChannels(), null);
         boolean paidOnly = q.getPaidOnly() == null || q.getPaidOnly();
-        // 列出的推广渠道：paidOnly 只列所选日期内有预算或消耗记录的；否则列全部有数据的。数据接入前两者都没有
-        List<PromoChannelDictionary.Channel> listed = new ArrayList<>();
+        // 列出的推广渠道：paidOnly 只列所选日期内有预算或消耗记录的；否则列全部有数据的。
+        // 行为数据还不能按推广渠道拆（U1），「有数据」目前也只有消耗 / 预算，两者列出的相同
+        PromoSpend.Cube spendCube = analysis.spend() == null ? null : analysis.spend().load(from, to);
+        List<PromoChannelDictionary.Channel> listed = spendCube == null || spendCube.isFailed() ? new ArrayList<>()
+            : spendCube.listed(scope, from, to);
+        Map<String, String> promoterOf = new java.util.HashMap<>();
+        for (PromoChannelDictionary.Promoter p : scope.promotersInScope())
+        {
+            scope.channelsOf(p).forEach(c -> promoterOf.put(com.fivetech.configcenter.ConfigCodes.idKey(c.getId()), p.getName()));
+        }
         long days = ChronoUnit.DAYS.between(from, to) + 1;
         checkRows(1 + days * (listed.size() + 1));
 
@@ -141,18 +173,26 @@ public class PromoExportService
         }
         Object[] total = sheet.newRow();
         total[0] = "區間合計";
+        java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> inScope = PromoSpend.inScope(scope);
+        fillSpend(total, spendCube, from, to, inScope, k -> listed.stream()
+            .anyMatch(c -> com.fivetech.configcenter.ConfigCodes.idKey(c.getId()).equals(k)));
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
         {
             for (PromoChannelDictionary.Channel c : listed)
             {
                 Object[] row = sheet.newRow();
+                String key = com.fivetech.configcenter.ConfigCodes.idKey(c.getId());
                 row[0] = d.toString();
+                row[1] = promoterOf.get(key);
                 row[2] = c.getName();
                 row[3] = c.getMedia() == null ? PromoChannelDictionary.MEDIA_UNKNOWN : c.getMedia();
+                fillSpend(row, spendCube, d, d, inScope.and(PromoSpend.ofPath(null, c.getId())), key::equals);
             }
             Object[] dayTotal = sheet.newRow();
             dayTotal[0] = d.toString();
             dayTotal[1] = "當日合計";
+            fillSpend(dayTotal, spendCube, d, d, inScope, k -> listed.stream()
+                .anyMatch(c -> com.fivetech.configcenter.ConfigCodes.idKey(c.getId()).equals(k)));
         }
         String base = siteName() + "_投放日報_" + compact(from, to);
         return file(sheet, base, "days=" + days + "&channels=" + listed.size() + "&rows=" + sheet.rows.size());
@@ -170,6 +210,7 @@ public class PromoExportService
         long count = tree.count(0, List.of(), PromoErrors.MAX_EXPORT_ROWS);
         checkRows(count + 1);
         com.fivetech.promo.analysis.market.MarketCube cube = analysis.attachData(tree, q, range, cols);
+        analysis.attachSpend(tree, range, cols);
 
         List<String> dims = tree.dims();
         List<String> dimNames = new ArrayList<>();

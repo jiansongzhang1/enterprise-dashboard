@@ -292,6 +292,20 @@ class UserViewResolverTest
         assertTrue(field(cols, req(null, null, null, null), "mode").startsWith("mode 與 attrs"));
     }
 
+    /** 推广分析表格列不要求同组相邻（PRD 没有这条规则）：跨组穿插的顺序可以保存，自定义按原顺序下发 */
+    @Test
+    void columnsWithoutGroupAdjacentKeepUserOrder()
+    {
+        SlotDef def = columns();
+        def.getSlot().setGroupAdjacent(false);
+        SlotView cols = UserViewResolver.resolve(def, null, null, null);
+        assertEquals(false, cols.isGroupAdjacent());
+        UserViewResolver.Stored saved = UserViewResolver.normalize(cols, req("CUSTOM", null, List.of("x1", "y1", "x2"), null), null, 10);
+        assertEquals(UserView.CUSTOM, saved.getMode());
+        SlotView mine = UserViewResolver.resolve(def, null, null, custom("y2", "x1", "y1", "x2"));
+        assertEquals(List.of("y2", "x1", "y1", "x2"), mine.getItems());
+    }
+
     private static String field(SlotView v, SaveViewRequest r, String name)
     {
         return field(v, r, name, 10);

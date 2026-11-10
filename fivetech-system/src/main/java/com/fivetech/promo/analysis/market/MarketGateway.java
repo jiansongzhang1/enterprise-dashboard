@@ -88,44 +88,90 @@ public class MarketGateway
     // ------------------------------------------------------------------ 小时数据集
 
     /**
-     * 取 [from, to) 的市场数据，按 granularity 分桶（HOUR / DAY；WEEK 请用 DAY 再自己归周），宽表按终端前缀、精确按 terminal 拆开。
+     * 取 [from, to) 的市场数据：全部可取的指标、带终端拆分（渠道表现、获客漏斗等不确定要哪些列时用）。
      */
     public MarketCube cube(LocalDateTime from, LocalDateTime to, Granularity granularity)
     {
+        return cube(from, to, granularity, MarketValues.AVAILABLE, true);
+    }
+
+    /**
+     * 取 [from, to) 的市场数据，按 granularity 分桶（HOUR / DAY；WEEK 请用 DAY 再自己归周）。
+     * <p>只取 codes（页面指标）用到的字段（{@link MarketValues#FIELDS}）：用不到精确来源就不发精确那条查询，
+     * 用不到宽表同理；两条都要时用 /query/batch 一次发出，只要一条时直接 /query。</p>
+     *
+     * @param byTerminal 是否要按终端拆（选了终端、按终端归因、行维度有终端）：要时宽表多取带终端前缀的字段；
+     *                   精确来源始终按 terminal 分组（全部 = 各终端相加），与不拆时的合计一致
+     */
+    public MarketCube cube(LocalDateTime from, LocalDateTime to, Granularity granularity, java.util.Collection<String> codes,
+        boolean byTerminal)
+    {
         Granularity g = granularity == Granularity.HOUR ? Granularity.HOUR : Granularity.DAY;
-        List<String> wide = new ArrayList<>(WIDE);
+        java.util.Set<String> fields = MarketValues.fieldsOf(codes);
+        List<String> wideAll = new ArrayList<>();
+        WIDE.stream().filter(fields::contains).forEach(wideAll::add);
+        List<String> wideByTerminal = new ArrayList<>();
+        if (byTerminal)
+        {
+            WIDE_BY_TERMINAL.stream().filter(fields::contains).forEach(wideByTerminal::add);
+        }
+        List<String> wide = new ArrayList<>(wideAll);
         for (String p : TERMINAL_PREFIXES)
         {
-            WIDE_BY_TERMINAL.forEach(m -> wide.add(p + "_" + m));
+            wideByTerminal.forEach(m -> wide.add(p + "_" + m));
         }
-        Map<String, Object> wideBody = hourBody(wide, List.of("uds_hh"), from, to, g, new ArrayList<>());
-        Map<String, Object> preciseBody = hourBody(PRECISE, List.of("uds_hh", "terminal"), from, to, g, new ArrayList<>());
-        List<UdsQueryResult> results = client.queryBatch(List.of(wideBody, preciseBody));
+        List<String> precise = new ArrayList<>();
+        PRECISE.stream().filter(fields::contains).forEach(precise::add);
 
+        List<Map<String, Object>> bodies = new ArrayList<>();
+        Map<String, Object> wideBody = wide.isEmpty() ? null : hourBody(wide, List.of("uds_hh"), from, to, g, new ArrayList<>());
+        Map<String, Object> preciseBody = precise.isEmpty() ? null
+            : hourBody(precise, List.of("uds_hh", "terminal"), from, to, g, new ArrayList<>());
+        if (wideBody != null)
+        {
+            bodies.add(wideBody);
+        }
+        if (preciseBody != null)
+        {
+            bodies.add(preciseBody);
+        }
         MarketCube cube = new MarketCube();
+        if (bodies.isEmpty())
+        {
+            return cube;
+        }
+        List<UdsQueryResult> results = bodies.size() == 1 ? List.of(client.queryWithMeta(bodies.get(0))) : client.queryBatch(bodies);
         cube.setOmitted(results.stream().anyMatch(UdsQueryResult::isDatasetOmitted));
         cube.setWatermark(results.stream().map(UdsQueryResult::getWatermark).filter(java.util.Objects::nonNull)
             .max(LocalDateTime::compareTo).orElse(null));
-        for (UdsRow row : allRows(wideBody, results.get(0)))
+        int i = 0;
+        if (wideBody != null)
         {
-            LocalDateTime b = bucket(row.str("uds_hh"), g);
-            for (String m : WIDE)
+            for (UdsRow row : allRows(wideBody, results.get(i++)))
             {
-                cube.add(b, MarketCube.ALL, m, row.num(m));
-            }
-            for (String p : TERMINAL_PREFIXES)
-            {
-                for (String m : WIDE_BY_TERMINAL)
+                LocalDateTime b = bucket(row.str("uds_hh"), g);
+                for (String m : wideAll)
                 {
-                    cube.add(b, p, m, row.num(p + "_" + m));
+                    cube.add(b, MarketCube.ALL, m, row.num(m));
+                }
+                for (String p : TERMINAL_PREFIXES)
+                {
+                    for (String m : wideByTerminal)
+                    {
+                        cube.add(b, p, m, row.num(p + "_" + m));
+                    }
                 }
             }
         }
-        for (UdsRow row : allRows(preciseBody, results.get(1)))
+        if (preciseBody == null)
+        {
+            return cube;
+        }
+        for (UdsRow row : allRows(preciseBody, results.get(i)))
         {
             LocalDateTime b = bucket(row.str("uds_hh"), g);
             String t = terminalKey(row.str("terminal"));
-            for (String m : PRECISE)
+            for (String m : precise)
             {
                 BigDecimal v = row.num(m);
                 cube.add(b, t, m, v);

@@ -48,6 +48,18 @@ public class MemberRecordVO implements Serializable
     /** 注册时间 */
     private String registerTime;
 
+    /** 注册终端编码：web / android / ios / unidentified（用户快照 terminal 反查）；没有为 null */
+    private String registerTerminal;
+
+    /** 注册终端显示名：Web / Android / iOS / 未識別 */
+    private String registerTerminalLabel;
+
+    /** 上级账号（用户快照 agent_login） */
+    private String agentAccount;
+
+    /** 最近登录时间：用户快照没有，按本页用户 ID 从市场会员快照补（只含 2026-07-26 起注册的会员）；查不到为 null */
+    private String lastLoginTime;
+
     /** 首存时间；未首存为 null */
     private String firstDepositTime;
 
@@ -213,6 +225,46 @@ public class MemberRecordVO implements Serializable
     public void setRegisterTime(String registerTime)
     {
         this.registerTime = registerTime;
+    }
+
+    public String getRegisterTerminal()
+    {
+        return registerTerminal;
+    }
+
+    public void setRegisterTerminal(String registerTerminal)
+    {
+        this.registerTerminal = registerTerminal;
+    }
+
+    public String getRegisterTerminalLabel()
+    {
+        return registerTerminalLabel;
+    }
+
+    public void setRegisterTerminalLabel(String registerTerminalLabel)
+    {
+        this.registerTerminalLabel = registerTerminalLabel;
+    }
+
+    public String getAgentAccount()
+    {
+        return agentAccount;
+    }
+
+    public void setAgentAccount(String agentAccount)
+    {
+        this.agentAccount = agentAccount;
+    }
+
+    public String getLastLoginTime()
+    {
+        return lastLoginTime;
+    }
+
+    public void setLastLoginTime(String lastLoginTime)
+    {
+        this.lastLoginTime = lastLoginTime;
     }
 
     public String getFirstDepositTime()

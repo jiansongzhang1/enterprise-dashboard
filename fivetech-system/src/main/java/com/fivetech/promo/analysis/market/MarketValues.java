@@ -23,12 +23,12 @@ import java.util.function.Predicate;
  *   <tr><td>dep 存款總額 / net 淨充值（= 存款总额）</td><td>精确 deposit_amount</td></tr>
  *   <tr><td>arppu</td><td>deposit_amount ÷ Σ deposit_users</td></tr>
  *   <tr><td>betU 投注人數 / bet 投注總額</td><td>精确 bet_users（逐日相加）/ bet_amount</td></tr>
+ *   <tr><td>act 激活</td><td>宽表 android_first_open；没有终端拆分，只在「全部」与 Android 有值</td></tr>
  * </table>
  *
- * <p>《推广分析 · 指标与 UDS 数据集字段映射》2026-11-05 标「需确认」的不取数（{@link #CALIBER_DIFF}）：落地页 PV / UV、下载点击、
- * 激活（宽表 lp_install 是 APK 首次打开的设备数，不是人数）、复存率（分母未定）；注册转化率、UV 成本缺源。</p>
- *
  * <p>比率为百分数（12.3 = 12.3%），保留 2 位；分母为 0 或缺失返回 null。</p>
+ *
+ * <p>複存率（rdR）由上游直接给出，后端不计算（{@link #UPSTREAM}）；数据平台提供字段前为 NO_SOURCE。</p>
  *
  * @author fivetech
  */
@@ -36,10 +36,46 @@ public final class MarketValues
 {
     /** 可以从市场数据集取到的页面指标编码 */
     public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "depU", "depR", "dep",
-        "net", "arppu", "betU", "bet");
+        "net", "arppu", "betU", "bet", "act");
 
-    /** 有字段但口径或前提待确认（产品确认前不展示） */
-    public static final Set<String> CALIBER_DIFF = Set.of("lpPV", "lpUV", "dl", "act", "rdR", "regR", "uvCost");
+    /** 由上游直接给出、后端不计算的指标（等数据平台提供字段）：複存率 */
+    public static final Set<String> UPSTREAM = Set.of("rdR");
+
+    /**
+     * 页面指标要用的数据平台字段（宽表 reg、ftd_players、ftd_amount、redeposit_amount、android_first_open；
+     * 精确 deposit_users、redeposit_users、bet_users、deposit_amount、bet_amount）。取数时只取请求的指标用到的字段，
+     * 见 {@link MarketGateway#cube(LocalDateTime, LocalDateTime, com.fivetech.dashboard.enums.Granularity, java.util.Collection, boolean)}。
+     * 改 {@link #value} 的算法时同步改这里（单测会核对两者一致）。
+     */
+    public static final Map<String, java.util.List<String>> FIELDS = Map.ofEntries(
+        Map.entry("reg", java.util.List.of("reg")),
+        Map.entry("ftd", java.util.List.of("ftd_players")),
+        Map.entry("ftdR", java.util.List.of("ftd_players", "reg")),
+        Map.entry("ftdAmt", java.util.List.of("ftd_amount")),
+        Map.entry("rdAmt", java.util.List.of("redeposit_amount")),
+        Map.entry("rd", java.util.List.of("redeposit_users")),
+        Map.entry("depU", java.util.List.of("deposit_users")),
+        Map.entry("depR", java.util.List.of("deposit_users", "reg")),
+        Map.entry("dep", java.util.List.of("deposit_amount")),
+        Map.entry("net", java.util.List.of("deposit_amount")),
+        Map.entry("arppu", java.util.List.of("deposit_amount", "deposit_users")),
+        Map.entry("betU", java.util.List.of("bet_users")),
+        Map.entry("bet", java.util.List.of("bet_amount")),
+        Map.entry("act", java.util.List.of("android_first_open")));
+
+    /** 一组页面指标要用的字段（认不出、取不到的指标忽略） */
+    public static Set<String> fieldsOf(java.util.Collection<String> codes)
+    {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        if (codes != null)
+        {
+            codes.forEach(c -> out.addAll(FIELDS.getOrDefault(c, java.util.List.of())));
+        }
+        return out;
+    }
+
+    /** 有字段但口径与页面不同（产品确认前不展示） */
+    public static final Set<String> CALIBER_DIFF = Set.of("lpPV", "lpUV", "dl", "regR", "uvCost");
 
     /** 比率类（PCT） */
     public static final Set<String> PCT = Set.of("ftdR", "rdR", "depR");
@@ -132,6 +168,8 @@ public final class MarketValues
                 return cube.sum("bet_users", t, buckets);
             case "bet":
                 return cube.sum("bet_amount", t, buckets);
+            case "act":
+                return MarketCube.ALL.equals(t) || "android".equals(t) ? cube.sum("android_first_open", MarketCube.ALL, buckets) : null;
             case "ftdR":
                 return pct(cube.sum("ftd_players", t, buckets), cube.sum("reg", t, buckets));
             case "depR":
@@ -176,6 +214,10 @@ public final class MarketValues
     /** 状态与说明：拿不到的指标说明原因 */
     public static String noSourceNote(String code)
     {
+        if (UPSTREAM.contains(code))
+        {
+            return "由數據平台直接提供（不由後端計算），待接入";
+        }
         return CALIBER_DIFF.contains(code) ? "口徑待確認（數據平台字段與頁面口徑不同），暫不展示" : "數據待接入";
     }
 

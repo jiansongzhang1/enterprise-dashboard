@@ -290,7 +290,11 @@ public class PromoAnalysisService
         {
             try
             {
-                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+                // 只取所选列用到的字段；行维度有终端时才要带终端前缀的宽表字段
+                List<String> codes = new ArrayList<>();
+                cols.forEach(c -> codes.add(c.getCode()));
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY, codes,
+                    tree.dims().contains(ChannelTree.TERMINAL));
             }
             catch (RuntimeException e)
             {
@@ -299,6 +303,30 @@ public class PromoAnalysisService
         }
         tree.setData(cube, channelPending);
         return cube;
+    }
+
+    /** 消耗 / 预算（可选，setter 注入，避免改动构造函数） */
+    private PromoSpend spend;
+
+    /** 按推广渠道的行为数据（成本类指标的有效格子）；数据平台提供推广渠道维度（U1）前为 NONE */
+    PromoCost.ChannelBehavior behavior = PromoCost.ChannelBehavior.NONE;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSpend(PromoSpend spend)
+    {
+        this.spend = spend;
+    }
+
+    PromoSpend spend()
+    {
+        return spend;
+    }
+
+    /** 列里有消耗、预算或成本类时，给行维度树装上整个区间的消耗与预算 */
+    void attachSpend(ChannelTree tree, PromoTime.Range range, List<PromoMetricCatalog.Column> cols)
+    {
+        boolean need = cols.stream().anyMatch(c -> PromoSpend.CODES.contains(c.getCode()) || PromoCost.CODES.contains(c.getCode()));
+        tree.setSpend(need && spend != null ? spend.load(range.firstDay(), range.lastDay()) : null, behavior);
     }
 
     /** 渠道表现按天：主区间取整天（起点当天 00:00 到终点所在日的次日 00:00） */
@@ -350,6 +378,7 @@ public class PromoAnalysisService
         tree.checkParent(q.getParent());
         sortOf(q.getSort(), "reg");
         MarketCube cube = attachData(tree, q, range, cols);
+        attachSpend(tree, range, cols);
 
         int level = q.getParent().size();
         List<PathItem> parent = new ArrayList<>();
@@ -461,11 +490,15 @@ public class PromoAnalysisService
         {
             try
             {
-                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY);
+                // 漏斗只用到注册、首存、激活与各终端漏斗步骤；各终端的注册、占比要按终端拆
+                java.util.Set<String> codes = new java.util.LinkedHashSet<>(List.of("reg", "ftd", "act"));
+                cfg.getTerminals().forEach(t -> t.getSteps().forEach(s -> codes.add(s.getCode())));
+                cube = market.cube(range.from, range.to, com.fivetech.dashboard.enums.Granularity.DAY, codes, true);
                 if (compare != null)
                 {
                     prev = market.cube(LocalDateTime.parse((String) compare.get("from"), PromoTime.SLOT),
-                        LocalDateTime.parse((String) compare.get("to"), PromoTime.SLOT), com.fivetech.dashboard.enums.Granularity.DAY);
+                        LocalDateTime.parse((String) compare.get("to"), PromoTime.SLOT), com.fivetech.dashboard.enums.Granularity.DAY,
+                        codes, true);
                 }
                 List<String> keys = new ArrayList<>();
                 List<List<Map<String, Object>>> conds = new ArrayList<>();
