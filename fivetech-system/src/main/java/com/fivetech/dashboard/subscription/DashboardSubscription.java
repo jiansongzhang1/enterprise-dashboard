@@ -46,8 +46,8 @@ public class DashboardSubscription implements Serializable
     /** 卡片带运营总览截图 */
     private Boolean snapshotEnabled;
 
-    /** 截图的查询条件（运营总览页地址 ? 后面的部分，可用 {from} {to} {site}）；为空按统计范围生成 */
-    private String snapshotQuery;
+    /** 截图的筛选条件 JSON（前端 localStorage overview-filters 的值，如 {"range":"custom","gran":"day","from":"…","to":"…","cmp":"previous-period"}，可用 {from} {to}）；为空按统计范围生成 */
+    private String snapshotFilters;
 
     private String lastSlot;
 
@@ -111,8 +111,8 @@ public class DashboardSubscription implements Serializable
     public Boolean getSnapshotEnabled() { return snapshotEnabled; }
     public void setSnapshotEnabled(Boolean snapshotEnabled) { this.snapshotEnabled = snapshotEnabled; }
     public boolean isSnapshotOn() { return Boolean.TRUE.equals(snapshotEnabled); }
-    public String getSnapshotQuery() { return snapshotQuery; }
-    public void setSnapshotQuery(String snapshotQuery) { this.snapshotQuery = snapshotQuery; }
+    public String getSnapshotFilters() { return snapshotFilters; }
+    public void setSnapshotFilters(String snapshotFilters) { this.snapshotFilters = snapshotFilters; }
 
     public String getLastSlot() { return lastSlot; }
 

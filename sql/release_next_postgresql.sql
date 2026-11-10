@@ -23,7 +23,7 @@
 --   ⑦ 2026-11-09  个人自定义指标集（个人视图）一期        新表 dashboard_view_slot / _slot_item / _preset / dashboard_user_view；
 --                                                       推广分析 3 个配置位（核心指标卡、渠道表现表格列、行维度）的可选项、默认与预置组合
 --   ⑧ 2026-11-09  推广分析 · 概览指标补 UDS 取数对照        16 个 promo 指标的 source_table / source_field 与 remark 里的对照状态（无结构变化）
---   ⑨ 2026-11-09  订阅简报 · 运营总览截图                 dashboard_subscription.snapshot_enabled / snapshot_query
+--   ⑨ 2026-11-09  订阅简报 · 运营总览截图                 dashboard_subscription.snapshot_enabled / snapshot_filters
 --
 -- 上线记录：
 --   （尚未上线）
@@ -708,19 +708,20 @@ SELECT metric_code, source_table, source_field, split_part(remark, E'\n', 2) AS 
 
 -- ----------------------------------------------------------------------------
 -- ⑨ 2026-11-09 · 订阅简报 · 运营总览截图（新 JAR 启动前执行）
---   卡片带运营总览截图：snapshot_enabled（默认关）、snapshot_query（页面地址 ? 后面的查询条件，为空按统计范围生成）。
+--   卡片带运营总览截图：snapshot_enabled（默认关）、snapshot_filters（运营总览筛选条件 JSON，截图前写进前端 localStorage
+--   的 overview-filters，如 {"range":"yesterday","gran":"hour","cmp":"previous-period"}；为空按统计范围生成）。
 --   截图帐号、页面地址等在 application.yml 的 dashboard.subscription.snapshot。
---   回滚：ALTER TABLE dashboard_subscription DROP COLUMN IF EXISTS snapshot_query, DROP COLUMN IF EXISTS snapshot_enabled;
+--   回滚：ALTER TABLE dashboard_subscription DROP COLUMN IF EXISTS snapshot_filters, DROP COLUMN IF EXISTS snapshot_enabled;
 -- ----------------------------------------------------------------------------
 BEGIN;
 
 ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_query   VARCHAR(500);
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_filters VARCHAR(500);
 COMMENT ON COLUMN dashboard_subscription.snapshot_enabled IS '卡片带运营总览截图（后端无头浏览器截图后上传 Lark）；截图失败照常发送';
-COMMENT ON COLUMN dashboard_subscription.snapshot_query   IS '截图的查询条件（运营总览页地址 ? 后面的部分，可用 {from} {to} {site}）；为空按统计范围生成';
+COMMENT ON COLUMN dashboard_subscription.snapshot_filters IS '截图的运营总览筛选条件 JSON（range / gran / cmp，自定义加 from / to，可用 {from} {to}）；为空按统计范围生成';
 
 COMMIT;
 
--- ⑨ 自检：应返回 snapshot_enabled、snapshot_query 两行
+-- ⑨ 自检：应返回 snapshot_enabled、snapshot_filters 两行
 SELECT column_name, data_type FROM information_schema.columns
- WHERE table_name = 'dashboard_subscription' AND column_name IN ('snapshot_enabled', 'snapshot_query');
+ WHERE table_name = 'dashboard_subscription' AND column_name IN ('snapshot_enabled', 'snapshot_filters');

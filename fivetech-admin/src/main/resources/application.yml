@@ -175,14 +175,17 @@ dashboard:
       # 截图帐号：后端每次给它签发几分钟有效的临时令牌，截完立即作废（不配密码）；建议用只读的专用帐号
       username: ${DASHBOARD_SNAPSHOT_USER:}
       token-ttl-seconds: 180
-      # 运营总览页地址（不带 ? 后面的查询条件），如 https://d3ajrxvlugsarb.cloudfront.net/zh-TW/overview
+      # 运营总览页地址，如 https://d3ajrxvlugsarb.cloudfront.net/zh-TW/overview（筛选条件不放地址里，写 localStorage）
       page-url: ${DASHBOARD_SNAPSHOT_PAGE_URL:}
-      # 前端存登录令牌的位置：cookie 名、或 localStorage 键（看浏览器开发者工具 › Application）
-      token-cookie: ${DASHBOARD_SNAPSHOT_TOKEN_COOKIE:Admin-Token}
-      token-local-storage-key: ${DASHBOARD_SNAPSHOT_TOKEN_LS_KEY:}
-      # 额外写进 localStorage 的键值（如前端记住的当前站点），值里可用 {site} {token}
-      # local-storage:
-      #   currentSite: "{site}"
+      # Yata 前端的登录令牌、当前站点、筛选条件都在 localStorage；打开页面前写进去
+      # 可用占位符：{token} JWT、{userId} 截图帐号的用户 ID、{site} 订阅的站点编码
+      token-cookie: ${DASHBOARD_SNAPSHOT_TOKEN_COOKIE:}
+      token-local-storage-key: ${DASHBOARD_SNAPSHOT_TOKEN_LS_KEY:access-token}
+      token-local-storage-value: "{token}"
+      site-storage-key: "yata.site.{userId}"
+      site-storage-value: "{site}"
+      # 筛选条件（订阅的 snapshot_filters，为空按统计范围生成），如 {"range":"yesterday","gran":"hour","cmp":"previous-period"}
+      filters-storage-key: ${DASHBOARD_SNAPSHOT_FILTERS_LS_KEY:overview-filters}
       width: 1280
       height: 900
       max-height: 6000

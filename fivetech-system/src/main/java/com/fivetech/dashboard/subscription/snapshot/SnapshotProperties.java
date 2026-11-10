@@ -35,13 +35,25 @@ public class SnapshotProperties
     /** 运营总览页地址（不带查询条件），如 https://xxx.cloudfront.net/zh-TW/overview */
     private String pageUrl = "";
 
-    /** 令牌写进哪个 cookie（为空不写） */
-    private String tokenCookie = "Admin-Token";
+    /** 令牌写进哪个 cookie（为空不写；Yata 前端用 localStorage） */
+    private String tokenCookie = "";
 
-    /** 令牌写进 localStorage 的哪个键（为空不写）；与 cookie 二选一或都写 */
-    private String tokenLocalStorageKey = "";
+    /** 令牌写进 localStorage 的键（为空不写） */
+    private String tokenLocalStorageKey = "access-token";
 
-    /** 额外写进 localStorage 的键值；值里可用 {site} {token}（如站点选择） */
+    /** 令牌在 localStorage 里的值（{token} = JWT 原文） */
+    private String tokenLocalStorageValue = "{token}";
+
+    /** 当前站点的 localStorage 键（{userId} = 截图帐号的用户 ID；为空不写） */
+    private String siteStorageKey = "yata.site.{userId}";
+
+    /** 当前站点的值（{site} = 订阅的站点编码） */
+    private String siteStorageValue = "{site}";
+
+    /** 运营总览筛选条件的 localStorage 键（值为订阅的筛选 JSON；为空不写） */
+    private String filtersStorageKey = "overview-filters";
+
+    /** 额外写进 localStorage 的键值；键和值里可用 {site} {token} {userId} {filters} */
     private Map<String, String> localStorage = new LinkedHashMap<>();
 
     /** 页面宽度、首屏高度（CSS 像素） */
@@ -101,6 +113,14 @@ public class SnapshotProperties
     public void setTokenCookie(String tokenCookie) { this.tokenCookie = tokenCookie; }
     public String getTokenLocalStorageKey() { return tokenLocalStorageKey; }
     public void setTokenLocalStorageKey(String tokenLocalStorageKey) { this.tokenLocalStorageKey = tokenLocalStorageKey; }
+    public String getTokenLocalStorageValue() { return tokenLocalStorageValue; }
+    public void setTokenLocalStorageValue(String tokenLocalStorageValue) { this.tokenLocalStorageValue = tokenLocalStorageValue; }
+    public String getSiteStorageKey() { return siteStorageKey; }
+    public void setSiteStorageKey(String siteStorageKey) { this.siteStorageKey = siteStorageKey; }
+    public String getSiteStorageValue() { return siteStorageValue; }
+    public void setSiteStorageValue(String siteStorageValue) { this.siteStorageValue = siteStorageValue; }
+    public String getFiltersStorageKey() { return filtersStorageKey; }
+    public void setFiltersStorageKey(String filtersStorageKey) { this.filtersStorageKey = filtersStorageKey; }
     public Map<String, String> getLocalStorage() { return localStorage; }
     public void setLocalStorage(Map<String, String> localStorage) { this.localStorage = localStorage == null ? new LinkedHashMap<>() : localStorage; }
     public int getWidth() { return width; }

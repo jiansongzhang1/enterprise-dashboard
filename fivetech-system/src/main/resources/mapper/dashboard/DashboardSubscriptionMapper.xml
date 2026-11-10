@@ -17,7 +17,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="aiEnabled"   column="ai_enabled"   />
 		<result property="aiModel"     column="ai_model"     />
 		<result property="snapshotEnabled" column="snapshot_enabled" />
-		<result property="snapshotQuery"   column="snapshot_query"   />
+		<result property="snapshotFilters"   column="snapshot_filters"   />
 		<result property="lastSlot"    column="last_slot"    />
 		<result property="lastRunAt"   column="last_run_at"  />
 		<result property="lastStatus"  column="last_status"  />
@@ -46,7 +46,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<sql id="cols">
 		select id, site_code, name, description, range_code, metrics, send_hour, receivers, enabled, ai_enabled, ai_model,
-		       snapshot_enabled, snapshot_query, last_slot, last_run_at, last_status, last_error, create_by, create_time, update_by, update_time
+		       snapshot_enabled, snapshot_filters, last_slot, last_run_at, last_status, last_error, create_by, create_time, update_by, update_time
 		  from dashboard_subscription
 	</sql>
 
@@ -77,9 +77,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
 		insert into dashboard_subscription (site_code, name, description, range_code, metrics, send_hour, receivers, enabled,
-		                                    ai_enabled, ai_model, snapshot_enabled, snapshot_query, create_by, create_time, update_by, update_time)
+		                                    ai_enabled, ai_model, snapshot_enabled, snapshot_filters, create_by, create_time, update_by, update_time)
 		values (#{siteCode}, #{name}, #{description}, #{rangeCode}, #{metrics}, #{sendHour}, #{receivers}, #{enabled},
-		        coalesce(#{aiEnabled}, false), #{aiModel}, coalesce(#{snapshotEnabled}, false), #{snapshotQuery},
+		        coalesce(#{aiEnabled}, false), #{aiModel}, coalesce(#{snapshotEnabled}, false), #{snapshotFilters},
 		        #{createBy}, localtimestamp, #{createBy}, localtimestamp)
 	</insert>
 
@@ -88,7 +88,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   set name = #{name}, description = #{description}, range_code = #{rangeCode}, metrics = #{metrics},
 		       send_hour = #{sendHour}, receivers = #{receivers}, enabled = #{enabled},
 		       ai_enabled = coalesce(#{aiEnabled}, false), ai_model = #{aiModel},
-		       snapshot_enabled = coalesce(#{snapshotEnabled}, false), snapshot_query = #{snapshotQuery},
+		       snapshot_enabled = coalesce(#{snapshotEnabled}, false), snapshot_filters = #{snapshotFilters},
 		       update_by = #{updateBy}, update_time = localtimestamp
 		 where id = #{id} and del_flag = '0'
 	</update>

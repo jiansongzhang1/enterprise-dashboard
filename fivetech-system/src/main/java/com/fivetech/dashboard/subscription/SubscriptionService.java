@@ -145,8 +145,8 @@ public class SubscriptionService
         // 运营总览截图：后端开了才显示开关；查询条件为空时按统计范围生成
         Map<String, Object> snap = new LinkedHashMap<>();
         snap.put("enabled", sender.snapshotAvailable());
-        snap.put("queryHint", "填運營總覽頁地址（或 ? 後面的部分），如 range=last-7-days&gran=day&cmp=previous-period；"
-            + "留空按統計範圍生成；可用 {from} {to}（統計區間首尾日期）");
+        snap.put("filtersHint", "留空按統計範圍；或填篩選條件 JSON，如 {\"range\":\"yesterday\",\"gran\":\"hour\",\"cmp\":\"previous-period\"}，"
+            + "自定義加 \"from\" / \"to\"（yyyy-MM-dd，可用 {from} {to} 表示統計區間首尾日期）");
         out.put("snapshot", snap);
         return out;
     }
@@ -266,7 +266,7 @@ public class SubscriptionService
         m.put("aiModelEffective", aiModel);
         m.put("aiModelLabel", copilot.label(aiModel));
         m.put("snapshotEnabled", s.isSnapshotOn());
-        m.put("snapshotQuery", s.getSnapshotQuery());
+        m.put("snapshotFilters", s.getSnapshotFilters());
         m.put("nextRunAt", s.isOn() && properties.isEnabled() && s.getSendHour() != null
             ? nextRun(sender.zone(s.getSiteCode()) == null ? null : LocalDateTime.now(sender.zone(s.getSiteCode())), s)
             : null);
@@ -334,7 +334,7 @@ public class SubscriptionService
         s.setAiEnabled(old.getAiEnabled());
         s.setAiModel(old.getAiModel());
         s.setSnapshotEnabled(old.getSnapshotEnabled());
-        s.setSnapshotQuery(old.getSnapshotQuery());
+        s.setSnapshotFilters(old.getSnapshotFilters());
         fill(s, body, errors, id);
         if (!errors.isEmpty())
         {
@@ -463,22 +463,22 @@ public class SubscriptionService
             s.setAiModel(model == null ? null : copilot.find(model) == null ? model : copilot.find(model).getId());
         }
 
-        // 运营总览截图：不传沿用原值（新增默认关闭）；查询条件可贴整条页面地址，只取 ? 后面的部分
+        // 运营总览截图：不传沿用原值（新增默认关闭）；筛选条件为 JSON 对象（也接受 JSON 字符串、或贴整条带参数的页面地址）
         if (body.containsKey("snapshotEnabled"))
         {
             Object sn = body.get("snapshotEnabled");
             s.setSnapshotEnabled(sn instanceof Boolean ? (Boolean) sn : Boolean.parseBoolean(String.valueOf(sn).trim()));
         }
-        if (body.containsKey("snapshotQuery"))
+        if (body.containsKey("snapshotFilters"))
         {
-            String q = com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService.normalizeQuery(str(body, "snapshotQuery"));
+            String q = com.fivetech.dashboard.subscription.snapshot.SubscriptionSnapshotService.normalizeFilters(body.get("snapshotFilters"));
             if (q == null)
             {
-                errors.put("snapshotQuery", "截圖查詢條件格式不正確（填運營總覽頁地址或 ? 後面的部分，最多 500 字）");
+                errors.put("snapshotFilters", "截圖篩選條件格式不正確：應為 {\"range\":\"…\",\"gran\":\"…\",\"cmp\":\"…\"}，自定義時加 from / to（yyyy-MM-dd）");
             }
             else
             {
-                s.setSnapshotQuery(q.isEmpty() ? null : q);
+                s.setSnapshotFilters(q.isEmpty() ? null : q);
             }
         }
 
