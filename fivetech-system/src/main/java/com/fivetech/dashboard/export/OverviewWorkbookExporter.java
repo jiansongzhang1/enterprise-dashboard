@@ -505,7 +505,8 @@ public class OverviewWorkbookExporter
             return;
         }
         Granularity g = vo.getSlot().getGranularity() == null ? Granularity.HOUR : vo.getSlot().getGranularity();
-        int points = vo.getSlot().getPoints();
+        // 只导出有数据的时间片：今日按小时时 points 补到 24:00，未来的小时不导出
+        int points = Math.min(vo.getSlot().getPoints(), vo.getSlot().getDataPoints());
         for (int p = 0; p < points; p++)
         {
             LocalDateTime start = slotStart(from, g, p);
@@ -712,15 +713,15 @@ public class OverviewWorkbookExporter
         return base;
     }
 
-    /** 资料截至 = 昨天：队列是 T-1 快照，asOf 为「昨天 + 1 天」的 00:00 */
+    /** 资料截至的日期：asOf 往前 1 纳秒取日期（当前整点 → 今天；正好 00:00 时为前一天） */
     private LocalDate dataThrough(CohortVO vo)
     {
         LocalDateTime asOf = ExportTemplate.toDateTime(vo.getAsOf());
         if (asOf != null)
         {
-            return asOf.toLocalDate().minusDays(1);
+            return asOf.minusNanos(1).toLocalDate();
         }
-        return LocalDate.now(properties.currentZone()).minusDays(1);
+        return LocalDate.now(properties.currentZone());
     }
 
     // ===================== 口徑說明 =====================

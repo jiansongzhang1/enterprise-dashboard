@@ -181,7 +181,8 @@ public class OverviewXlsxExporter
         }
         writeHead(sheet, styles, r++, head);
 
-        int points = vo.getSlot() == null ? 0 : vo.getSlot().getPoints();
+        // 只导出有数据的时间片：今日按小时时 points 补到 24:00，未来的小时不导出
+        int points = vo.getSlot() == null ? 0 : Math.min(vo.getSlot().getPoints(), vo.getSlot().getDataPoints());
         for (int i = 0; i < points; i++)
         {
             Row row = sheet.createRow(r++);

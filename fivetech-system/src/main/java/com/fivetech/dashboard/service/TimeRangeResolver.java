@@ -109,6 +109,27 @@ public class TimeRangeResolver
     }
 
     /**
+     * 解析主区间（实时数据，与运营总览一致）：终点截到「当前时间向右取整的整点」（站点时区，16:50 → 17:00），
+     * 正在进行的小时一起查，不按水位截断；发给 UDS 的小时列 to 由网关按 {@link com.fivetech.dashboard.gateway.uds.UdsRealtime} 同样处理。
+     * 下钻时间片照原样，不截。
+     *
+     * @param query 查询入参
+     * @param now   站点时区的现在
+     */
+    public ResolvedRange resolveMainRealtime(BaseDashboardQuery query, LocalDateTime now)
+    {
+        LocalDateTime end = com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(now);
+        if (StringUtils.isEmpty(query.getSlotFrom()) && StringUtils.isEmpty(query.getSlotTo())
+            && StringUtils.isEmpty(query.getFrom()) && StringUtils.isEmpty(query.getTo()))
+        {
+            // 不传区间时默认「今天」（23:xx 时向右取整已是次日 00:00，日期按现在算）
+            LocalDate today = now.toLocalDate();
+            return clampToAsOf(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), end);
+        }
+        return resolveMain(query, end);
+    }
+
+    /**
      * 计算当前区间可用的粒度。前端只做渲染，不自行判断。
      */
     public List<Granularity> availableGranularities(ResolvedRange range)

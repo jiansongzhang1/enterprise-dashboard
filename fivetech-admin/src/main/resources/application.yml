@@ -939,6 +939,11 @@ xss:
 # 内部管理接口 IP 白名单（AdminIpWhitelistInterceptor）：除 exclude-paths 外的所有接口，只允许白名单 IP 访问。
 # 受限的包括用户 / 角色 / 权限菜单 / 部门 / 岗位 / 字典与参数管理 / 系统通知 / 登录与操作日志 / 在线用户等。
 security:
+  # 系统对接用的 API Key（请求头 X-Api-Key，在「系统管理 › API Key」/system/api-keys 新建）：只有这里列出的接口认 Key，
+  # 其他接口带了 Key 也照常要登录 token。每个 Key 再在这个范围内限定接口、来源 IP、到期时间，并绑定一个后台账号（按它的权限放行）。
+  # 注意：开启了内部管理接口 IP 白名单时，调用方 IP 也要在白名单里（或把接口加进 exclude-paths）
+  api-key:
+    paths: /notification/lark/send
   admin-ip-whitelist:
     enabled: ${ADMIN_IP_WHITELIST_ENABLED:false}
     # 逗号分隔，支持单个 IP 与 CIDR，如 1.2.3.4,203.0.113.0/24

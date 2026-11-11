@@ -46,6 +46,12 @@ public class SecurityConfig
      */
     @Autowired
     private JwtAuthenticationTokenFilter authenticationTokenFilter;
+
+    /**
+     * API Key 认证过滤器（系统对接）
+     */
+    @Autowired
+    private com.fivetech.framework.security.filter.ApiKeyAuthenticationFilter apiKeyFilter;
     
     /**
      * 跨域过滤器
@@ -121,6 +127,8 @@ public class SecurityConfig
             .logout(logout -> logout.logoutUrl("/logout").logoutSuccessHandler(logoutSuccessHandler))
             // 添加JWT filter
             .addFilterBefore(authenticationTokenFilter, UsernamePasswordAuthenticationFilter.class)
+            // API Key（系统对接，只对 security.api-key.paths 里的接口生效），在 JWT 之前
+            .addFilterBefore(apiKeyFilter, JwtAuthenticationTokenFilter.class)
             // 添加CORS filter
             .addFilterBefore(corsFilter, JwtAuthenticationTokenFilter.class)
             .addFilterBefore(corsFilter, LogoutFilter.class)

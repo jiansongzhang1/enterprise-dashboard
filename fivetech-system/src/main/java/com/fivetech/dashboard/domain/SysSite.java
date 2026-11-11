@@ -28,6 +28,12 @@ public class SysSite
     /** 币种符号（如 ₹、¥）；为空按币种代码取常用符号，认不出时用币种代码 */
     private String currencySymbol;
 
+    /** 实时站点：UDS 提供当前小时的实时数据（分钟级）；false = 每小时更新。getInfo、指标汇总等接口返回 realtime 供前端决定页头文案 */
+    private boolean realtime;
+
+    /** 站点数据起始日（这一天之前没有数据，前端日期选择从这天起）；为空用 dashboard.launch-date */
+    private java.time.LocalDate dataStartDate;
+
     /** 是否默认站点（只有一个，不能在后台改） */
     private boolean defaultSite;
 
@@ -50,6 +56,10 @@ public class SysSite
     public void setCurrency(String currency) { this.currency = currency; }
     public String getCurrencySymbol() { return currencySymbol; }
     public void setCurrencySymbol(String currencySymbol) { this.currencySymbol = currencySymbol; }
+    public java.time.LocalDate getDataStartDate() { return dataStartDate; }
+    public void setDataStartDate(java.time.LocalDate dataStartDate) { this.dataStartDate = dataStartDate; }
+    public boolean isRealtime() { return realtime; }
+    public void setRealtime(boolean realtime) { this.realtime = realtime; }
     public boolean isDefaultSite() { return defaultSite; }
     public void setDefaultSite(boolean defaultSite) { this.defaultSite = defaultSite; }
     public Integer getSortNo() { return sortNo; }

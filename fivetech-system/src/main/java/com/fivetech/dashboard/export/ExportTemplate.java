@@ -405,6 +405,7 @@ public final class ExportTemplate
         return page + "-" + now(properties).format(FILE_STAMP) + ".xlsx";
     }
 
+    /** 站点时区的现在（当前站点；取不到时用默认站点 / dashboard.timezone，不用服务器时区） */
     public static LocalDateTime now(DashboardProperties properties)
     {
         try
@@ -413,7 +414,14 @@ public final class ExportTemplate
         }
         catch (Exception e)
         {
-            return LocalDateTime.now();
+            try
+            {
+                return LocalDateTime.now(properties.siteZone(null));
+            }
+            catch (Exception ignored)
+            {
+                return LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+            }
         }
     }
 

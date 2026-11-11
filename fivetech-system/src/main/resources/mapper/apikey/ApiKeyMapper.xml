@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fivetech.apikey.mapper.ApiKeyMapper">
+
+	<resultMap type="com.fivetech.apikey.domain.ApiKey" id="ApiKeyResult">
+		<id     property="keyId"        column="key_id"         />
+		<result property="keyName"      column="key_name"       />
+		<result property="keyPrefix"    column="key_prefix"     />
+		<result property="keyHash"      column="key_hash"       />
+		<result property="userId"       column="user_id"        />
+		<result property="userName"     column="user_name"      />
+		<result property="allowedPaths" column="allowed_paths"  />
+		<result property="allowedIps"   column="allowed_ips"    />
+		<result property="expireTime"   column="expire_time"    />
+		<result property="status"       column="status"         />
+		<result property="lastUsedTime" column="last_used_time" />
+		<result property="lastUsedIp"   column="last_used_ip"   />
+		<result property="createBy"     column="create_by"      />
+		<result property="createTime"   column="create_time"    />
+		<result property="updateBy"     column="update_by"      />
+		<result property="updateTime"   column="update_time"    />
+		<result property="remark"       column="remark"         />
+	</resultMap>
+
+	<sql id="cols">
+		select k.key_id, k.key_name, k.key_prefix, k.key_hash, k.user_id, u.user_name, k.allowed_paths, k.allowed_ips,
+		       k.expire_time, k.status, k.last_used_time, k.last_used_ip, k.create_by, k.create_time, k.update_by, k.update_time, k.remark
+		  from sys_api_key k
+		  left join sys_user u on u.user_id = k.user_id
+	</sql>
+
+	<select id="selectList" resultMap="ApiKeyResult">
+		<include refid="cols"/>
+		 order by k.status, k.key_id desc
+	</select>
+
+	<select id="selectById" resultMap="ApiKeyResult">
+		<include refid="cols"/>
+		 where k.key_id = #{keyId}
+	</select>
+
+	<select id="selectByHash" resultMap="ApiKeyResult">
+		<include refid="cols"/>
+		 where k.key_hash = #{keyHash}
+	</select>
+
+	<insert id="insert" useGeneratedKeys="true" keyProperty="keyId" keyColumn="key_id">
+		insert into sys_api_key (key_name, key_prefix, key_hash, user_id, allowed_paths, allowed_ips, expire_time, status,
+		                         create_by, create_time, update_by, update_time, remark)
+		values (#{keyName}, #{keyPrefix}, #{keyHash}, #{userId}, #{allowedPaths}, #{allowedIps}, #{expireTime}, '0',
+		        #{createBy}, localtimestamp, #{createBy}, localtimestamp, #{remark})
+	</insert>
+
+	<update id="revoke">
+		update sys_api_key set status = '1', update_by = #{operator}, update_time = localtimestamp
+		 where key_id = #{keyId} and status = '0'
+	</update>
+
+	<!-- 最近使用：同一分钟内重复调用不再写库 -->
+	<update id="touch">
+		update sys_api_key set last_used_time = localtimestamp, last_used_ip = #{ip}
+		 where key_id = #{keyId}
+		   and (last_used_time is null or last_used_time &lt; localtimestamp - interval '1 minute' or last_used_ip is distinct from #{ip})
+	</update>
+
+</mapper>

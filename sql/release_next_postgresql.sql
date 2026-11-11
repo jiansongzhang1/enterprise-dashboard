@@ -22,6 +22,11 @@
 --   ⑥ 2026-11-05  管理后台 · AI 助手                      按钮权限 copilot:chat:use（系统管理下，无新表；对话不落库，次数记在 copilot_usage_log）
 --   ⑦ 2026-11-09  个人自定义指标集（个人视图）一期        新表 dashboard_view_slot / _slot_item / _preset / dashboard_user_view；
 --                                                       推广分析 3 个配置位（核心指标卡、渠道表现表格列、行维度）的可选项、默认与预置组合
+--   ⑧ 2026-11-10  推广分析 · 概览指标补 UDS 取数对照        16 个 promo 指标的 source_table / source_field 与 remark 里的对照状态（无结构变化）
+--   ⑨ 2026-11-10  系统管理 · API Key（系统对接）          新表 sys_api_key + 按钮 system:apikey:list/add/edit；数据平台用 X-Api-Key 调 /notification/lark/send
+--   ⑩ 2026-11-10  个人视图 · 行维度去掉顺序限制            promo.channel.rows 的 rules 清空（推廣渠道不再要求排在推廣商之下）
+--   ⑪ 2026-11-10  站点管理 · 实时站点                      monitor_site_setting.realtime（站点管理可编辑；getInfo sites[]、运营总览 realtime 返回）
+--   ⑫ 2026-11-11  站点管理 · 数据起始日                    monitor_site_setting.data_start_date（站点管理可编辑；getInfo sites[].dataStartDate 返回）
 --
 -- 上线记录：
 --   （尚未上线）
@@ -546,7 +551,7 @@ COMMENT ON COLUMN dashboard_user_view.attrs       IS '小状态 JSON 对象（�
 INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
 ('promo.overview.cards',  'PROMO', '核心指標', 'METRICS',    1, 10,   FALSE, '[]', NULL, 10, 'admin'),
 ('promo.channel.columns', 'PROMO', '表格列',   'COLUMNS',    1, NULL, FALSE, '[]', NULL, 20, 'admin'),
-('promo.channel.rows',    'PROMO', '行維度',   'DIMENSIONS', 1, 4,    FALSE, '[{"before":"agent","after":"channel","message":"推廣渠道須在推廣商之下"}]', NULL, 30, 'admin')
+('promo.channel.rows',    'PROMO', '行維度',   'DIMENSIONS', 1, 4,    FALSE, '[]', NULL, 30, 'admin')
 ON CONFLICT (slot_code) DO NOTHING;
 
 -- 核心指标卡：编码同概览接口 metrics；名称取指标字典（item_name 为空）；默认 10 张同推广分析页 is_default
@@ -640,5 +645,218 @@ SELECT to_regclass('dashboard_user_view') AS user_view_table;
 
 
 -- ----------------------------------------------------------------------------
--- 新的改动从这里往下追加（下一段 ⑧ …）
+-- 新的改动从这里往下追加（⑧ 起，编号顺延）
 -- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- ⑧ 2026-11-10 · 推广分析 · 16 个概览指标补 UDS 取数对照（《推广分析 · 指标与 UDS 数据集字段映射》2026-11-05 @Daniel，
+--   按 2026-11-10 的实现与确认修订；新 JAR 上线后执行即可，顺序不限）
+--   只改 dashboard_metric_card 里 promo 前缀的 16 行，只影响「系统管理 › 指标管理」的显示，不影响推广分析页取数：
+--     source_table / source_field = UDS 数据集与字段，只写纯标识符（指标管理保存时会校验：表只允许字母、数字、_ 和 .，
+--     字段只允许字母、数字、_）；算出来的指标（CPA、转化率等）和没有来源的留空，公式写在 remark；
+--     remark 第二行写对照状态（UDS：可映射 / 需确认 / 缺源）与原因。
+--   不填 uds_hour_field 等四列：那是运营总览的线上配置对照，填了指标管理会显示「與配置不一致」。
+--   只更新还没写过对照状态（remark 里没有「UDS：」）的行，或上游表 / 字段不合规的行（修正旧版写入的中文说明）；
+--   指标管理里手工改过的不覆盖，可重复执行。
+--   回滚：UPDATE dashboard_metric_card SET source_table = NULL, source_field = NULL WHERE metric_code LIKE 'promo%' AND status = '1';
+--         （remark 回滚为 ⑤ 的原文，见 ⑤ 的 INSERT）
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+UPDATE dashboard_metric_card c
+   SET source_table = v.source_table,
+       source_field = v.source_field,
+       remark       = v.remark,
+       update_by    = 'admin',
+       update_time  = CURRENT_TIMESTAMP
+  FROM (VALUES
+    ('promoSpend',   'import_yata_promo_cost',   'cost_amount',
+     E'推广分析 spend：运营导入的消耗合计（全部数据），按 biz_date × 推广商 × 推广渠道，站点默认币种，次日导入\nUDS：可映射'),
+    ('promoBudget',  'import_yata_promo_budget', 'budget_amount',
+     E'推广分析 budget：运营导入的预算合计，按日（含今天）\nUDS：可映射'),
+    ('promoCpa',     NULL,                       NULL,
+     E'推广分析 cpa：有效格子的消耗 ÷ 有效格子的注册人数（import_yata_promo_cost.cost_amount ÷ dashboard_market_hour_v1.reg）\nUDS：缺源（行为数据没有推广渠道维度，算不出有效格子）'),
+    ('promoFtdCost', NULL,                       NULL,
+     E'推广分析 ftdCost：有效格子的消耗 ÷ 有效格子的首存人数（cost_amount ÷ ftd_players）\nUDS：缺源（同 CPA）'),
+    ('promoNet',     'dashboard_market_hour_v1', 'deposit_amount',
+     E'推广分析 net：＝存款總額（2026-11-09 已确认；与运营总览的存提差 net 不同）\nUDS：可映射（精确数据集）'),
+    ('promoRoi',     NULL,                       NULL,
+     E'推广分析 roi：有效格子的淨充值 ÷ 有效格子的消耗 − 1（deposit_amount ÷ cost_amount − 1）\nUDS：缺源（同 CPA）'),
+    ('promoLpUV',    'dashboard_market_hour_v1', 'lp_uv',
+     E'推广分析 lpUV：落地页去重访问人数\nUDS：需确认（字段是 IP 在推荐码下的首次访问次数、不分终端；页面要按用户 ID / 匿名标识去重的人数，产品确认前不展示）'),
+    ('promoHUV',     NULL,                       NULL,
+     E'推广分析 hUV：主页去重访问人数（含 Web 与 APP 内打开）\nUDS：缺源（缺主站访问事件与访客身份）'),
+    ('promoDl',      'dashboard_market_hour_v1', 'lp_download',
+     E'推广分析 dl：点击下载 APK 的次数\nUDS：需确认（没有按钮点击事件；用下载请求数 lp_download 还是下载完成数 lp_download_ok 待产品定，确认前不展示）'),
+    ('promoAct',     'dashboard_market_hour_v1', 'android_first_open',
+     E'推广分析 act：Android 安装后首次启动的人数\nUDS：需确认（页面现取 android_first_open：APK 首次打开数，是设备数不是人数，没有终端拆分，只在「全部」与 Android 有值；口径待定。另有按推荐码的 lp_install，与它同源，不可相加）'),
+    ('promoReg',     'dashboard_market_hour_v1', 'reg',
+     E'推广分析 reg：按注册时的推广渠道与终端归属\nUDS：可映射（分终端用 web_ / android_ / ios_ / unknown_ 前缀；按推广商 / 推广渠道拆分缺源）'),
+    ('promoRegR',    NULL,                       NULL,
+     E'推广分析 regR：注册人数 ÷ 入口 UV（按渠道入口类型取 UV-落地頁或 UV-主頁）\nUDS：缺源（主站入口缺 UV-主頁；落地页入口的 lp_uv 口径需确认）'),
+    ('promoFtd',     'dashboard_market_hour_v1', 'ftd_players',
+     E'推广分析 ftd：按注册终端，按到账时间 bill_date\nUDS：可映射（分终端加前缀）'),
+    ('promoFtdR',    NULL,                       NULL,
+     E'推广分析 ftdR：首存人数 ÷ 注册人数（dashboard_market_hour_v1 的 ftd_players ÷ reg，同一条查询）\nUDS：可映射'),
+    ('promoFtdAmt',  'dashboard_market_hour_v1', 'ftd_amount',
+     E'推广分析 ftdAmt：首存金额，商户默认币种\nUDS：可映射'),
+    ('promoRd',      'dashboard_market_hour_v1', 'redeposit_users',
+     E'推广分析 rd：首存后再次存款；多天按日累加\nUDS：可映射（精确数据集；不用宽表 redeposit_players：它要求六个代码维度全部固定）')
+  ) AS v(metric_code, source_table, source_field, remark)
+ WHERE c.metric_code = v.metric_code
+   AND (position('UDS：' IN coalesce(c.remark, '')) = 0
+        OR (c.source_table IS NOT NULL AND c.source_table !~ '^[A-Za-z_][A-Za-z0-9_.]*$')
+        OR (c.source_field IS NOT NULL AND c.source_field !~ '^[A-Za-z_][A-Za-z0-9_]*$'));
+
+COMMIT;
+
+-- ⑧ 自检：16 行；上游表 / 字段都是纯标识符或为空；淨充值为「可映射」、激活为「需确认」
+SELECT metric_code, source_table, source_field, split_part(remark, E'\n', 2) AS uds_status
+  FROM dashboard_metric_card WHERE metric_code LIKE 'promo%' ORDER BY sort_no;
+
+
+-- ============================================================================
+-- ⑨ 2026-11-10 · 系统管理 · API Key（系统对接用；新 JAR 启动前执行，没执行时带 X-Api-Key 的请求返回 401，不影响其他功能）
+--   1. 新表 sys_api_key：只存 Key 的 SHA-256 与前 12 位，明文只在新建时返回一次。每个 Key 绑定一个后台账号（按它的权限放行），
+--      再限定能访问的接口（必须在 application.yml security.api-key.paths 里，目前只有 /notification/lark/send）、来源 IP、到期时间。
+--   2. 系统管理（menu_id = 1）下加按钮：API Key 查看 system:apikey:list / 新建 system:apikey:add / 作废 system:apikey:edit，授给 role 1。
+--   回滚：DROP TABLE IF EXISTS sys_api_key;
+--         DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms LIKE 'system:apikey:%' 对应的 menu_id
+-- ============================================================================
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS sys_api_key (
+    key_id          BIGSERIAL       PRIMARY KEY,
+    key_name        VARCHAR(64)     NOT NULL,
+    key_prefix      VARCHAR(16)     NOT NULL,
+    key_hash        CHAR(64)        NOT NULL,
+    user_id         BIGINT          NOT NULL,
+    allowed_paths   VARCHAR(500)    NOT NULL,
+    allowed_ips     VARCHAR(500),
+    expire_time     TIMESTAMP,
+    status          CHAR(1)         NOT NULL DEFAULT '0',
+    last_used_time  TIMESTAMP,
+    last_used_ip    VARCHAR(64),
+    create_by       VARCHAR(64)     NOT NULL DEFAULT '',
+    create_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
+    update_by       VARCHAR(64)     NOT NULL DEFAULT '',
+    update_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
+    remark          VARCHAR(500),
+    CONSTRAINT uk_api_key_hash UNIQUE (key_hash),
+    CONSTRAINT ck_api_key_status CHECK (status IN ('0', '1'))
+);
+COMMENT ON TABLE  sys_api_key               IS '系统对接用的 API Key（请求头 X-Api-Key）';
+COMMENT ON COLUMN sys_api_key.key_name      IS '对接方名称，如「数据平台 · 数据更新通知」';
+COMMENT ON COLUMN sys_api_key.key_prefix    IS '明文前 12 位（ftk_ + 8 位），列表与日志里认 Key 用，不能用来调用';
+COMMENT ON COLUMN sys_api_key.key_hash      IS '明文的 SHA-256（十六进制）；明文不落库';
+COMMENT ON COLUMN sys_api_key.user_id       IS '绑定的后台账号：按它的角色权限放行，操作日志记在它名下';
+COMMENT ON COLUMN sys_api_key.allowed_paths IS '能访问的接口，逗号分隔；须在 security.api-key.paths 里';
+COMMENT ON COLUMN sys_api_key.allowed_ips   IS '允许的来源 IP，逗号分隔；为空不限';
+COMMENT ON COLUMN sys_api_key.expire_time   IS '到期时间；为空永不过期';
+COMMENT ON COLUMN sys_api_key.status        IS '0 启用 / 1 已作废（作废立即失效，不能恢复）';
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 查看', 1, 101, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:apikey:list', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '系统对接用的 API Key 列表（只显示前缀）'
+WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:list');
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 新建', 1, 102, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:apikey:add', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '新建 API Key（明文只显示一次）'
+WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:add');
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 作废', 1, 103, '', '', '', '',
+       1, 0, 'F', '0', '0', 'system:apikey:edit', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '作废 API Key（立即失效）'
+WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:edit');
+
+INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
+SELECT m.menu_id, v.locale, v.menu_name, v.remark
+FROM sys_menu m
+JOIN (VALUES
+    ('system:apikey:list', 'zh-CN', 'API Key 查看', '系统对接用的 API Key 列表'),
+    ('system:apikey:list', 'zh-TW', 'API Key 查看', '系統對接用的 API Key 列表'),
+    ('system:apikey:list', 'en-US', 'View API keys', 'API keys for system integration'),
+    ('system:apikey:add',  'zh-CN', 'API Key 新建', '新建 API Key'),
+    ('system:apikey:add',  'zh-TW', 'API Key 新建', '新建 API Key'),
+    ('system:apikey:add',  'en-US', 'Create API key', 'Create an API key'),
+    ('system:apikey:edit', 'zh-CN', 'API Key 作废', '作废 API Key'),
+    ('system:apikey:edit', 'zh-TW', 'API Key 作廢', '作廢 API Key'),
+    ('system:apikey:edit', 'en-US', 'Revoke API key', 'Revoke an API key')
+) AS v(perms, locale, menu_name, remark) ON v.perms = m.perms
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
+
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 1, m.menu_id
+FROM sys_menu m
+WHERE m.perms IN ('system:apikey:list', 'system:apikey:add', 'system:apikey:edit')
+  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+
+COMMIT;
+
+-- ⑨ 自检：表已建；3 个按钮
+SELECT to_regclass('sys_api_key') AS api_key_table;
+SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms LIKE 'system:apikey:%' ORDER BY menu_id;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑩ 2026-11-10 · 个人视图 · 推广分析行维度去掉「推廣渠道須在推廣商之下」
+--   ⑦ 给 promo.channel.rows 配了顺序规则（channel 不能排在 agent 前面），产品要求去掉：rules 清空为 []。
+--   ⑦ 的 INSERT 已同步改为 '[]'，新库执行 ⑦ 即可；已执行过 ⑦ 的库执行本段。
+--   update_time 一变，后端约 1 分钟内自动重新加载视图定义，不用重启；用户已保存的视图不受影响。
+--   回滚：UPDATE dashboard_view_slot SET rules = '[{"before":"agent","after":"channel","message":"推廣渠道須在推廣商之下"}]',
+--                update_time = localtimestamp WHERE slot_code = 'promo.channel.rows';
+-- ----------------------------------------------------------------------------
+UPDATE dashboard_view_slot
+   SET rules = '[]', update_time = localtimestamp
+ WHERE slot_code = 'promo.channel.rows' AND coalesce(rules, '') <> '[]';
+
+-- ⑩ 自检：rules = []
+SELECT slot_code, rules FROM dashboard_view_slot WHERE slot_code = 'promo.channel.rows';
+
+
+-- ----------------------------------------------------------------------------
+-- ⑪ 2026-11-10 · 站点管理 · 实时站点（新 JAR 启动前执行：启动时加载站点表会读这一列）
+--   realtime = true：UDS 提供该站点当前小时的实时数据（分钟级），页头显示「實時更新」；默认 false（每小时更新）。
+--   站点管理新增 / 修改时编辑（body.realtime = true / false），站点列表、登录 getInfo 的 sites[]、运营总览 overview 都返回 realtime。
+--   回滚：ALTER TABLE monitor_site_setting DROP COLUMN IF EXISTS realtime;
+-- ----------------------------------------------------------------------------
+ALTER TABLE monitor_site_setting ADD COLUMN IF NOT EXISTS realtime BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN monitor_site_setting.realtime IS '实时站点：UDS 提供当前小时的实时数据（分钟级），页头显示「實時更新」；false 为每小时更新';
+
+-- ⑪ 自检：每个站点一行，realtime 默认 false；实时站点在「系统管理 › 站点管理」里打开，或：
+--   UPDATE monitor_site_setting SET realtime = TRUE, update_time = localtimestamp WHERE upper(site_code) IN ('J9');
+SELECT site_code, site_name, realtime FROM monitor_site_setting WHERE site_name IS NOT NULL ORDER BY sort_no, site_code;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑫ 2026-11-11 · 站点管理 · 数据起始日（新 JAR 启动前执行：启动时加载站点表会读这一列）
+--   data_start_date：站点数据从哪天开始（之前没有数据），前端日期选择从这天起；为空用 application.yml 的 dashboard.launch-date。
+--   站点管理新增 / 修改时编辑（body.dataStartDate = yyyy-MM-dd，传空串清空），站点列表、登录 getInfo 的 sites[].dataStartDate 返回。
+--   回滚：ALTER TABLE monitor_site_setting DROP COLUMN IF EXISTS data_start_date;
+-- ----------------------------------------------------------------------------
+ALTER TABLE monitor_site_setting ADD COLUMN IF NOT EXISTS data_start_date DATE;
+COMMENT ON COLUMN monitor_site_setting.data_start_date IS '站点数据起始日（之前没有数据，前端日期选择从这天起）；为空用 dashboard.launch-date';
+
+-- ⑫ 自检：每个站点一行，data_start_date 默认为空（用 dashboard.launch-date）；在「系统管理 › 站点管理」里设置，或：
+--   UPDATE monitor_site_setting SET data_start_date = DATE '2026-03-01', update_time = localtimestamp WHERE upper(site_code) = 'H86';
+SELECT site_code, site_name, data_start_date FROM monitor_site_setting WHERE site_name IS NOT NULL ORDER BY sort_no, site_code;

@@ -77,6 +77,19 @@ public class PromoAnalysisService
         return market != null && market.isEnabled();
     }
 
+    /**
+     * 投放日报：按日取全站（不分推广渠道）的市场数据，只取 codes 用到的字段。没开市场数据返回 null；取数失败照常抛出，由调用方决定。
+     */
+    MarketCube dailyCube(LocalDate from, LocalDate to, java.util.Collection<String> codes)
+    {
+        if (!marketOn())
+        {
+            return null;
+        }
+        return market.cube(from.atStartOfDay(), to.plusDays(1).atStartOfDay(), com.fivetech.dashboard.enums.Granularity.DAY,
+            codes, false);
+    }
+
     /** UDS 取数失败统一成 5001 */
     static ServiceException dataFailed(RuntimeException e)
     {
@@ -165,12 +178,15 @@ public class PromoAnalysisService
             ts.add(codeName(t.getCode(), t.getName()));
         }
         out.put("terminals", ts);
-        String launch = properties.getLaunchDate();
+        // 站点数据起始日：站点管理里设置的，没设置用 dashboard.launch-date
+        String launch = properties.siteDataStartDate(site);
         out.put("siteLaunchDate", launch);
         out.put("dataStart", launch);
         out.put("asOf", null);
         out.put("timezone", properties.currentTimezone());
         out.put("currency", currency());
+        // 当前站点是否实时站点（站点管理里设置），与指标汇总 summary 的 realtime 相同
+        out.put("realtime", properties.isRealtime(site));
         List<Map<String, Object>> metrics = new ArrayList<>();
         for (PromoMetricCatalog.Metric m : catalog.overviewMetrics())
         {

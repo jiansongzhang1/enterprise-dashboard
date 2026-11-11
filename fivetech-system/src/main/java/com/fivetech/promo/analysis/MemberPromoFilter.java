@@ -89,6 +89,8 @@ public class MemberPromoFilter
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("terminals", ts);
         out.put("agents", PromoAnalysisService.agents(channels.promotersOf(site), false));
+        // 当前站点是否实时站点（站点管理里设置），与指标汇总 summary 的 realtime 相同
+        out.put("realtime", properties.isRealtime(site));
         return out;
     }
 

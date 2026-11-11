@@ -118,6 +118,28 @@ public class PromoExportService
         }
     }
 
+    /**
+     * 合计行的行为数据（註冊、首存、存款、激活及由它们算的比率）用全站值：只在「全部推廣渠道」且取消「只含付費推廣渠道」时调用，
+     * 此时合计范围 = 全部有数据的推广渠道 = 全站（R2）。已有值的列（消耗、成本类）不覆盖；数据平台没有的列（UV、下載、提款）留空。
+     */
+    static void fillSiteTotals(Object[] row, com.fivetech.promo.analysis.market.MarketCube cube,
+        java.util.function.Predicate<java.time.LocalDateTime> buckets)
+    {
+        if (cube == null || cube.isOmitted())
+        {
+            return;
+        }
+        for (int i = 0; i < PromoMetricCatalog.DAILY_REPORT_COLUMNS.size(); i++)
+        {
+            String code = PromoMetricCatalog.DAILY_REPORT_COLUMNS.get(i);
+            if (row[4 + i] == null && com.fivetech.promo.analysis.market.MarketValues.AVAILABLE.contains(code))
+            {
+                row[4 + i] = com.fivetech.promo.analysis.market.MarketValues.value(code, cube,
+                    com.fivetech.promo.analysis.market.MarketCube.ALL, buckets);
+            }
+        }
+    }
+
     public PromoFile dailyReport(DailyReportQuery q)
     {
         String mode = q.getMode() == null ? "" : q.getMode().trim().toLowerCase(Locale.ROOT);
@@ -158,9 +180,27 @@ public class PromoExportService
         long days = ChronoUnit.DAYS.between(from, to) + 1;
         checkRows(1 + days * (listed.size() + 1));
 
+        // 全站市场数据（不分推广渠道）：「資料截至」取它的水位（与页头同一来源）；
+        // 「全部推廣渠道 + 取消只含付費」时合计行的行为数据也用它。选了推廣商 / 推廣渠道时全站值不适用，不取
+        boolean allChannels = q.getAgents().isEmpty() && q.getChannels().isEmpty();
+        com.fivetech.promo.analysis.market.MarketCube market = null;
+        if (allChannels)
+        {
+            try
+            {
+                market = analysis.dailyCube(from, to, PromoMetricCatalog.DAILY_REPORT_COLUMNS);
+            }
+            catch (RuntimeException e)
+            {
+                // 取数失败只少行为数据与资料截至时间，消耗照常导出
+                log.warn("[promo] 投放日报取市场数据失败，合计行的行为数据留空：{}", e.getMessage());
+            }
+        }
+        boolean siteTotals = !paidOnly && market != null;
+
         String title = siteName() + DOT + "推廣分析" + DOT + "投放日報" + DOT + span(from, to) + DOT + "渠道：" + scope.channelLabel()
             + DOT + (paidOnly ? "只含付費推廣渠道（所選日期內有預算或消耗記錄）" : "全部有數據的推廣渠道")
-            + DOT + "人數按日累加" + DOT + "資料截至 " + asOfText();
+            + DOT + "人數按日累加" + DOT + "資料截至 " + asOfText(market);
         PromoSheet sheet = new PromoSheet("投放日報", title)
             .column("日期", PromoSheet.TEXT)
             .column("推廣商", PromoSheet.TEXT)
@@ -171,11 +211,17 @@ public class PromoExportService
             PromoMetricCatalog.Column c = PromoMetricCatalog.column(code);
             sheet.column(c.getName(), c.getFormat());
         }
+        // 合计行：日期列写区间（单日写一天），推廣商空，推廣渠道列写「區間合計」/「當日合計」（R3、列与口径「日期」）
         Object[] total = sheet.newRow();
-        total[0] = "區間合計";
+        total[0] = span(from, to);
+        total[2] = "區間合計";
         java.util.function.Predicate<com.fivetech.promo.budget.BudgetDataReader.Row> inScope = PromoSpend.inScope(scope);
         fillSpend(total, spendCube, from, to, inScope, k -> listed.stream()
             .anyMatch(c -> com.fivetech.configcenter.ConfigCodes.idKey(c.getId()).equals(k)));
+        if (siteTotals)
+        {
+            fillSiteTotals(total, market, null);
+        }
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
         {
             for (PromoChannelDictionary.Channel c : listed)
@@ -190,9 +236,14 @@ public class PromoExportService
             }
             Object[] dayTotal = sheet.newRow();
             dayTotal[0] = d.toString();
-            dayTotal[1] = "當日合計";
+            dayTotal[2] = "當日合計";
             fillSpend(dayTotal, spendCube, d, d, inScope, k -> listed.stream()
                 .anyMatch(c -> com.fivetech.configcenter.ConfigCodes.idKey(c.getId()).equals(k)));
+            if (siteTotals)
+            {
+                LocalDate day = d;
+                fillSiteTotals(dayTotal, market, b -> b.toLocalDate().equals(day));
+            }
         }
         String base = siteName() + "_投放日報_" + compact(from, to);
         return file(sheet, base, "days=" + days + "&channels=" + listed.size() + "&rows=" + sheet.rows.size());

@@ -71,7 +71,8 @@ public class SiteManageService
 
     /**
      * 新增站点。body：siteCode、siteName、udsSite（空 = 用站点编码）、timezone（空 = 统计时区）、
-     * currency（空 = dashboard.currency）、currencySymbol（空 = 按币种推导）、sortNo（空 = 排最后，即最大值 + 1）、
+     * currency（空 = dashboard.currency）、currencySymbol（空 = 按币种推导）、realtime（实时站点，true / false，空 = false）、
+     * sortNo（空 = 排最后，即最大值 + 1）、
      * packageNetwork（可空）。编码与「未配置」的历史设置行相同时，把这一行配置为站点（沿用包网、规则号）。
      *
      * @return 新站点编码
@@ -114,7 +115,7 @@ public class SiteManageService
     }
 
     /**
-     * 修改站点。body：siteCode（新编码，不传或相同 = 不改）、siteName、udsSite、timezone、currency、currencySymbol、
+     * 修改站点。body：siteCode（新编码，不传或相同 = 不改）、siteName、udsSite、timezone、currency、currencySymbol、realtime、
      * sortNo（排序号）；没传（null）的字段沿用原值，传空串表示清空（sortNo 传空串 = 不改）。
      *
      * @return { siteCode: 修改后的编码, renamed: { 表名: 改了几行 } }
@@ -135,6 +136,8 @@ public class SiteManageService
         site.setTimezone(existing.getTimezone());
         site.setCurrency(existing.getCurrency());
         site.setCurrencySymbol(existing.getCurrencySymbol());
+        site.setRealtime(existing.isRealtime());
+        site.setDataStartDate(existing.getDataStartDate());
         site.setDefaultSite(existing.isDefaultSite());
         fillBasic(body, site, true, errors);
 
@@ -266,6 +269,52 @@ public class SiteManageService
                 errors.put("currencySymbol", "幣種符號不能超過 " + CURRENCY_SYMBOL_MAX + " 個字");
             }
             site.setCurrencySymbol(symbol);
+        }
+        String realtime = StringUtils.trimToNull(get(body, "realtime"));
+        if (realtime != null)
+        {
+            String v = realtime.toLowerCase(java.util.Locale.ROOT);
+            if ("true".equals(v) || "1".equals(v))
+            {
+                site.setRealtime(true);
+            }
+            else if ("false".equals(v) || "0".equals(v))
+            {
+                site.setRealtime(false);
+            }
+            else
+            {
+                errors.put("realtime", "實時站點請傳 true 或 false");
+            }
+        }
+        // 数据起始日：yyyy-MM-dd；传空串 = 清空（用系统默认 dashboard.launch-date），不传 = 不改
+        String start = get(body, "dataStartDate");
+        if (!update || start != null)
+        {
+            start = StringUtils.trimToNull(start);
+            if (start == null)
+            {
+                site.setDataStartDate(null);
+            }
+            else
+            {
+                try
+                {
+                    java.time.LocalDate d = java.time.LocalDate.parse(start.length() > 10 ? start.substring(0, 10) : start);
+                    if (d.getYear() < 2000 || d.getYear() > 2100)
+                    {
+                        errors.put("dataStartDate", "數據起始日不正確");
+                    }
+                    else
+                    {
+                        site.setDataStartDate(d);
+                    }
+                }
+                catch (java.time.format.DateTimeParseException e)
+                {
+                    errors.put("dataStartDate", "數據起始日格式應為 yyyy-MM-dd");
+                }
+            }
         }
         String sort = StringUtils.trimToNull(get(body, "sortNo"));
         if (sort != null)

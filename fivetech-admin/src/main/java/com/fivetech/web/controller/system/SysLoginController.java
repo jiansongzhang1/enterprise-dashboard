@@ -153,15 +153,19 @@ public class SysLoginController
         ajax.put("roles", roles);
         ajax.put("permissions", permissions);
         ajax.put("currentSite", dashboardProperties.currentSite());
-        java.util.List<java.util.Map<String, String>> sites = new java.util.ArrayList<>();
+        java.util.List<java.util.Map<String, Object>> sites = new java.util.ArrayList<>();
         for (String code : permissionService.accessibleSites(user))
         {
             // timezone：站点时区（IANA 时区 ID，如 Asia/Kolkata），前端按它显示站点时间；
             // currency / currencySymbol：站点币种代码（如 INR、CNY）与符号（如 ₹、¥），站点管理里设置，没设置用 dashboard.currency
-            sites.add(java.util.Map.of("code", code, "name", dashboardProperties.siteName(code),
+            // realtime：实时站点（站点管理里设置），前端据此显示「實時更新」；
+            // dataStartDate：站点数据起始日（yyyy-MM-dd，站点管理里设置，没设置用 dashboard.launch-date），日期选择从这天起
+            sites.add(java.util.Map.<String, Object>of("code", code, "name", dashboardProperties.siteName(code),
                     "timezone", dashboardProperties.siteTimezone(code),
                     "currency", dashboardProperties.siteCurrency(code),
-                    "currencySymbol", dashboardProperties.siteCurrencySymbol(code)));
+                    "currencySymbol", dashboardProperties.siteCurrencySymbol(code),
+                    "realtime", dashboardProperties.isRealtime(code),
+                    "dataStartDate", dashboardProperties.siteDataStartDate(code)));
         }
         ajax.put("sites", sites);
         ajax.put("pwdChrtype", getSysAccountChrtype());

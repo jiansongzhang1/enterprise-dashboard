@@ -133,7 +133,7 @@ final class ChannelTree
         this.yesterday = yesterday;
     }
 
-    /** 校验行维度路径（1–5 层、不重复、channel 在 agent 之后），不合法 4003 */
+    /** 校验行维度路径（1–5 层、不重复；推廣商 / 推廣渠道先后不限，2026-11-10 起），不合法 4003 */
     static ChannelTree of(List<String> rows, PromoScope scope, PromoTerminalDictionary.Config terminals, PromoTime.Range range,
         LocalDate yesterday)
     {
@@ -155,12 +155,6 @@ final class ChannelTree
                 throw new ServiceException("行維度重複：" + raw, PromoErrors.UNKNOWN_CODE);
             }
             dims.add(d);
-        }
-        int a = dims.indexOf(AGENT);
-        int c = dims.indexOf(CHANNEL);
-        if (a >= 0 && c >= 0 && c < a)
-        {
-            throw new ServiceException("推廣渠道須在推廣商之後", PromoErrors.UNKNOWN_CODE);
         }
         return new ChannelTree(dims, scope, terminals, range, yesterday);
     }
@@ -215,8 +209,15 @@ final class ChannelTree
         switch (dim)
         {
             case AGENT:
+                // 推廣渠道在上层时（channel › agent），只列这个渠道所属的推廣商，不列出整排空行
+                String upperChannel = keyOf(path, CHANNEL);
                 for (PromoChannelDictionary.Promoter p : scope.promotersInScope())
                 {
+                    if (upperChannel != null && scope.channelsOf(p).stream()
+                        .noneMatch(c -> ConfigCodes.idKey(c.getId()).equals(ConfigCodes.idKey(upperChannel))))
+                    {
+                        continue;
+                    }
                     out.add(new Member(p.getId(), p.getName(), null, false));
                 }
                 break;

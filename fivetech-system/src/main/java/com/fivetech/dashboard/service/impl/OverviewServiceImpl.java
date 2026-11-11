@@ -167,7 +167,13 @@ public class OverviewServiceImpl implements IOverviewService
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至當前時間",
                 "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時為實時數據，尚未結束）"));
         }
-        Granularity effective = downgrade(from, to, granularity, notices);
+        // 区间包含今天且按小时：series / prevSeries 补齐到今天 24:00（今日即固定 24 个小时），
+        // 未来的小时为 null；向 UDS 请求的区间不变（仍到当前时间向右取整的整点），slot.to 也仍是统计区间终点
+        LocalDateTime todayStart = nowAt.toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        boolean includesToday = from.isBefore(tomorrowStart) && requestedTo.isAfter(todayStart);
+        LocalDateTime axisTo = includesToday && to.isBefore(tomorrowStart) ? tomorrowStart : to;
+        Granularity effective = downgrade(from, granularity == Granularity.HOUR ? axisTo : to, granularity, notices);
         // 「今日」：区间正好是站点时区的今天 00:00 ~ 明天 00:00（终点被截到当前整点也算），且按小时出序列。
         // 这时额外返回每张卡片的小时基准线（近 4 周同星期同小时中位数，UDS 的 *_baseline 列）
         LocalDate today = nowAt.toLocalDate();
@@ -176,7 +182,9 @@ public class OverviewServiceImpl implements IOverviewService
         boolean isToday = coversToday(from, requestedTo, to, granularity, nowAt.truncatedTo(ChronoUnit.HOURS));
         boolean todayHourly = isToday && effective == Granularity.HOUR && query.isIncludeSeries();
 
-        OverviewSlotVO slot = buildSlot(from, to, effective);
+        OverviewSlotVO slot = buildSlot(from, effective == Granularity.HOUR ? axisTo : to, effective);
+        slot.setTo(to.format(SLOT_IN));
+        slot.setDataPoints(countPoints(from, to, effective));
         vo.setSlot(slot);
 
         // ---------- 2. 对比期 ----------
@@ -201,6 +209,9 @@ public class OverviewServiceImpl implements IOverviewService
             notices.add(OverviewNoticeVO.warn("ALERT_UNAVAILABLE", "告警狀態暫時無法取得", "指標數值不受影響"));
         }
         monitoring.setConfigured(alerts.values().stream().anyMatch(a -> a.getRule() != null && a.getRule().isEnabled()));
+        // 此刻是否有生效的监控：判定引擎开着，且本站至少 1 条启用的规则（暂停的规则 enabled = false，不算）
+        monitoring.setActive(monitoring.isConfigured() && monitorProperties.getEngine() != null
+            && monitorProperties.getEngine().isEnabled());
         vo.setMonitoring(monitoring);
         // 异常提醒条：读监控模块的事件表，失败只少这一块，不影响指标
         try
@@ -548,11 +559,13 @@ public class OverviewServiceImpl implements IOverviewService
         {
             case HOUR:
                 return (int) Math.max(0, ChronoUnit.HOURS.between(from, to));
+            // 日 / 周向上取整：终点截到当前整点时，今天（不完整的一天 / 一周）也算一格，
+            // 例：近 7 天 11-05 00:00 ~ 11-11 15:00 是 7 天，不是 6 天
             case WEEK:
-                return (int) Math.max(0, Math.ceil(ChronoUnit.DAYS.between(from, to) / 7.0));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / (7 * 1440.0)));
             case DAY:
             default:
-                return (int) Math.max(0, ChronoUnit.DAYS.between(from, to));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / 1440.0));
         }
     }
 
@@ -566,6 +579,7 @@ public class OverviewServiceImpl implements IOverviewService
 
         int points = countPoints(from, to, granularity);
         slot.setPoints(points);
+        slot.setDataPoints(points);
 
         List<String> labels = new ArrayList<>(points);
         boolean crossDay = ChronoUnit.HOURS.between(from, to) > 24;
@@ -584,7 +598,8 @@ public class OverviewServiceImpl implements IOverviewService
                 LocalDateTime a = from.plusWeeks(i);
                 LocalDateTime b = a.plusWeeks(1).minusDays(1);
                 // 最后一周多半不满 7 天，末端夹到区间结束，不印出超出区间的日期
-                LocalDateTime end = b.isAfter(to.minusDays(1)) ? to.minusDays(1) : b;
+                LocalDateTime last = to.minusNanos(1);
+                LocalDateTime end = b.isAfter(last) ? last : b;
                 labels.add(a.format(MD) + " – " + end.format(MD));
             }
             else
@@ -660,8 +675,22 @@ public class OverviewServiceImpl implements IOverviewService
         {
             // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前 7 天）
             Duration span = Duration.between(from, to);
-            cmpTo = from;
-            cmpFrom = from.minus(span);
+            LocalDateTime requested = clampedBy == null ? to : to.plus(clampedBy);
+            if (clampedBy != null && !clampedBy.isZero()
+                && from.equals(from.toLocalDate().atStartOfDay()) && requested.equals(requested.toLocalDate().atStartOfDay()))
+            {
+                // 近 N 天含今天、终点截到当前整点（如 11-05 00:00 ~ 11-11 15:00）：对比期整体往前挪 N 天
+                // （10-29 00:00 ~ 11-04 15:00），逐日对齐，最后一天同样截到同一时刻；
+                // 不能用「等长紧邻」，否则对比期从 10-29 09:00 开始，按日的 prevSeries 每格都错开
+                long n = ChronoUnit.DAYS.between(from, requested);
+                cmpFrom = from.minusDays(n);
+                cmpTo = to.minusDays(n);
+            }
+            else
+            {
+                cmpTo = from;
+                cmpFrom = from.minus(span);
+            }
         }
 
         if (StringUtils.isNotEmpty(query.getCompareFrom()) && type != CompareType.CUSTOM)
