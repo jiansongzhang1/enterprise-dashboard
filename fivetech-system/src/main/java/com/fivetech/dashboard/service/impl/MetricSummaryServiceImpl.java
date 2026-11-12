@@ -81,7 +81,9 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService {
         // 2. 时间：解析区间与粒度，全部在服务端完成（指标汇总不做对比期）
         DataFreshness freshness = timeResolver.resolveFreshness(siteCode);
         List<String> warnings = new ArrayList<>();
-        ResolvedRange main = timeResolver.resolveMain(query, freshness.getAsOf());
+        // 实时数据（2026-11-10 起，与运营总览一致）：区间终点截到当前时间向右取整的整点（站点时区），
+        // 正在进行的小时一起查，不再按水位截断；asOf（顶栏资料截至）仍取上游水位
+        ResolvedRange main = timeResolver.resolveMainRealtime(query, LocalDateTime.now(properties.siteZone(siteCode)));
         List<Granularity> available = timeResolver.availableGranularities(main);
         Granularity granularity = timeResolver.resolveGranularity(query.getGranularity(), available);
         if (query.getGranularity() != null && query.getGranularity() != granularity) {
@@ -119,6 +121,7 @@ public class MetricSummaryServiceImpl implements IMetricSummaryService {
         context.setUpdateFrequency("hour");
         context.setAvailableGranularities(available);
         vo.setContext(context);
+        vo.setRealtime(properties.isRealtime(siteCode));
         vo.setColumns(buildColumns(columns));
         vo.setPage(page);
         // 6. 合计：独立重算，不是把上面的行加起来

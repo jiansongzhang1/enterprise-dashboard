@@ -79,6 +79,10 @@ public class CollectBudgetSpendWriter implements BudgetSpendWriter
         /** 最近一次实际发出去的确认编号（处理中重发时原样带上） */
         volatile String sentConfirmation;
         volatile String state;
+        /** 文件里的日期（判断是否跨年） */
+        Set<LocalDate> fileDates = Set.of();
+        /** 文件中的「日期 × 推广渠道」已有值的日期（确认页覆盖提示用；为空不提示） */
+        Set<LocalDate> overwrittenDates = Set.of();
 
         Pending(String site, BudgetKind kind, String rowsJson, List<Map<String, Object>> rows, List<Integer> lines, String operator)
         {
@@ -140,6 +144,8 @@ public class CollectBudgetSpendWriter implements BudgetSpendWriter
             return BudgetWriteOutcome.of(BudgetWriteOutcome.FAILED, "提交內容超過數據平台單次上限，本次沒有寫入；請縮短日期範圍分次匯入。");
         }
         Pending p = new Pending(siteCode, kind, rowsJson, rows, lines, operator);
+        p.fileDates = dates;
+        p.overwrittenDates = overwrittenDates(dates, existing, records);
         log.info("[promo-budget] 提交{} site={} key={} 日期 {}~{} 有效 {} 行，合并后 {} 行 operator={}", kind.getLabel(), siteCode, p.key,
             dates.first(), dates.last(), records.size(), rows.size(), operator);
         return send(p, null);
@@ -254,10 +260,73 @@ public class CollectBudgetSpendWriter implements BudgetSpendWriter
         JsonNode rc = r.getBody() == null ? null : r.getBody().get("row_count");
         o.setSubmitRows(rc != null && rc.isNumber() ? rc.asInt() : p.rows.size());
         o.setRequestId(r.getRequestId());
+        // 确认页覆盖提示（OPT-14）：只在文件中的「日期 × 推广渠道」已有值时提示；都没有已有值时不提示，仍要确认
         String again = "overwrite_confirmation_required".equals(code) ? "" : "覆蓋範圍有變化或確認已過期，請重新確認。";
-        o.setMessage(again + String.join("、", o.getOverwriteDates()) + " 已有" + p.kind.getLabel() + "數據，確認後這些日期整日替換為本次提交的 "
-            + o.getSubmitRows() + " 行（已帶上文件裡沒有的推廣渠道原有數據）。");
+        String notice = overwriteNotice(p.kind, p.overwrittenDates, p.fileDates);
+        String message = again + (notice == null ? "" : notice);
+        o.setMessage(message.isEmpty() ? null : message);
         return o;
+    }
+
+    /** 文件中的「日期 × 推广渠道」在数据平台已有值的日期（与 {@link #merge} 同一个键） */
+    static Set<LocalDate> overwrittenDates(Set<LocalDate> dates, List<BudgetDataReader.Row> existing, List<BudgetImportValidator.Record> records)
+    {
+        Set<String> had = new java.util.HashSet<>();
+        for (BudgetDataReader.Row r : existing)
+        {
+            if (r.getDate() != null && dates.contains(r.getDate()) && !blank(r.getChannelId()) && !blank(r.getPromoterId())
+                && r.getAmount() != null)
+            {
+                had.add(r.getDate() + "|" + r.getChannelId());
+            }
+        }
+        TreeSet<LocalDate> out = new TreeSet<>();
+        for (BudgetImportValidator.Record r : records)
+        {
+            if (had.contains(r.getDate() + "|" + r.getChannelId()))
+            {
+                out.add(r.getDate());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 确认页覆盖提示（OPT-14）：「11-05 – 11-11 已有消耗。確認後，文件中的推廣渠道按本次金額覆蓋，其他推廣渠道保持不變。」
+     * 连续日期合并为一段，多段用「、」；日期写 MM-DD，文件跨年时写完整日期。没有已有值返回 null。
+     */
+    static String overwriteNotice(BudgetKind kind, Set<LocalDate> overwritten, Set<LocalDate> fileDates)
+    {
+        if (overwritten == null || overwritten.isEmpty())
+        {
+            return null;
+        }
+        boolean crossYear = (fileDates == null || fileDates.isEmpty() ? overwritten : fileDates).stream()
+            .map(LocalDate::getYear).distinct().count() > 1;
+        java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter.ofPattern(crossYear ? "yyyy-MM-dd" : "MM-dd");
+        List<String> ranges = new ArrayList<>();
+        LocalDate start = null;
+        LocalDate prev = null;
+        for (LocalDate d : new TreeSet<>(overwritten))
+        {
+            if (prev != null && !d.equals(prev.plusDays(1)))
+            {
+                ranges.add(range(start, prev, f));
+                start = null;
+            }
+            if (start == null)
+            {
+                start = d;
+            }
+            prev = d;
+        }
+        ranges.add(range(start, prev, f));
+        return String.join("、", ranges) + " 已有" + kind.getLabel() + "。確認後，文件中的推廣渠道按本次金額覆蓋，其他推廣渠道保持不變。";
+    }
+
+    private static String range(LocalDate from, LocalDate to, java.time.format.DateTimeFormatter f)
+    {
+        return from.equals(to) ? from.format(f) : from.format(f) + " – " + to.format(f);
     }
 
     private static BudgetWriteOutcome failed(CollectSubmitApi.Response r, String message)

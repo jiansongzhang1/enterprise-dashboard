@@ -365,7 +365,9 @@ public class MetricDictService
     {
         List<String> out = new ArrayList<>();
         Map<String, String> live = it.getConfig();
-        if (live == null)
+        // 仅登记的指标（如推广分析 promo*）不走 application.yml 的运营总览取数配置，线上配置恒为空，
+        // 这四列只是记录 UDS 字段，不做对照，否则填了就提示「與配置不一致」
+        if (live == null || STATUS_REGISTERED.equals(it.getStatus()))
         {
             return out;
         }

@@ -78,11 +78,11 @@ class MarketGatewayTest
                 "android_first_open", 10, "web_reg", 50, "web_ftd_players", 5)));
         c.answers.add(List.of(
             row("uds_hh", "2026-11-01 00:00:00", "terminal", "Web", "deposit_users", 30, "redeposit_users", 10, "bet_users", 50,
-                "deposit_amount", "3000.25", "bet_amount", 9000),
+                "deposit_amount", "3000.25", "withdraw_amount", 1000, "bet_amount", 9000),
             row("uds_hh", "2026-11-01 00:00:00", "terminal", "Android", "deposit_users", 20, "redeposit_users", 5, "bet_users", 25,
-                "deposit_amount", 1000, "bet_amount", 1000),
+                "deposit_amount", 1000, "withdraw_amount", "500.25", "bet_amount", 1000),
             row("uds_hh", "2026-11-02 00:00:00", "terminal", null, "deposit_users", 10, "redeposit_users", 2, "bet_users", 5,
-                "deposit_amount", 500, "bet_amount", 100)));
+                "deposit_amount", 500, "withdraw_amount", 0, "bet_amount", 100)));
         return c;
     }
 
@@ -150,7 +150,10 @@ class MarketGatewayTest
         // 精确人数逐日相加，空终端归 unknown
         assertEquals(new BigDecimal("17"), MarketValues.value("rd", cube, MarketCube.ALL, null));
         assertEquals(new BigDecimal("2"), MarketValues.value("rd", cube, "unknown", null));
-        assertEquals(new BigDecimal("4500.25"), MarketValues.value("net", cube, MarketCube.ALL, null));
+        // 淨充值 = 存提差：存款 4500.25 − 提款 1500.25（2026-11-12 起与运营总览一致）
+        assertEquals(new BigDecimal("3000.00"), MarketValues.value("net", cube, MarketCube.ALL, null));
+        assertEquals(new BigDecimal("4500.25"), MarketValues.value("dep", cube, MarketCube.ALL, null));
+        assertEquals(new BigDecimal("2000.25"), MarketValues.value("net", cube, "web", null));
         assertEquals(new BigDecimal("16.67"), MarketValues.value("ftdR", cube, MarketCube.ALL, null));   // 25 / 150
         assertEquals(new BigDecimal("75.00"), MarketValues.value("arppu", cube, MarketCube.ALL, null));  // 4500.25 / 60
         // 需确认的指标不取数：激活（设备数不是人数）、复存率（分母未定）
@@ -334,5 +337,44 @@ class MarketGatewayTest
         RoutedClient c = routed();
         new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("rdR"), false);
         assertEquals(0, c.bodies.size(), "只选複存率时不调 UDS");
+    }
+
+    /** 注册分群：dataset、reg_dt 按日、to 写日期（闭区间），一次取齐 1/3/7/15/30 日的到期 / 留存 / 存款额 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void cohortRequestBody()
+    {
+        FakeClient c = new FakeClient();
+        c.answers.add(List.of(row("reg_dt", "2026-11-10", "reg", 1262, "matured_d1", 1262, "retained_d1", 53)));
+        List<UdsRow> rows = new MarketGateway(c, new MarketProperties()).cohort(LocalDate.of(2026, 10, 13), LocalDate.of(2026, 11, 11),
+            List.of("reg_dt"), MarketGateway.cohortMetrics(List.of(1, 3, 7, 15, 30)));
+        assertEquals(1, rows.size());
+        Map<String, Object> body = c.bodies.get(0);
+        assertEquals("dashboard_market_cohort_v1", body.get("dataset"));
+        assertEquals(List.of("reg_dt"), body.get("dimensions"));
+        List<String> metrics = (List<String>) body.get("metrics");
+        assertEquals(16, metrics.size());
+        assertTrue(metrics.containsAll(List.of("reg", "matured_d1", "retained_d3", "deposit_amount_d30")));
+        Map<String, Object> time = (Map<String, Object>) body.get("time");
+        assertEquals("reg_dt", time.get("dimension"));
+        assertEquals("DAY", time.get("granularity"));
+        assertEquals("2026-10-13", time.get("from"));
+        assertEquals("2026-11-11", time.get("to"));
+        assertEquals("ONLINE", ((Map<String, Object>) body.get("options")).get("channel"));
+    }
+
+    /** 淨充值要存款、提款两项；提款取不到时不提供（不当 0） */
+    @Test
+    void netNeedsBothDepositAndWithdraw()
+    {
+        assertEquals(List.of("deposit_amount", "withdraw_amount"), MarketValues.FIELDS.get("net"));
+        MarketCube cube = new MarketCube();
+        cube.add(FROM, MarketCube.ALL, "deposit_amount", new BigDecimal("100"));
+        assertNull(MarketValues.value("net", cube, MarketCube.ALL, null));
+        cube.add(FROM, MarketCube.ALL, "withdraw_amount", new BigDecimal("130"));
+        assertEquals(new BigDecimal("-30"), MarketValues.value("net", cube, MarketCube.ALL, null), "提款多于存款时为负数");
+        // 提款總額单独取 withdraw_amount
+        assertEquals(List.of("withdraw_amount"), MarketValues.FIELDS.get("wd"));
+        assertEquals(new BigDecimal("130"), MarketValues.value("wd", cube, MarketCube.ALL, null));
     }
 }

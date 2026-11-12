@@ -18,6 +18,9 @@ public class MetricSummaryVO implements Serializable
 
     private QueryContext context;
 
+    /** 当前站点是否实时站点（站点管理里设置）：true 时页头显示「實時更新」，false 为每小时更新；getInfo、推广分析 / 用户明细的 options 也返回同一个值 */
+    private boolean realtime;
+
     /** 列定义，顺序即展示顺序 */
     private List<ColumnMetaVO> columns = new ArrayList<>();
 
@@ -40,6 +43,16 @@ public class MetricSummaryVO implements Serializable
     public void setContext(QueryContext context)
     {
         this.context = context;
+    }
+
+    public boolean isRealtime()
+    {
+        return realtime;
+    }
+
+    public void setRealtime(boolean realtime)
+    {
+        this.realtime = realtime;
     }
 
     public List<ColumnMetaVO> getColumns()

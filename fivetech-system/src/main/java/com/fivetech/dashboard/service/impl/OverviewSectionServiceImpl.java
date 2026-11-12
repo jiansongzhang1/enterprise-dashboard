@@ -363,15 +363,17 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
         ignoreGranularity(query, notices);
         ignoreCompare(query, notices);
 
-        // 队列是 T-1 快照：分群日最多到昨天，今天的分群还没有任何观察值
-        LocalDate lastDay = today().minusDays(1);
+        // 分群日最多到今天（2026-11-10 起不再截到昨天：今天的分群、各分群今天这一天的观察值照常向 UDS 取）；
+        // 只截掉明天及以后（还没发生）。lastDay = 观察值能到的最后一天，即今天
+        LocalDate lastDay = today();
         LocalDate end = to.isAfter(lastDay.plusDays(1)) ? lastDay.plusDays(1) : to;   // 右开
         fillCommon(vo, query, slot(from.format(YMD), to.format(YMD), null));
-        vo.setAsOf(lastDay.plusDays(1).atStartOfDay().format(SLOT));
+        // 资料截至：含今天后取当前整点（站点时区），不再是「昨天 + 1 天」的 00:00
+        vo.setAsOf(LocalDateTime.now(properties.currentZone()).truncatedTo(ChronoUnit.HOURS).format(SLOT));
         if (end.isBefore(to))
         {
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "分群日截至 " + lastDay.format(YMD),
-                "佇列為 T-1 快照，今日及以後的分群日沒有資料"));
+                "明日及以後的分群日還沒有資料"));
         }
 
         boolean any = false;
@@ -461,7 +463,8 @@ public class OverviewSectionServiceImpl implements IOverviewSectionService
             for (Map.Entry<String, String> col : columns.entrySet())
             {
                 int days = OverviewBreakdowns.COHORT_DAYS.get(col.getKey());
-                // 未到观察期一律 null：上游即使给了 0 也不采纳，0 会让留存曲线多出一段贴地的尾巴
+                // 未到观察期（分群日 + N 天晚于今天）一律 null：上游即使给了 0 也不采纳，0 会让留存曲线多出一段贴地的尾巴；
+                // 观察日正好是今天的格子照常取（当天尚未结束，值以 UDS 返回为准）
                 BigDecimal v = (r == null || d.plusDays(days).isAfter(lastDay)) ? null : r.num(col.getValue());
                 // 服务层保留两位（导出用），页面接口在 Controller 里再按展示精度取整 / 1 位小数
                 v = "MONEY".equals(format) ? com.fivetech.dashboard.format.MoneyScale.of(v)

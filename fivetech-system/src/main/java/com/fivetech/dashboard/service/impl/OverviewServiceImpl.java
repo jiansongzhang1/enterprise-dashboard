@@ -155,19 +155,23 @@ public class OverviewServiceImpl implements IOverviewService
         //   例：现在 09:25，slotTo 传 06:00 / 10:00 / 次日 00:00 都按 10:00 处理，返回 00:00–10:00 共 10 个小时（09 点为实时数据）；
         // · 其他粒度：终点晚于它时截到它（之后的小时还没有数据）。
         // 发给 UDS 的 uds_hh to 同样向右取整（见 UdsRealtime）
-        Duration clampedBy = Duration.ZERO;
         LocalDateTime nowAt = LocalDateTime.now(properties.currentZone());
         LocalDateTime currentHour = com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(nowAt);
         boolean endsToday = to.minusNanos(1).toLocalDate().equals(nowAt.toLocalDate());
         boolean pinToNow = granularity == Granularity.HOUR ? endsToday || to.isAfter(currentHour) : to.isAfter(currentHour);
         if (pinToNow && currentHour.isAfter(from) && !to.isEqual(currentHour))
         {
-            clampedBy = Duration.between(currentHour, to);
             to = currentHour;
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至當前時間",
                 "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時為實時數據，尚未結束）"));
         }
-        Granularity effective = downgrade(from, to, granularity, notices);
+        // 区间包含今天且按小时：series / prevSeries 补齐到今天 24:00（今日即固定 24 个小时），
+        // 未来的小时为 null；向 UDS 请求的区间不变（仍到当前时间向右取整的整点），slot.to 也仍是统计区间终点
+        LocalDateTime todayStart = nowAt.toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        boolean includesToday = from.isBefore(tomorrowStart) && requestedTo.isAfter(todayStart);
+        LocalDateTime axisTo = includesToday && to.isBefore(tomorrowStart) ? tomorrowStart : to;
+        Granularity effective = downgrade(from, granularity == Granularity.HOUR ? axisTo : to, granularity, notices);
         // 「今日」：区间正好是站点时区的今天 00:00 ~ 明天 00:00（终点被截到当前整点也算），且按小时出序列。
         // 这时额外返回每张卡片的小时基准线（近 4 周同星期同小时中位数，UDS 的 *_baseline 列）
         LocalDate today = nowAt.toLocalDate();
@@ -176,11 +180,15 @@ public class OverviewServiceImpl implements IOverviewService
         boolean isToday = coversToday(from, requestedTo, to, granularity, nowAt.truncatedTo(ChronoUnit.HOURS));
         boolean todayHourly = isToday && effective == Granularity.HOUR && query.isIncludeSeries();
 
-        OverviewSlotVO slot = buildSlot(from, to, effective);
+        OverviewSlotVO slot = buildSlot(from, effective == Granularity.HOUR ? axisTo : to, effective);
+        slot.setTo(to.format(SLOT_IN));
+        slot.setDataPoints(countPoints(from, to, effective));
         vo.setSlot(slot);
 
         // ---------- 2. 对比期 ----------
-        vo.setCompare(resolveCompare(query, from, to, clampedBy, granularity, notices));
+        // 对比期是已经走完的完整时段：主区间含今天时按补到今天 24:00 的终点（axisTo）推算，发给 UDS 不截断，
+        // 如今天 00:00–17:00 → 对比昨天 00:00–24:00；近 7 天（含今天）→ 再往前完整 7 天
+        vo.setCompare(resolveCompare(query, from, axisTo, notices));
         
 
         // ---------- 4. 上下文 ----------
@@ -201,6 +209,9 @@ public class OverviewServiceImpl implements IOverviewService
             notices.add(OverviewNoticeVO.warn("ALERT_UNAVAILABLE", "告警狀態暫時無法取得", "指標數值不受影響"));
         }
         monitoring.setConfigured(alerts.values().stream().anyMatch(a -> a.getRule() != null && a.getRule().isEnabled()));
+        // 此刻是否有生效的监控：判定引擎开着，且本站至少 1 条启用的规则（暂停的规则 enabled = false，不算）
+        monitoring.setActive(monitoring.isConfigured() && monitorProperties.getEngine() != null
+            && monitorProperties.getEngine().isEnabled());
         vo.setMonitoring(monitoring);
         // 异常提醒条：读监控模块的事件表，失败只少这一块，不影响指标
         try
@@ -548,11 +559,13 @@ public class OverviewServiceImpl implements IOverviewService
         {
             case HOUR:
                 return (int) Math.max(0, ChronoUnit.HOURS.between(from, to));
+            // 日 / 周向上取整：终点截到当前整点时，今天（不完整的一天 / 一周）也算一格，
+            // 例：近 7 天 11-05 00:00 ~ 11-11 15:00 是 7 天，不是 6 天
             case WEEK:
-                return (int) Math.max(0, Math.ceil(ChronoUnit.DAYS.between(from, to) / 7.0));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / (7 * 1440.0)));
             case DAY:
             default:
-                return (int) Math.max(0, ChronoUnit.DAYS.between(from, to));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / 1440.0));
         }
     }
 
@@ -566,6 +579,7 @@ public class OverviewServiceImpl implements IOverviewService
 
         int points = countPoints(from, to, granularity);
         slot.setPoints(points);
+        slot.setDataPoints(points);
 
         List<String> labels = new ArrayList<>(points);
         boolean crossDay = ChronoUnit.HOURS.between(from, to) > 24;
@@ -584,7 +598,8 @@ public class OverviewServiceImpl implements IOverviewService
                 LocalDateTime a = from.plusWeeks(i);
                 LocalDateTime b = a.plusWeeks(1).minusDays(1);
                 // 最后一周多半不满 7 天，末端夹到区间结束，不印出超出区间的日期
-                LocalDateTime end = b.isAfter(to.minusDays(1)) ? to.minusDays(1) : b;
+                LocalDateTime last = to.minusNanos(1);
+                LocalDateTime end = b.isAfter(last) ? last : b;
                 labels.add(a.format(MD) + " – " + end.format(MD));
             }
             else
@@ -596,8 +611,35 @@ public class OverviewServiceImpl implements IOverviewService
         return slot;
     }
 
+    /**
+     * 去年同期 / 上一周期的对比区间 [from, to)。
+     *
+     * @param to 对比期用的主区间终点：主区间含今天时是今天 24:00（不是截到的当前整点），对比期因此是完整时段
+     */
+    static LocalDateTime[] autoCompareRange(CompareType type, LocalDateTime from, LocalDateTime to)
+    {
+        if (type == CompareType.LAST_YEAR)
+        {
+            return new LocalDateTime[] { from.minusYears(1), to.minusYears(1) };
+        }
+        if (from.toLocalDate().equals(to.minusNanos(1).toLocalDate()))
+        {
+            // PREV_PERIOD · 区间在同一自然日内（站点时区）：固定对比前一天的同一时段。
+            // 例：今天（未走完也按 00:00–24:00）→ 昨天 00:00–24:00；昨天全天 → 前天全天。
+            // 不能用「等长紧邻」，否则今天 08:00–24:00 会对比到昨天 16:00–今天 08:00
+            return new LocalDateTime[] { from.minusDays(1), to.minusDays(1) };
+        }
+        // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前完整 7 天，按日逐格对齐）
+        Duration span = Duration.between(from, to);
+        return new LocalDateTime[] { from.minus(span), from };
+    }
+
+    /**
+     * @param to 对比期用的主区间终点（axisTo）：主区间含今天时已补到今天 24:00，
+     *           对比期总是完整时段，不随主区间截到当前整点
+     */
     private OverviewCompareVO resolveCompare(OverviewQuery query, LocalDateTime from, LocalDateTime to,
-            Duration clampedBy, Granularity granularity, List<OverviewNoticeVO> notices)
+            List<OverviewNoticeVO> notices)
     {
         CompareType type = query.getCompareType() == null ? CompareType.PREV_PERIOD : query.getCompareType();
         if (type == CompareType.NONE)
@@ -610,28 +652,16 @@ public class OverviewServiceImpl implements IOverviewService
         if (type == CompareType.CUSTOM)
         {
             // CUSTOM：按用户选择的区间取数，时间按站点时区（IST）的墙上时间理解，不做时区换算。
-            // 主区间终点被截到当前整点时：
-            // · 小时粒度：对比期终点同步往前截同样的时长，两边小时数对齐，逐小时对比才有意义；
-            // · 天 / 周粒度：对比期保持用户所选，不截断、不因此报错 —— 当天数据偏低用户自己知道原因
+            // 主区间终点被截到当前整点时，对比期保持用户所选、不截断（对比期已走完，按完整时段取数）
             cmpFrom = parseSlot(query.getCompareFrom(), "compareFrom");
             cmpTo = parseSlot(query.getCompareTo(), "compareTo");
             if (!cmpTo.isAfter(cmpFrom))
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
             }
-            boolean clamped = clampedBy != null && !clampedBy.isZero();
-            boolean hourly = granularity == Granularity.HOUR;
-            if (clamped && hourly && cmpTo.minus(clampedBy).isAfter(cmpFrom))
-            {
-                cmpTo = cmpTo.minus(clampedBy);
-                notices.add(OverviewNoticeVO.info("CMP_CLAMPED", "對比期已同步截斷",
-                    "對比期終點調整為 " + cmpTo.format(SLOT_IN) + "，與主區間小時數一致"));
-            }
             // 对比期允许与主区间重叠（产品确认），不做重叠校验
-            // 长度校验用「截断前」的主区间：天 / 周粒度下主区间被截到当前整点不算长度不一致；
-            // 小时粒度两边已同步截断，用截断后的长度比较
-            LocalDateTime mainTo = clamped && !hourly ? to.plus(clampedBy) : to;
-            long mainDays = ChronoUnit.DAYS.between(from, mainTo);
+            // 长度校验用补到今天 24:00 的主区间：主区间被截到当前整点不算长度不一致
+            long mainDays = ChronoUnit.DAYS.between(from, to);
             long cmpDays = ChronoUnit.DAYS.between(cmpFrom, cmpTo);
             if (mainDays != cmpDays)
             {
@@ -643,25 +673,13 @@ public class OverviewServiceImpl implements IOverviewService
                     "主區間 " + mainDays + " 天，對比期 " + cmpDays + " 天，環比數值不可直接解讀"));
             }
         }
-        else if (type == CompareType.LAST_YEAR)
-        {
-            cmpFrom = from.minusYears(1);
-            cmpTo = to.minusYears(1);
-        }
-        else if (from.toLocalDate().equals(to.minusNanos(1).toLocalDate()))
-        {
-            // PREV_PERIOD · 区间在同一自然日内（站点时区 IST）：固定对比前一天的同一时段。
-            // 例：今天 00:00–12:00（终点已截到当前整点）→ 昨天 00:00–12:00；
-            //     昨天全天 → 前天全天。不能用「等长紧邻」，否则今天 00:00–12:00 会对比到昨天 12:00–24:00
-            cmpFrom = from.minusDays(1);
-            cmpTo = to.minusDays(1);
-        }
         else
         {
-            // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前 7 天）
-            Duration span = Duration.between(from, to);
-            cmpTo = from;
-            cmpFrom = from.minus(span);
+            // 近 N 天含今天（如 11-05 00:00 ~ 11-11 15:00）：to 已补到 11-12 00:00，对比期 10-29 00:00 ~ 11-05 00:00，
+            // 完整 7 天、逐日对齐，最后一天不截断
+            LocalDateTime[] range = autoCompareRange(type, from, to);
+            cmpFrom = range[0];
+            cmpTo = range[1];
         }
 
         if (StringUtils.isNotEmpty(query.getCompareFrom()) && type != CompareType.CUSTOM)

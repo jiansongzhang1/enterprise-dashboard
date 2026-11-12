@@ -58,6 +58,27 @@ public class SiteSettingVO
     /** 实际使用的币种符号：站点设置的，或按币种推导 */
     private String effectiveCurrencySymbol;
 
+    /** 实时站点（UDS 提供当前小时的实时数据）；false = 每小时更新 */
+    private boolean realtime;
+
+    /** 站点表里设置的数据起始日（yyyy-MM-dd）；没设置为 null */
+    private String dataStartDate;
+
+    /** 实际使用的数据起始日：站点设置的，没设置用 dashboard.launch-date */
+    private String effectiveDataStartDate;
+
+    public String getDataStartDate() { return dataStartDate; }
+
+    public void setDataStartDate(String dataStartDate) { this.dataStartDate = dataStartDate; }
+
+    public String getEffectiveDataStartDate() { return effectiveDataStartDate; }
+
+    public void setEffectiveDataStartDate(String effectiveDataStartDate) { this.effectiveDataStartDate = effectiveDataStartDate; }
+
+    public boolean isRealtime() { return realtime; }
+
+    public void setRealtime(boolean realtime) { this.realtime = realtime; }
+
     public String getCurrency() { return currency; }
 
     public void setCurrency(String currency) { this.currency = currency; }

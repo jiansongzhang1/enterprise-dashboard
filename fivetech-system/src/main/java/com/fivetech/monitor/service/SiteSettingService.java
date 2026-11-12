@@ -136,6 +136,9 @@ public class SiteSettingService
         vo.setEffectiveTimezone(configured ? dashboard.siteTimezone(code) : null);
         vo.setEffectiveCurrency(configured ? dashboard.siteCurrency(code) : null);
         vo.setEffectiveCurrencySymbol(configured ? dashboard.siteCurrencySymbol(code) : null);
+        vo.setRealtime(configured && dashboard.isRealtime(code));
+        vo.setDataStartDate(configured ? dashboard.siteDataStartDateSetting(code) : null);
+        vo.setEffectiveDataStartDate(configured ? dashboard.siteDataStartDate(code) : null);
         if (configured && vo.isDefaultSite())
         {
             vo.setTimezone(StringUtils.isEmpty(dashboard.getDefaultSiteTimezone()) ? null : dashboard.getDefaultSiteTimezone().trim());

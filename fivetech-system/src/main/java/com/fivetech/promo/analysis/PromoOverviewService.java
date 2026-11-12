@@ -182,12 +182,18 @@ public class PromoOverviewService
         Data data = new Data();
         data.channelPending = !scope.isAll();
         data.terminalKey = MarketValues.terminalKey(scope.getTerminal());
-        boolean needData = selected.stream().anyMatch(m -> MarketValues.AVAILABLE.contains(m.getCode()));
+        // 成本类（CPA、首存成本、D0 ROI）在推广商 / 推广渠道为「全部」时按全站注册、首存、存款估算，也要取市场数据
+        boolean needCost = selected.stream().anyMatch(m -> SITE_COST.contains(m.getCode()));
+        boolean needData = needCost || selected.stream().anyMatch(m -> MarketValues.AVAILABLE.contains(m.getCode()));
         if (market != null && market.isEnabled() && needData && !data.channelPending && data.terminalKey != null)
         {
             // 只取所选指标用到的字段；选了终端或按终端归因时才要带终端前缀的宽表字段
             List<String> codes = new ArrayList<>();
             selected.forEach(m -> codes.add(m.getCode()));
+            if (needCost)
+            {
+                codes.addAll(List.of("reg", "ftd", "net"));
+            }
             boolean byTerminal = scope.isTerminalSelected() || "terminal".equals(dimension);
             try
             {
@@ -441,8 +447,8 @@ public class PromoOverviewService
             }
             else
             {
-                cost = costOf(code, data.spend, scope, w[0], w[1]);
-                prevCost = w[2] == null ? null : costOf(code, data.spend, scope, w[2], w[3]);
+                cost = costOf(code, data, scope, w[0], w[1], false);
+                prevCost = w[2] == null ? null : costOf(code, data, scope, w[2], w[3], true);
                 state = cost.state();
                 c.setNote(cost.note());
             }
@@ -486,7 +492,11 @@ public class PromoOverviewService
         {
             int points = Math.max(0, slot.getPoints());
             boolean spendSeries = spendCard && "OK".equals(state);
+            // 成本类：每个时间片按同一套算法（有效格子 / 全站估算）各算一次
+            boolean costSeries = costCard && "OK".equals(state);
             c.setSeries(spendSeries ? spendSeries(data.spend, PromoSpend.kind(code), inScope, range.from, slot.getGranularity(), points)
+                : costSeries ? costSeries(range.from.toLocalDate(), w[1], slot.getGranularity(), points,
+                    (s, e) -> costOf(code, data, scope, s, e, false))
                 : fill && !costCard ? series(code, data.series, data.terminalKey, range.from, slot.getGranularity(), points)
                 : new ArrayList<>(Collections.nCopies(points, null)));
             if (compare == null)
@@ -498,6 +508,8 @@ public class PromoOverviewService
                 LocalDateTime prevStart = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT);
                 c.setPrevSeries(spendSeries
                     ? spendSeries(data.spend, PromoSpend.kind(code), inScope, prevStart, slot.getGranularity(), points)
+                    : costSeries && w[2] != null
+                    ? costSeries(prevStart.toLocalDate(), w[3], slot.getGranularity(), points, (s, e) -> costOf(code, data, scope, s, e, true))
                     : fill && !costCard && data.prevSeries != null
                     ? series(code, data.prevSeries, data.terminalKey, data.prevFrom, slot.getGranularity(), points)
                     : new ArrayList<>(Collections.nCopies(points, null)));
@@ -547,6 +559,61 @@ public class PromoOverviewService
         return new LocalDate[] { from, to, prevFrom, prevTo };
     }
 
+    /** 推广商 / 推广渠道为「全部」时可按全站估算的成本类指标（UV 成本的 UV-落地頁口径待确认，不估算） */
+    static final Set<String> SITE_COST = Set.of("cpa", "ftdCost", "roi");
+
+    /** 全站估算的说明（卡片 note） */
+    static final String SITE_COST_NOTE = "推廣商、推廣渠道為「全部」時按全站估算：有消耗的日期內，全站註冊 / 首存 / 存款總額（含官方等自然量）對全部消耗；"
+        + "數據平台提供推廣渠道維度後改按有效格子（日 × 推廣渠道）計算";
+
+    /** 全站估算时格子的渠道键 */
+    private static final String SITE = "*";
+
+    /**
+     * 成本类指标。先按有效格子（日 × 推广渠道）算；行为数据还不能按推广渠道拆（NO_SOURCE），
+     * 且推广商 / 推广渠道、终端都为「全部」时，按全站估算：有效格子退化为「有消耗的日」，
+     * CPA ＝ 这些日的消耗 ÷ 全站注册人数，首存成本 ＝ 消耗 ÷ 全站首存人数，D0 ROI ＝ 全站存款总额（淨充值）÷ 消耗 − 1。
+     *
+     * @param prev 是否对比期（用对比期的市场数据）
+     */
+    PromoCost.Result costOf(String code, Data data, PromoScope scope, LocalDate from, LocalDate to, boolean prev)
+    {
+        PromoCost.Result r = costOf(code, data.spend, scope, from, to);
+        MarketCube cube = prev ? data.prevDay : data.day;
+        if (!"NO_SOURCE".equals(r.state()) || !SITE_COST.contains(code) || !scope.isAll() || scope.isTerminalSelected()
+            || cube == null || cube.isOmitted())
+        {
+            return r;
+        }
+        return siteCost(code, data.spend.cells(com.fivetech.promo.budget.BudgetKind.SPEND, from, to, PromoSpend.inScope(scope)),
+            cube, from, to);
+    }
+
+    /** 全站估算：消耗按日合并成一个格子，行为数据取全站当日值，再走同一套有效格子计算 */
+    static PromoCost.Result siteCost(String code, Map<PromoCost.Cell, BigDecimal> spendCells, MarketCube cube, LocalDate from, LocalDate to)
+    {
+        Map<PromoCost.Cell, BigDecimal> spendByDay = new LinkedHashMap<>();
+        spendCells.forEach((k, v) -> {
+            if (v != null)
+            {
+                spendByDay.merge(new PromoCost.Cell(k.day(), SITE), v, BigDecimal::add);
+            }
+        });
+        String metric = PromoCost.behaviorMetric(code);
+        Map<PromoCost.Cell, BigDecimal> behavior = new LinkedHashMap<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
+        {
+            LocalDate day = d;
+            BigDecimal v = MarketValues.value(metric, cube, MarketCube.ALL, b -> b.toLocalDate().equals(day));
+            if (v != null)
+            {
+                behavior.put(new PromoCost.Cell(d, SITE), v);
+            }
+        }
+        PromoCost.Result s = PromoCost.evaluate(code, spendByDay, behavior);
+        return "OK".equals(s.state()) ? new PromoCost.Result("OK", s.value(), SITE_COST_NOTE) : s;
+    }
+
     /** 成本类指标：范围内（所选推广商 / 推广渠道）按有效格子算 */
     PromoCost.Result costOf(String code, PromoSpend.Cube cube, PromoScope scope, LocalDate from, LocalDate to)
     {
@@ -577,6 +644,37 @@ public class PromoOverviewService
             if (i >= 0 && i < points)
             {
                 out.set(i, out.get(i) == null ? r.getAmount() : out.get(i).add(r.getAmount()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 成本类（CPA、首存成本、D0 ROI、UV 成本）的序列：第 i 个时间片取 [片首日, min(片尾日, lastDay)]，用 calc 算一次。
+     * 日粒度一天一片，周粒度 7 天一片（与 {@link #index} 一致）；小时粒度没有（消耗按日录入，卡片标 DAILY_ONLY）。
+     * 片首日超过 lastDay（消耗只算到昨天）或该片不是 OK（没有消耗 NO_SPEND 等）为 null。
+     */
+    static List<BigDecimal> costSeries(LocalDate from, LocalDate lastDay, Granularity g, int points,
+        java.util.function.BiFunction<LocalDate, LocalDate, PromoCost.Result> calc)
+    {
+        List<BigDecimal> out = new ArrayList<>(Collections.nCopies(points, null));
+        if (g == Granularity.HOUR || from == null || lastDay == null)
+        {
+            return out;
+        }
+        int step = g == Granularity.WEEK ? 7 : 1;
+        for (int i = 0; i < points; i++)
+        {
+            LocalDate s = from.plusDays((long) i * step);
+            if (s.isAfter(lastDay))
+            {
+                break;
+            }
+            LocalDate e = s.plusDays(step - 1L);
+            PromoCost.Result r = calc.apply(s, e.isAfter(lastDay) ? lastDay : e);
+            if (r != null && "OK".equals(r.state()))
+            {
+                out.set(i, r.value());
             }
         }
         return out;
@@ -710,8 +808,11 @@ public class PromoOverviewService
         a.put("reason", null);
         if (!m.isAttributable())
         {
-            unsupported(a, "NOT_CONFIGURED", m.getName() + "是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，"
-                + "不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。");
+            // 比率类（百分比、按消耗算的）说明不能拆的原因；可加总的指标只是没打开开关，不能套用比率的说法
+            unsupported(a, "NOT_CONFIGURED", m.isRatio()
+                ? m.getName() + "是比率類指標，變化同時來自各渠道自身的變化和渠道結構的變化，"
+                    + "不能拆成各渠道的貢獻。整體變化見上方趨勢；各渠道的值可在渠道表現查看。"
+                : m.getName() + "未開啟變化歸因（系統管理 › 指標管理 › 可歸因）。");
             return a;
         }
         if ("terminal".equals(dimension))

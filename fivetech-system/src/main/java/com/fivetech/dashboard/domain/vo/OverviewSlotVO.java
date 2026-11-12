@@ -25,6 +25,12 @@ public class OverviewSlotVO implements Serializable
 
     private int points;
 
+    /**
+     * 有数据的时间片个数（从第 0 片起），即统计区间 from ~ to 内的时间片数。
+     * 区间包含今天且按小时时，序列补齐到今天 24:00（points 含未来的小时，值为 null），此时 dataPoints &lt; points；其他情况两者相等
+     */
+    private int dataPoints;
+
     /** 每个时间片的展示标签，长度等于 points */
     private List<String> labels = new ArrayList<>();
 
@@ -66,6 +72,16 @@ public class OverviewSlotVO implements Serializable
     public void setPoints(int points)
     {
         this.points = points;
+    }
+
+    public int getDataPoints()
+    {
+        return dataPoints;
+    }
+
+    public void setDataPoints(int dataPoints)
+    {
+        this.dataPoints = dataPoints;
     }
 
     public List<String> getLabels()

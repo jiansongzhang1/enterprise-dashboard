@@ -175,9 +175,19 @@ public class SiteRegistry
         SysSite def = null;
         List<DashboardProperties.Site> others = new ArrayList<>();
         List<String> order = new ArrayList<>();
+        List<String> realtime = new ArrayList<>();
+        java.util.Map<String, java.time.LocalDate> dataStart = new java.util.HashMap<>();
         for (SysSite r : rows)
         {
             order.add(r.getSiteCode());
+            if (r.getDataStartDate() != null)
+            {
+                dataStart.put(r.getSiteCode(), r.getDataStartDate());
+            }
+            if (r.isRealtime())
+            {
+                realtime.add(r.getSiteCode());
+            }
             if (r.isDefaultSite() && def == null)
             {
                 def = r;
@@ -198,6 +208,8 @@ public class SiteRegistry
         }
         dashboard.applySites(def.getSiteCode(), def.getSiteName(), def.getUdsSite(), def.getTimezone(), def.getCurrency(),
             def.getCurrencySymbol(), others, order);
+        dashboard.applyRealtimeSites(realtime);
+        dashboard.applyDataStartDates(dataStart);
         version = mapper.selectVersion();
         fromTable = true;
         log.info("[site] 已加载 {} 个站点，默认站点 {}", rows.size(), def.getSiteCode());

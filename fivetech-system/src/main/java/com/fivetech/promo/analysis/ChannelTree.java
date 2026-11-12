@@ -27,7 +27,6 @@ final class ChannelTree
     static final String CHANNEL = "channel";
     static final String DATE = "date";
     static final String TERMINAL = "terminal";
-    static final String RELATION = "relation";
 
     static final Map<String, String> DIM_NAMES = dimNames();
 
@@ -42,7 +41,6 @@ final class ChannelTree
         m.put(CHANNEL, "推廣渠道");
         m.put(DATE, "日期");
         m.put(TERMINAL, "終端");
-        m.put(RELATION, "推廣關係");
         return m;
     }
 
@@ -133,13 +131,16 @@ final class ChannelTree
         this.yesterday = yesterday;
     }
 
-    /** 校验行维度路径（1–5 层、不重复、channel 在 agent 之后），不合法 4003 */
+    /**
+     * 校验行维度路径（1–4 层、不重复；推廣商 / 推廣渠道先后不限，2026-11-10 起），不合法 4003。
+     * 推廣關係 relation 2026-11-12 去掉（数据近期不能同步该字段），传了按不认识的维度处理。
+     */
     static ChannelTree of(List<String> rows, PromoScope scope, PromoTerminalDictionary.Config terminals, PromoTime.Range range,
         LocalDate yesterday)
     {
-        if (rows == null || rows.isEmpty() || rows.size() > 5)
+        if (rows == null || rows.isEmpty() || rows.size() > DIM_NAMES.size())
         {
-            throw new ServiceException("rows（行維度）須為 1–5 層", PromoErrors.UNKNOWN_CODE);
+            throw new ServiceException("rows（行維度）須為 1–" + DIM_NAMES.size() + " 層", PromoErrors.UNKNOWN_CODE);
         }
         List<String> dims = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -148,19 +149,13 @@ final class ChannelTree
             String d = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
             if (!DIM_NAMES.containsKey(d))
             {
-                throw new ServiceException("不認識的行維度：" + raw + "（agent / channel / date / terminal / relation）", PromoErrors.UNKNOWN_CODE);
+                throw new ServiceException("不認識的行維度：" + raw + "（agent / channel / date / terminal）", PromoErrors.UNKNOWN_CODE);
             }
             if (!seen.add(d))
             {
                 throw new ServiceException("行維度重複：" + raw, PromoErrors.UNKNOWN_CODE);
             }
             dims.add(d);
-        }
-        int a = dims.indexOf(AGENT);
-        int c = dims.indexOf(CHANNEL);
-        if (a >= 0 && c >= 0 && c < a)
-        {
-            throw new ServiceException("推廣渠道須在推廣商之後", PromoErrors.UNKNOWN_CODE);
         }
         return new ChannelTree(dims, scope, terminals, range, yesterday);
     }
@@ -215,8 +210,15 @@ final class ChannelTree
         switch (dim)
         {
             case AGENT:
+                // 推廣渠道在上层时（channel › agent），只列这个渠道所属的推廣商，不列出整排空行
+                String upperChannel = keyOf(path, CHANNEL);
                 for (PromoChannelDictionary.Promoter p : scope.promotersInScope())
                 {
+                    if (upperChannel != null && scope.channelsOf(p).stream()
+                        .noneMatch(c -> ConfigCodes.idKey(c.getId()).equals(ConfigCodes.idKey(upperChannel))))
+                    {
+                        continue;
+                    }
                     out.add(new Member(p.getId(), p.getName(), null, false));
                 }
                 break;
@@ -240,15 +242,12 @@ final class ChannelTree
                     out.add(new Member(d.toString(), d.toString(), null, false));
                 }
                 break;
-            case TERMINAL:
+            default:
+                // TERMINAL
                 for (PromoTerminalDictionary.Terminal t : terminals.getTerminals())
                 {
                     out.add(new Member(t.getCode(), t.getName(), null, false));
                 }
-                break;
-            default:
-                out.add(new Member("direct", "直推", null, false));
-                out.add(new Member("fission", "裂變", null, false));
                 break;
         }
         return out;
@@ -269,19 +268,18 @@ final class ChannelTree
     /**
      * 一行（或合计行）的单元格。
      * <ul>
-     *   <li>路径上有终端或推广关系时依赖消耗的列为 NA；激活在 Android 以外的终端为 NA；</li>
+     *   <li>路径上有终端时依赖消耗的列为 NA；激活在 Android 以外的终端为 NA；</li>
      *   <li>批次列带 matured，全部未到期为 PENDING；</li>
      *   <li>每格带 format（INT / MONEY / PCT，同首页 valueFormat）与 drillable；</li>
      *   <li>市场数据集能取到的列（{@link com.fivetech.promo.analysis.market.MarketValues#AVAILABLE}）在路径只含日期、终端时有值；
-     *       路径上有推广商、推广渠道、推广关系，或选了渠道筛选时为 NO_SOURCE（渠道映射待接入）；其余列 NO_SOURCE。</li>
+     *       路径上有推广商、推广渠道，或选了渠道筛选时为 NO_SOURCE（渠道映射待接入）；其余列 NO_SOURCE。</li>
      * </ul>
      */
     Map<String, Object> cells(List<PromoMetricCatalog.Column> columns, List<PathItem> path)
     {
         String terminal = keyOf(path, TERMINAL);
         boolean byTerminal = terminal != null;
-        boolean byRelation = keyOf(path, RELATION) != null;
-        boolean byChannel = keyOf(path, AGENT) != null || keyOf(path, CHANNEL) != null || byRelation;
+        boolean byChannel = keyOf(path, AGENT) != null || keyOf(path, CHANNEL) != null;
         String day = keyOf(path, DATE);
         LocalDate dayValue = day == null ? null : LocalDate.parse(day);
         String terminalKey = com.fivetech.promo.analysis.market.MarketValues.terminalKey(terminal);
@@ -292,10 +290,10 @@ final class ChannelTree
             Object value = null;
             String state = "OK";
             String note = null;
-            if (col.isSpendBased() && (byTerminal || byRelation))
+            if (col.isSpendBased() && byTerminal)
             {
                 state = "NA";
-                note = byTerminal ? "消耗不按終端拆分" : "消耗不按推廣關係拆分";
+                note = "消耗不按終端拆分";
             }
             else if ("act".equals(col.getCode()) && byTerminal && !"android".equals(terminalKey))
             {

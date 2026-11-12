@@ -32,7 +32,9 @@ import com.fivetech.promo.budget.PromoChannelDictionary;
  *
  * <p><b>数据未接入</b>：UDS 的推广数据集（promo_channel_hour / day、promo_cohort_day、promo_fission_day、promo_spend_day）还没定，
  * 现在各接口只做请求校验并返回完整结构：数值为 null、列表为空，顶层 {@code dataPending = true}。
- * 能从字典与时间算出来的部分照常返回（推广商 / 推广渠道 / 日期 / 终端成员、批次指标的到期天数 matured 与 PENDING）。</p>
+ * 能从字典与时间算出来的部分照常返回（推广商 / 推广渠道 / 日期 / 终端成员、批次指标的到期天数 matured 与 PENDING）。
+ * 已接入：渠道表现、获客漏斗（{@code dashboard_market_hour_v1} / 会员快照），留存与回收（{@code dashboard_market_cohort_v1}，
+ * 规则见 {@link PromoCohort}），接入后 {@code dataPending = false}。</p>
  *
  * @author fivetech
  */
@@ -75,6 +77,19 @@ public class PromoAnalysisService
     boolean marketOn()
     {
         return market != null && market.isEnabled();
+    }
+
+    /**
+     * 投放日报：按日取全站（不分推广渠道）的市场数据，只取 codes 用到的字段。没开市场数据返回 null；取数失败照常抛出，由调用方决定。
+     */
+    MarketCube dailyCube(LocalDate from, LocalDate to, java.util.Collection<String> codes)
+    {
+        if (!marketOn())
+        {
+            return null;
+        }
+        return market.cube(from.atStartOfDay(), to.plusDays(1).atStartOfDay(), com.fivetech.dashboard.enums.Granularity.DAY,
+            codes, false);
     }
 
     /** UDS 取数失败统一成 5001 */
@@ -165,12 +180,15 @@ public class PromoAnalysisService
             ts.add(codeName(t.getCode(), t.getName()));
         }
         out.put("terminals", ts);
-        String launch = properties.getLaunchDate();
+        // 站点数据起始日：站点管理里设置的，没设置用 dashboard.launch-date
+        String launch = properties.siteDataStartDate(site);
         out.put("siteLaunchDate", launch);
         out.put("dataStart", launch);
         out.put("asOf", null);
         out.put("timezone", properties.currentTimezone());
         out.put("currency", currency());
+        // 当前站点是否实时站点（站点管理里设置），与指标汇总 summary 的 realtime 相同
+        out.put("realtime", properties.isRealtime(site));
         List<Map<String, Object>> metrics = new ArrayList<>();
         for (PromoMetricCatalog.Metric m : catalog.overviewMetrics())
         {
@@ -712,6 +730,97 @@ public class PromoAnalysisService
         return end.isBefore(from) ? null : new LocalDate[] { from, end };
     }
 
+    /** 一次读到的分群数据。days 为 null = 没取到（筛了推广商 / 渠道、市场数据关闭、本站数据集缺口），按 NO_SOURCE */
+    static final class CohortData
+    {
+        Map<LocalDate, PromoCohort.Day> days;
+
+        /** 注册日 → 消耗（全站，有记录的日子）；ROAS 用。读取关闭或失败为 null（ROAS 按 NO_SOURCE） */
+        Map<LocalDate, BigDecimal> spend;
+
+        BigDecimal spendOf(LocalDate d)
+        {
+            return spend == null || d == null ? null : spend.get(d);
+        }
+
+        boolean ready(String metric)
+        {
+            return days != null && (!PromoCohort.ROAS.equals(metric) || spend != null);
+        }
+    }
+
+    /**
+     * 读注册分群（UDS dashboard_market_cohort_v1，按注册日一次取齐 1/3/7/15/30 日）。
+     * 数据集没有推广渠道维度：选了推广商 / 推广渠道时不取数，提示待接入。取数失败 5001。
+     *
+     * @param withSpend 要不要读消耗（ROAS）
+     */
+    CohortData loadCohort(CohortQuery q, LocalDate[] r, boolean withSpend, Map<String, Object> out)
+    {
+        CohortData c = new CohortData();
+        if (!scope(q.getAgents(), q.getChannels(), null).isAll())
+        {
+            addNotice(out, "PROMO_CHANNEL_PENDING", "數據平台還沒有推廣渠道映射，暫不能按推廣商 / 推廣渠道篩選");
+            return c;
+        }
+        if (!marketOn())
+        {
+            return c;
+        }
+        List<com.fivetech.dashboard.gateway.uds.UdsRow> rows;
+        try
+        {
+            rows = market.cohort(r[0], r[1], List.of("reg_dt"), MarketGateway.cohortMetrics(OFFSETS));
+        }
+        catch (RuntimeException e)
+        {
+            throw dataFailed(e);
+        }
+        if (rows == null)
+        {
+            addNotice(out, "COHORT_NOT_PROVIDED", "本站點的註冊分群數據暫未提供");
+            return c;
+        }
+        c.days = PromoCohort.byDate(rows, OFFSETS);
+        out.put("dataPending", false);
+        if (withSpend)
+        {
+            c.spend = spendByDay(r, out);
+        }
+        return c;
+    }
+
+    /** 每个注册日的全站消耗；读取关闭返回 null，失败加提示后返回 null */
+    Map<LocalDate, BigDecimal> spendByDay(LocalDate[] r, Map<String, Object> out)
+    {
+        PromoSpend.Cube cube = spend == null ? null : spend.load(r[0], r[1]);
+        if (cube == null)
+        {
+            return null;
+        }
+        if (cube.isFailed())
+        {
+            addNotice(out, "SPEND_FAILED", PromoSpend.FAILED_NOTE);
+            return null;
+        }
+        Map<LocalDate, BigDecimal> m = new LinkedHashMap<>();
+        for (LocalDate d = r[0]; !d.isAfter(r[1]); d = d.plusDays(1))
+        {
+            BigDecimal s = cube.sum(com.fivetech.promo.budget.BudgetKind.SPEND, d, d, x -> true);
+            if (s != null)
+            {
+                m.put(d, s);
+            }
+        }
+        return m;
+    }
+
+    /** regRet1 / ltv7 … → 指标 */
+    static String cardMetric(String code)
+    {
+        return code.startsWith(PromoCohort.REG_RET) ? PromoCohort.REG_RET : code.startsWith(PromoCohort.LTV) ? PromoCohort.LTV : PromoCohort.ROAS;
+    }
+
     public Map<String, Object> cohortSummary(CohortQuery q)
     {
         LocalDate[] r = cohortRange(q);
@@ -720,20 +829,37 @@ public class PromoAnalysisService
         out.put("timezone", properties.currentTimezone());
         out.put("currency", currency());
         out.put("dataPending", true);
+        out.put("notices", new ArrayList<Map<String, Object>>());
+        CohortData c = loadCohort(q, r, true, out);
         List<Map<String, Object>> cards = new ArrayList<>();
         String[][] defs = { { "regRet1", "1" }, { "regRet7", "7" }, { "ltv7", "7" }, { "roas7", "7" } };
         for (String[] d : defs)
         {
-            LocalDate[] m = matured(r[0], r[1], Integer.parseInt(d[1]));
+            int n = Integer.parseInt(d[1]);
+            String metric = cardMetric(d[0]);
             Map<String, Object> card = new LinkedHashMap<>();
             card.put("code", d[0]);
-            card.put("value", null);
-            // 注册分群数据集未接入（UDS dashboard_market_cohort_v1 安全禁用）：到期的也没有值
-            card.put("state", m == null ? "PENDING" : "NO_SOURCE");
             Map<String, Object> days = new LinkedHashMap<>();
-            days.put("from", m == null ? null : m[0].toString());
-            days.put("to", m == null ? null : m[1].toString());
-            days.put("m", m == null ? 0 : ChronoUnit.DAYS.between(m[0], m[1]) + 1);
+            if (c.ready(metric))
+            {
+                // 留存 / LTV：全部已到期的注册日；ROAS：其中有消耗的注册日
+                PromoCohort.Agg a = PromoCohort.agg(c.days.values(), n, PromoCohort.ROAS.equals(metric) ? c::spendOf : null);
+                String mark = PromoCohort.mark(a);
+                card.put("value", PromoCohort.value(metric, a));
+                card.put("state", mark == null ? "OK" : mark);
+                days.put("from", a.first == null ? null : a.first.toString());
+                days.put("to", a.last == null ? null : a.last.toString());
+                days.put("m", a.days);
+            }
+            else
+            {
+                LocalDate[] m = matured(r[0], r[1], n);
+                card.put("value", null);
+                card.put("state", m == null ? "PENDING" : "NO_SOURCE");
+                days.put("from", m == null ? null : m[0].toString());
+                days.put("to", m == null ? null : m[1].toString());
+                days.put("m", m == null ? 0 : ChronoUnit.DAYS.between(m[0], m[1]) + 1);
+            }
             card.put("regDays", days);
             cards.add(card);
         }
@@ -754,50 +880,144 @@ public class PromoAnalysisService
     public Map<String, Object> cohortCurves(CohortQuery q)
     {
         LocalDate[] r = cohortRange(q);
-        cohortMetric(q);
+        String metric = cohortMetric(q);
         if (q.getCompareItems().size() > 4)
         {
             throw new ServiceException("對比項最多 4 項", PromoErrors.UNKNOWN_CODE);
         }
         String site = site();
         List<PromoChannelDictionary.Promoter> dict = channels.promotersOf(site);
-        List<Map<String, Object>> series = new ArrayList<>();
-        series.add(curve("ALL", "全部", r));
-        for (CohortQuery.CompareItem item : q.getCompareItems())
-        {
-            String type = item == null || item.getType() == null ? "" : item.getType().trim().toLowerCase(Locale.ROOT);
-            String code = item == null || item.getCode() == null ? "" : item.getCode().trim();
-            String name = null;
-            if ("agent".equals(type))
-            {
-                name = dict.stream().filter(p -> ConfigCodes.idKey(p.getId()).equals(ConfigCodes.idKey(code)))
-                    .map(PromoChannelDictionary.Promoter::getName).findFirst().orElse(null);
-            }
-            else if ("channel".equals(type))
-            {
-                name = dict.stream().flatMap(p -> p.getChannels().stream())
-                    .filter(c -> ConfigCodes.idKey(c.getId()).equals(ConfigCodes.idKey(code)))
-                    .map(PromoChannelDictionary.Channel::getName).findFirst().orElse(null);
-            }
-            else
-            {
-                throw new ServiceException("對比項 type 只能是 agent / channel", PromoErrors.UNKNOWN_CODE);
-            }
-            if (name == null)
-            {
-                throw new ServiceException("不認識的" + ("agent".equals(type) ? "推廣商" : "推廣渠道") + "：" + code, PromoErrors.UNKNOWN_FILTER);
-            }
-            series.add(curve(type + ":" + code, name, r));
-        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("asOf", today().minusDays(1).toString());
         out.put("currency", currency());
         out.put("dataPending", true);
+        out.put("notices", new ArrayList<Map<String, Object>>());
+        // 先校验对比项，再取数
+        List<String[]> items = new ArrayList<>();
+        for (CohortQuery.CompareItem item : q.getCompareItems())
+        {
+            String type = item == null || item.getType() == null ? "" : item.getType().trim().toLowerCase(Locale.ROOT);
+            String code = item == null || item.getCode() == null ? "" : item.getCode().trim();
+            items.add(new String[] { type, code, compareName(dict, type, code) });
+        }
+        CohortData c = loadCohort(q, r, PromoCohort.ROAS.equals(metric), out);
+        List<Map<String, Object>> series = new ArrayList<>();
+        series.add(c.ready(metric) ? curve("ALL", "全部", metric, c.days.values(), c::spendOf) : curve("ALL", "全部", r));
+        Map<String, PromoCohort.Day> byTerminal = null;
+        boolean channelPending = false;
+        for (String[] it : items)
+        {
+            String key = it[0] + ":" + it[1];
+            if (!"terminal".equals(it[0]) || c.days == null || PromoCohort.ROAS.equals(metric))
+            {
+                // 推广商 / 推广渠道：分群数据没有推广渠道维度；ROAS 的消耗不分终端
+                channelPending |= !"terminal".equals(it[0]);
+                series.add(curve(key, it[2], r));
+                continue;
+            }
+            if (byTerminal == null)
+            {
+                byTerminal = cohortByTerminal(r);
+            }
+            PromoCohort.Day day = byTerminal.get(MarketValues.terminalKey(it[1]));
+            series.add(curve(key, it[2], metric, day == null ? List.of() : List.of(day), null));
+        }
+        if (channelPending && c.days != null)
+        {
+            addNotice(out, "COMPARE_CHANNEL_PENDING", "按推廣商 / 推廣渠道對比待數據平台提供推廣渠道映射");
+        }
         out.put("offsets", OFFSETS);
         out.put("series", series);
         return out;
     }
 
+    /** 注册终端拆分（UDS 按 terminal 分组，整段合计）：终端键 → Day */
+    private Map<String, PromoCohort.Day> cohortByTerminal(LocalDate[] r)
+    {
+        List<com.fivetech.dashboard.gateway.uds.UdsRow> rows;
+        try
+        {
+            rows = market.cohort(r[0], r[1], List.of("terminal"), MarketGateway.cohortMetrics(OFFSETS));
+        }
+        catch (RuntimeException e)
+        {
+            throw dataFailed(e);
+        }
+        Map<String, PromoCohort.Day> out = new LinkedHashMap<>();
+        for (com.fivetech.dashboard.gateway.uds.UdsRow row : rows == null ? List.<com.fivetech.dashboard.gateway.uds.UdsRow>of() : rows)
+        {
+            String key = MarketValues.terminalKey(row.str("terminal") == null ? "unknown" : row.str("terminal").trim());
+            PromoCohort.Day day = PromoCohort.day(row, null, OFFSETS);
+            // 空终端、不认识的终端都归 unknown，同一终端多行相加
+            out.merge(key == null ? "unknown" : key, day, PromoAnalysisService::sumDays);
+        }
+        return out;
+    }
+
+    private static PromoCohort.Day sumDays(PromoCohort.Day a, PromoCohort.Day b)
+    {
+        PromoCohort.Day d = new PromoCohort.Day(null, PromoCohort.add(a.reg, b.reg));
+        for (int n : OFFSETS)
+        {
+            d.byN.put(n, new BigDecimal[] { PromoCohort.add(a.matured(n), b.matured(n)), PromoCohort.add(a.retained(n), b.retained(n)),
+                PromoCohort.add(a.deposit(n), b.deposit(n)) });
+        }
+        return d;
+    }
+
+    /** 对比项的显示名；type 只能是 agent / channel / terminal，编码不认识 4004 */
+    private String compareName(List<PromoChannelDictionary.Promoter> dict, String type, String code)
+    {
+        String name = null;
+        if ("agent".equals(type))
+        {
+            name = dict.stream().filter(p -> ConfigCodes.idKey(p.getId()).equals(ConfigCodes.idKey(code)))
+                .map(PromoChannelDictionary.Promoter::getName).findFirst().orElse(null);
+        }
+        else if ("channel".equals(type))
+        {
+            name = dict.stream().flatMap(p -> p.getChannels().stream())
+                .filter(c -> ConfigCodes.idKey(c.getId()).equals(ConfigCodes.idKey(code)))
+                .map(PromoChannelDictionary.Channel::getName).findFirst().orElse(null);
+        }
+        else if ("terminal".equals(type))
+        {
+            name = terminalConfig().getTerminals().stream().filter(t -> t.getCode().equalsIgnoreCase(code))
+                .map(PromoTerminalDictionary.Terminal::getName).findFirst().orElse(null);
+        }
+        else
+        {
+            throw new ServiceException("對比項 type 只能是 agent / channel / terminal", PromoErrors.UNKNOWN_CODE);
+        }
+        if (name == null)
+        {
+            String label = "agent".equals(type) ? "推廣商" : "channel".equals(type) ? "推廣渠道" : "終端";
+            throw new ServiceException("不認識的" + label + "：" + code, PromoErrors.UNKNOWN_FILTER);
+        }
+        return name;
+    }
+
+    /** 有数据的曲线：每个天数一个值，没有值的点标原因 */
+    private static Map<String, Object> curve(String key, String name, String metric, java.util.Collection<PromoCohort.Day> days,
+        java.util.function.Function<LocalDate, BigDecimal> spendOf)
+    {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("key", key);
+        s.put("name", name);
+        List<BigDecimal> values = new ArrayList<>();
+        List<String> marks = new ArrayList<>();
+        for (int n : OFFSETS)
+        {
+            PromoCohort.Agg a = PromoCohort.agg(days, n, PromoCohort.ROAS.equals(metric) ? spendOf : null);
+            values.add(PromoCohort.value(metric, a));
+            marks.add(PromoCohort.mark(a));
+        }
+        s.put("values", values);
+        s.put("marks", marks);
+        return s;
+    }
+
+    /** 没有数据的曲线：值全为 null，未到期的点 PENDING，其余 NO_SOURCE */
     private Map<String, Object> curve(String key, String name, LocalDate[] r)
     {
         Map<String, Object> s = new LinkedHashMap<>();
@@ -822,32 +1042,100 @@ public class PromoAnalysisService
         out.put("asOf", yesterday.toString());
         out.put("currency", currency());
         out.put("dataPending", true);
+        out.put("notices", new ArrayList<Map<String, Object>>());
         out.put("offsets", OFFSETS);
+        boolean roas = PromoCohort.ROAS.equals(metric);
+        CohortData c = loadCohort(q, r, roas, out);
+        boolean ready = c.ready(metric);
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("base", null);
-        summary.put("values", new ArrayList<>(Collections.nCopies(OFFSETS.size(), null)));
+        // 汇总行：留存 / LTV 为注册人数与按到期人数加权的值，ROAS 为消耗与「合計」
+        summary.put("base", ready ? batchBase(c, roas, r[0], r[1]) : null);
+        summary.put("values", ready ? PromoCohort.values(metric, c.days.values(), OFFSETS, c::spendOf)
+            : new ArrayList<>(Collections.nCopies(OFFSETS.size(), null)));
         out.put("summary", summary);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (LocalDate d = r[1]; !d.isBefore(r[0]); d = d.minusDays(1))
         {
+            PromoCohort.Day day = ready ? c.days.get(d) : null;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("regDate", d.toString());
-            row.put("base", null);
-            row.put("values", new ArrayList<>(Collections.nCopies(OFFSETS.size(), null)));
-            if ("regRet".equals(metric))
-            {
-                row.put("counts", new ArrayList<>(Collections.nCopies(OFFSETS.size(), null)));
-            }
+            row.put("base", ready ? batchBase(c, roas, d, d) : null);
+            List<BigDecimal> values = new ArrayList<>();
+            List<Integer> counts = new ArrayList<>();
             List<String> states = new ArrayList<>();
             for (int n : OFFSETS)
             {
-                states.add(d.plusDays(n).isAfter(yesterday) ? "PENDING" : "NO_SOURCE");
+                String state = batchState(ready, day, n, d.plusDays(n).isAfter(yesterday), roas ? c.spendOf(d) : null, roas);
+                BigDecimal v = null;
+                Integer count = null;
+                if ("OK".equals(state) && day != null)
+                {
+                    v = PromoCohort.value(metric, PromoCohort.agg(List.of(day), n, roas ? c::spendOf : null));
+                    BigDecimal ret = day.retained(n);
+                    count = ret == null ? null : ret.intValue();
+                }
+                values.add(v);
+                counts.add(count);
+                states.add(state);
+            }
+            row.put("values", values);
+            if (PromoCohort.REG_RET.equals(metric))
+            {
+                row.put("counts", counts);
             }
             row.put("states", states);
             rows.add(row);
         }
         out.put("rows", rows);
         return out;
+    }
+
+    /** 第 2 列：留存 / LTV 为注册人数（没有注册为 0），ROAS 为消耗（没录入为 null） */
+    private static BigDecimal batchBase(CohortData c, boolean roas, LocalDate from, LocalDate to)
+    {
+        BigDecimal sum = null;
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1))
+        {
+            if (roas)
+            {
+                sum = PromoCohort.add(sum, c.spendOf(d));
+            }
+            else
+            {
+                PromoCohort.Day day = c.days.get(d);
+                sum = PromoCohort.add(sum == null ? BigDecimal.ZERO : sum, day == null ? null : day.reg);
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 批次格状态：按日期未到期或 UDS 的到期人数为 0 → PENDING；没取到数 → NO_SOURCE；
+     * ROAS 当天没有消耗 → NO_SPEND；其余 OK（当天没有注册时 OK、值为 null）。
+     */
+    static String batchState(boolean ready, PromoCohort.Day day, int n, boolean pendingByDate, BigDecimal spendOfDay, boolean roas)
+    {
+        if (pendingByDate)
+        {
+            return "PENDING";
+        }
+        if (!ready)
+        {
+            return "NO_SOURCE";
+        }
+        if (day == null)
+        {
+            return "OK";
+        }
+        if (!day.isMatured(n))
+        {
+            return "PENDING";
+        }
+        if (roas && (spendOfDay == null || spendOfDay.signum() <= 0))
+        {
+            return "NO_SPEND";
+        }
+        return "OK";
     }
 
     // ------------------------------------------------------------------ 7.2 裂变层级

@@ -211,7 +211,9 @@ public class DashboardExportServiceImpl implements IDashboardExportService
             throw new ServiceException("数据平台未返回作业编号，请稍后重试");
         }
         Long userId = SecurityUtils.getUserId();
-        String submittedAt = LocalDateTime.now().format(HUMAN);
+        // 提交时间、文件名时间戳按站点时区（与页面、导出文件里的时间一致），不用服务器时区
+        LocalDateTime siteNow = com.fivetech.dashboard.export.ExportTemplate.now(properties);
+        String submittedAt = siteNow.format(HUMAN);
         Map<String, String> record = new LinkedHashMap<>();
         record.put("kind", kind);
         record.put("label", label);
@@ -221,7 +223,7 @@ public class DashboardExportServiceImpl implements IDashboardExportService
         // 提交时的站点：轮询 / 取消时按它带 X-Uds-Site，任务查询不受之后切换站点影响
         record.put("site", properties.currentSite());
         // 只存文件名主干，扩展名按平台实际生成的文件决定（见 fileNames）
-        record.put("fileBase", label + "_" + LocalDateTime.now().format(STAMP));
+        record.put("fileBase", label + "_" + siteNow.format(STAMP));
         String key = taskKey(userId, job.getJobId());
         redisCache.setCacheMap(key, record);
         redisCache.expire(key, TASK_TTL_DAYS, TimeUnit.DAYS);

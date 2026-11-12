@@ -20,7 +20,9 @@ import java.util.function.Predicate;
  *   <tr><td>rd 複存人數</td><td>精确 redeposit_users，逐日相加</td></tr>
  *   <tr><td>depU 存款人數</td><td>精确 deposit_users，逐日相加</td></tr>
  *   <tr><td>depR 存款率</td><td>Σ deposit_users ÷ reg</td></tr>
- *   <tr><td>dep 存款總額 / net 淨充值（= 存款总额）</td><td>精确 deposit_amount</td></tr>
+ *   <tr><td>dep 存款總額</td><td>精确 deposit_amount</td></tr>
+ *   <tr><td>wd 提款總額</td><td>精确 withdraw_amount（2026-11-12 接入）</td></tr>
+ *   <tr><td>net 淨充值（= 存提差，2026-11-12 起）</td><td>精确 deposit_amount − withdraw_amount；任一项缺失为 null</td></tr>
  *   <tr><td>arppu</td><td>deposit_amount ÷ Σ deposit_users</td></tr>
  *   <tr><td>betU 投注人數 / bet 投注總額</td><td>精确 bet_users（逐日相加）/ bet_amount</td></tr>
  *   <tr><td>act 激活</td><td>宽表 android_first_open；没有终端拆分，只在「全部」与 Android 有值</td></tr>
@@ -36,14 +38,14 @@ public final class MarketValues
 {
     /** 可以从市场数据集取到的页面指标编码 */
     public static final Set<String> AVAILABLE = Set.of("reg", "ftd", "ftdR", "ftdAmt", "rdAmt", "rd", "depU", "depR", "dep",
-        "net", "arppu", "betU", "bet", "act");
+        "wd", "net", "arppu", "betU", "bet", "act");
 
     /** 由上游直接给出、后端不计算的指标（等数据平台提供字段）：複存率 */
     public static final Set<String> UPSTREAM = Set.of("rdR");
 
     /**
      * 页面指标要用的数据平台字段（宽表 reg、ftd_players、ftd_amount、redeposit_amount、android_first_open；
-     * 精确 deposit_users、redeposit_users、bet_users、deposit_amount、bet_amount）。取数时只取请求的指标用到的字段，
+     * 精确 deposit_users、redeposit_users、bet_users、deposit_amount、withdraw_amount、bet_amount）。取数时只取请求的指标用到的字段，
      * 见 {@link MarketGateway#cube(LocalDateTime, LocalDateTime, com.fivetech.dashboard.enums.Granularity, java.util.Collection, boolean)}。
      * 改 {@link #value} 的算法时同步改这里（单测会核对两者一致）。
      */
@@ -57,7 +59,8 @@ public final class MarketValues
         Map.entry("depU", java.util.List.of("deposit_users")),
         Map.entry("depR", java.util.List.of("deposit_users", "reg")),
         Map.entry("dep", java.util.List.of("deposit_amount")),
-        Map.entry("net", java.util.List.of("deposit_amount")),
+        Map.entry("wd", java.util.List.of("withdraw_amount")),
+        Map.entry("net", java.util.List.of("deposit_amount", "withdraw_amount")),
         Map.entry("arppu", java.util.List.of("deposit_amount", "deposit_users")),
         Map.entry("betU", java.util.List.of("bet_users")),
         Map.entry("bet", java.util.List.of("bet_amount")),
@@ -162,8 +165,12 @@ public final class MarketValues
             case "depU":
                 return cube.sum("deposit_users", t, buckets);
             case "dep":
-            case "net":
                 return cube.sum("deposit_amount", t, buckets);
+            case "wd":
+                return cube.sum("withdraw_amount", t, buckets);
+            case "net":
+                // 淨充值 = 存提差（与运营总览一致，2026-11-12 业务调整口径）：存款总额 − 提款总额，任一项取不到即不提供
+                return minus(cube.sum("deposit_amount", t, buckets), cube.sum("withdraw_amount", t, buckets));
             case "betU":
                 return cube.sum("bet_users", t, buckets);
             case "bet":
@@ -179,6 +186,12 @@ public final class MarketValues
             default:
                 return null;
         }
+    }
+
+    /** a − b；任一项为 null 返回 null（不当 0） */
+    public static BigDecimal minus(BigDecimal a, BigDecimal b)
+    {
+        return a == null || b == null ? null : a.subtract(b);
     }
 
     public static BigDecimal pct(BigDecimal a, BigDecimal b)

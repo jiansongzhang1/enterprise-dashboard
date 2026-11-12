@@ -551,6 +551,67 @@ public class DashboardProperties
     /** 默认站点在站点表里设置的币种符号（没设置为 null） */
     public String getDefaultSiteCurrencySymbol() { return defaultSiteCurrencySymbol; }
 
+    /** 实时站点的编码（大写）：站点表 monitor_site_setting.realtime = true 的站点，SiteRegistry 加载时写入 */
+    private volatile java.util.Set<String> realtimeSites = java.util.Set.of();
+
+    /** 站点表加载后更新实时站点清单 */
+    public void applyRealtimeSites(java.util.Collection<String> codes)
+    {
+        java.util.Set<String> set = new java.util.HashSet<>();
+        if (codes != null)
+        {
+            for (String c : codes)
+            {
+                if (c != null && !c.trim().isEmpty())
+                {
+                    set.add(c.trim().toUpperCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        this.realtimeSites = java.util.Collections.unmodifiableSet(set);
+    }
+
+    /** 站点数据起始日（编码大写 → 日期）：站点表 monitor_site_setting.data_start_date，SiteRegistry 加载时写入 */
+    private volatile java.util.Map<String, java.time.LocalDate> dataStartDates = java.util.Map.of();
+
+    /** 站点表加载后更新各站点的数据起始日 */
+    public void applyDataStartDates(java.util.Map<String, java.time.LocalDate> dates)
+    {
+        java.util.Map<String, java.time.LocalDate> m = new java.util.HashMap<>();
+        if (dates != null)
+        {
+            dates.forEach((c, d) -> {
+                if (c != null && !c.trim().isEmpty() && d != null)
+                {
+                    m.put(c.trim().toUpperCase(java.util.Locale.ROOT), d);
+                }
+            });
+        }
+        this.dataStartDates = java.util.Collections.unmodifiableMap(m);
+    }
+
+    /** 站点表里设置的数据起始日（yyyy-MM-dd）；没设置为 null */
+    public String siteDataStartDateSetting(String code)
+    {
+        String c = code == null || code.trim().isEmpty() ? defaultSite : code.trim();
+        java.time.LocalDate d = c == null ? null : dataStartDates.get(c.toUpperCase(java.util.Locale.ROOT));
+        return d == null ? null : d.toString();
+    }
+
+    /** 站点数据起始日（yyyy-MM-dd）：站点管理里设置的；没设置用 dashboard.launch-date */
+    public String siteDataStartDate(String code)
+    {
+        String d = siteDataStartDateSetting(code);
+        return d != null ? d : launchDate;
+    }
+
+    /** 是否实时站点（站点管理里设置）；code 为空按默认站点 */
+    public boolean isRealtime(String code)
+    {
+        String c = code == null || code.trim().isEmpty() ? defaultSite : code.trim();
+        return c != null && realtimeSites.contains(c.toUpperCase(java.util.Locale.ROOT));
+    }
+
     private boolean isDefault(String code)
     {
         return code == null || code.trim().isEmpty() || code.trim().equalsIgnoreCase(defaultSite);

@@ -60,7 +60,7 @@ public class BudgetSpendService
     {
         String site = dashboard.currentSite();
         LocalDate today = today(site);
-        LocalDate start = dataStart();
+        LocalDate start = dataStart(site);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("siteCode", site);
         m.put("siteName", dashboard.siteName(site));
@@ -194,7 +194,7 @@ public class BudgetSpendService
         {
             throw MonitorFieldException.of("file", "文件讀取失敗，請重新上傳");
         }
-        BudgetImportValidator.Context ctx = new BudgetImportValidator.Context(kind, today(site), dataStart(),
+        BudgetImportValidator.Context ctx = new BudgetImportValidator.Context(kind, today(site), dataStart(site),
             channels.promotersOf(site), props.maxDays());
         BudgetImportValidator.Outcome out = BudgetImportValidator.validate(file.getOriginalFilename(), bytes, ctx);
         BudgetImportResult r = out.getResult();
@@ -207,6 +207,10 @@ public class BudgetSpendService
             if (BudgetWriteOutcome.DISABLED.equals(w.getStatus()))
             {
                 r.setWriteNote(w.getMessage());
+            }
+            if (BudgetWriteOutcome.CONFIRM_REQUIRED.equals(w.getStatus()))
+            {
+                r.setTitle(confirmTitle(r.getValid(), r.getFailed()));
             }
         }
         r.setWritten(written);
@@ -348,7 +352,7 @@ public class BudgetSpendService
         {
             throw MonitorFieldException.of("to", "單次最多 " + props.maxDays() + " 天");
         }
-        LocalDate start = dataStart();
+        LocalDate start = dataStart(site);
         if (start != null && from.isBefore(start))
         {
             throw MonitorFieldException.of("from", "早於數據起始日 " + start);
@@ -375,6 +379,12 @@ public class BudgetSpendService
         return o;
     }
 
+    /** 确认页标题（OPT-14）：还没写入，不写「已匯入」 */
+    static String confirmTitle(int valid, int failed)
+    {
+        return "確認匯入 " + valid + " 行" + (failed > 0 ? "，" + failed + " 行有誤" : "");
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private LocalDate today(String site)
@@ -382,12 +392,12 @@ public class BudgetSpendService
         return LocalDate.now(dashboard.siteZone(site));
     }
 
-    /** 数据起始日：dashboard.launch-date（yyyy-MM-dd）；没配或写错时不限制 */
-    private LocalDate dataStart()
+    /** 数据起始日：站点管理里设置的，没设置用 dashboard.launch-date（yyyy-MM-dd）；没配或写错时不限制 */
+    private LocalDate dataStart(String site)
     {
         try
         {
-            String s = dashboard.getLaunchDate();
+            String s = dashboard.siteDataStartDate(site);
             return s == null || s.trim().isEmpty() ? null : LocalDate.parse(s.trim());
         }
         catch (RuntimeException e)

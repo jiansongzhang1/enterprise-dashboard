@@ -1791,18 +1791,19 @@ public class UdsMetricDataGateway implements MetricDataGateway
      */
     /**
      * 明细不带时间时的主轴：站点上线日 00:00 ~ 统计时区下一个整点（右开）。
-     * 上线日取 dashboard.launch-date，解析失败时退回 2026-03-01。
+     * 上线日取当前站点的数据起始日（站点管理里设置，没设置用 dashboard.launch-date），解析失败时退回 2026-03-01。
      */
     private LocalDateTime[] fullAxis()
     {
         LocalDate launch;
+        String start = dashboard.siteDataStartDate(dashboard.currentSite());
         try
         {
-            launch = LocalDate.parse(dashboard.getLaunchDate().trim());
+            launch = LocalDate.parse(start.trim());
         }
         catch (Exception e)
         {
-            log.warn("[uds] dashboard.launch-date 无法解析（{}），明细主轴下界退回 2026-03-01", dashboard.getLaunchDate());
+            log.warn("[uds] 站点数据起始日无法解析（{}），明细主轴下界退回 2026-03-01", start);
             launch = LocalDate.of(2026, 3, 1);
         }
         java.time.ZoneId zone;
@@ -1833,7 +1834,9 @@ public class UdsMetricDataGateway implements MetricDataGateway
             dims.add(d.getRowKey());
             dims.addAll(d.getFields().values());
             // 排序 / 筛选用的替代字段（如基准币 default_amount）一并投影，避免按未投影字段排序
-            dims.addAll(d.getFilterFields().values());
+            // 只投影已配置的：待定字段在 yml 里写成空串（如 filter-fields.lost: ""），投影空串 UDS 报 4002「维度不存在」
+            d.getFilterFields().values().stream().filter(StringUtils::isNotBlank).map(String::trim).forEach(dims::add);
+            dims.removeIf(StringUtils::isBlank);
             body.put("dimensions", new ArrayList<>(dims));
         }
         body.put("metrics", List.of(d.getCountMetric()));
@@ -2499,11 +2502,13 @@ public class UdsMetricDataGateway implements MetricDataGateway
         {
             case HOUR:
                 return (int) Math.max(0, ChronoUnit.HOURS.between(from, to));
+            // 日 / 周向上取整：终点截到当前整点时，今天（不完整的一天 / 一周）也算一格，
+            // 例：近 7 天 11-05 00:00 ~ 11-11 15:00 是 7 天，不是 6 天
             case WEEK:
-                return (int) Math.max(0, Math.ceil(ChronoUnit.DAYS.between(from, to) / 7.0));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / (7 * 1440.0)));
             case DAY:
             default:
-                return (int) Math.max(0, ChronoUnit.DAYS.between(from, to));
+                return (int) Math.max(0, Math.ceil(ChronoUnit.MINUTES.between(from, to) / 1440.0));
         }
     }
 

@@ -14,7 +14,7 @@ import com.fivetech.dashboard.view.domain.ViewSlot;
  *   <li>{@link #CARDS} 概览 · 核心指标卡：概览可选的指标（{@link PromoMetricCatalog#overviewMetrics()}，指标管理里停用或从页面摘掉的不再出现），
  *       名称取指标字典；对应概览请求的 {@code metrics}</li>
  *   <li>{@link #COLUMNS} 渠道表现 · 表格列：{@link PromoMetricCatalog#COLUMNS}；对应 {@code /channels/table|export} 的 {@code columns}</li>
- *   <li>{@link #ROWS} 渠道表现 · 行维度：agent / channel / date / terminal / relation；对应 {@code rows}</li>
+ *   <li>{@link #ROWS} 渠道表现 · 行维度：agent / channel / date / terminal（relation 2026-11-12 去掉）；对应 {@code rows}</li>
  * </ul>
  *
  * <p>UDS 按站点不提供的指标（本站不可用）待数据平台给出按站点的数据集清单后在这里标 unavailable，一期全部可用。</p>

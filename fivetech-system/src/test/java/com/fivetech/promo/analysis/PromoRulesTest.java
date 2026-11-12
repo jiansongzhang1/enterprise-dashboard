@@ -242,14 +242,23 @@ class PromoRulesTest
         PromoScope scope = PromoScope.resolve(DICT, List.of(), List.of(), TERMINALS, null);
         PromoTime.Range r = PromoTime.range("2026-10-30 00:00", "2026-11-02 00:00");
         LocalDate yesterday = LocalDate.of(2026, 11, 4);
-        assertEquals(4003, code(() -> ChannelTree.of(List.of("channel", "agent"), scope, TERMINALS, r, yesterday)));
         assertEquals(4003, code(() -> ChannelTree.of(List.of("agent", "agent"), scope, TERMINALS, r, yesterday)));
         assertEquals(4003, code(() -> ChannelTree.of(List.of("device"), scope, TERMINALS, r, yesterday)));
+        // 推廣關係 2026-11-12 去掉：传了按不认识的维度；最多 4 层
+        assertEquals(4003, code(() -> ChannelTree.of(List.of("agent", "relation"), scope, TERMINALS, r, yesterday)));
+        assertEquals(4003, code(() -> ChannelTree.of(List.of("agent", "channel", "date", "terminal", "agent"), scope, TERMINALS, r, yesterday)));
+        assertFalse(ChannelTree.DIM_NAMES.containsKey("relation"));
         ChannelTree tree = ChannelTree.of(List.of("agent", "channel", "date", "terminal"), scope, TERMINALS, r, yesterday);
         assertEquals(2, tree.members(0, List.of()).size());
         List<ChannelTree.Member> hada = tree.members(1, List.of(new PathItem("agent", "1001.0")));
         assertEquals(2, hada.size());
         assertTrue(hada.get(1).disabled);
+        // 推廣渠道可以在推廣商之上（2026-11-10 起不限先后）：渠道下只列它所属的推廣商
+        ChannelTree rev = ChannelTree.of(List.of("channel", "agent"), scope, TERMINALS, r, yesterday);
+        assertEquals(3, rev.members(0, List.of()).size());
+        List<ChannelTree.Member> owners = rev.members(1, List.of(new PathItem("channel", "2002")));
+        assertEquals(1, owners.size());
+        assertEquals(hada.get(0).agent, owners.get(0).name);
         assertEquals("2026-11-01", tree.members(2, List.of()).get(0).key);   // 日期从新到旧
         assertEquals(2 + 3 + 3 * 3 + 3 * 3 * 2, tree.count(0, List.of(), 1000));
         assertEquals(4003, code(() -> tree.checkParent(List.of(new PathItem("agent", "9")))));
@@ -287,6 +296,108 @@ class PromoRulesTest
         assertFalse(PromoMetricCatalog.column("dep").isDrillable());
         assertEquals(4003, code(() -> PromoAnalysisService.columns(List.of("reg", "nope"))));
         assertEquals(4003, code(() -> PromoAnalysisService.sortOf(null, "nope")));
+    }
+
+    /** 成本类全站估算：只算有消耗的日；CPA = 消耗 ÷ 全站注册，D0 ROI = 存款总额 ÷ 消耗 − 1（百分数），带全站估算说明 */
+    @Test
+    void siteCostEstimate()
+    {
+        LocalDate d1 = LocalDate.of(2026, 11, 9);
+        LocalDate d2 = LocalDate.of(2026, 11, 10);
+        Map<PromoCost.Cell, BigDecimal> spend = new java.util.LinkedHashMap<>();
+        spend.put(new PromoCost.Cell(d1, "2001"), new BigDecimal("100"));
+        spend.put(new PromoCost.Cell(d1, "2002"), new BigDecimal("50"));
+        com.fivetech.promo.analysis.market.MarketCube cube = new com.fivetech.promo.analysis.market.MarketCube();
+        String all = com.fivetech.promo.analysis.market.MarketCube.ALL;
+        cube.add(d1.atStartOfDay(), all, "reg", new BigDecimal("30"));
+        cube.add(d2.atStartOfDay(), all, "reg", new BigDecimal("10"));
+        cube.add(d1.atStartOfDay(), all, "deposit_amount", new BigDecimal("300"));
+        cube.add(d1.atStartOfDay(), all, "withdraw_amount", new BigDecimal("75"));
+        PromoCost.Result cpa = PromoOverviewService.siteCost("cpa", spend, cube, d1, d2);
+        assertEquals("OK", cpa.state());
+        assertEquals(0, new BigDecimal("5.00").compareTo(cpa.value()));
+        assertEquals(PromoOverviewService.SITE_COST_NOTE, cpa.note());
+        PromoCost.Result roi = PromoOverviewService.siteCost("roi", spend, cube, d1, d2);
+        // 淨充值 = 存提差 300 − 75 = 225（2026-11-12 起）；ROI = 225 ÷ 150 − 1 = 50%
+        assertEquals(0, new BigDecimal("50.00").compareTo(roi.value()));
+        assertEquals("NO_SPEND", PromoOverviewService.siteCost("cpa", Map.of(), cube, d1, d2).state());
+    }
+
+    /** 成本类序列：每片用同一套算法各算一次；没有消耗的片、超过最后一天的片为 null；周粒度 7 天一片；小时粒度全 null */
+    @Test
+    void costSeriesPerPoint()
+    {
+        LocalDate d1 = LocalDate.of(2026, 11, 9);
+        LocalDate d2 = LocalDate.of(2026, 11, 10);
+        Map<PromoCost.Cell, BigDecimal> spend = new java.util.LinkedHashMap<>();
+        spend.put(new PromoCost.Cell(d1, "2001"), new BigDecimal("150"));
+        spend.put(new PromoCost.Cell(d2.plusDays(1), "2001"), new BigDecimal("40"));
+        com.fivetech.promo.analysis.market.MarketCube cube = new com.fivetech.promo.analysis.market.MarketCube();
+        String all = com.fivetech.promo.analysis.market.MarketCube.ALL;
+        cube.add(d1.atStartOfDay(), all, "reg", new BigDecimal("30"));
+        cube.add(d2.atStartOfDay(), all, "reg", new BigDecimal("10"));
+        cube.add(d2.plusDays(1).atStartOfDay(), all, "reg", new BigDecimal("8"));
+        java.util.function.BiFunction<LocalDate, LocalDate, PromoCost.Result> calc =
+            (s, e) -> PromoOverviewService.siteCost("cpa", PromoCost.filter(spend, s, e, k -> true), cube, s, e);
+        // 日：11-09 = 150 ÷ 30；11-10 没有消耗；11-11 有消耗但超过最后一天（11-10）不算；第 4 片超出
+        List<BigDecimal> day = PromoOverviewService.costSeries(d1, d2, com.fivetech.dashboard.enums.Granularity.DAY, 4, calc);
+        assertEquals(4, day.size());
+        assertEquals(0, new BigDecimal("5.00").compareTo(day.get(0)));
+        assertNull(day.get(1));
+        assertNull(day.get(2));
+        assertNull(day.get(3));
+        // 最后一天放到 11-11：第 3 片 = 40 ÷ 8
+        assertEquals(0, new BigDecimal("5.00").compareTo(
+            PromoOverviewService.costSeries(d1, d2.plusDays(1), com.fivetech.dashboard.enums.Granularity.DAY, 3, calc).get(2)));
+        // 周：一片含 11-09 ~ 11-11，有消耗的日 = 11-09、11-11 → (150 + 40) ÷ (30 + 8)
+        List<BigDecimal> week = PromoOverviewService.costSeries(d1, d2.plusDays(1), com.fivetech.dashboard.enums.Granularity.WEEK, 2, calc);
+        assertEquals(0, new BigDecimal("5.00").compareTo(week.get(0)));
+        assertNull(week.get(1));
+        // 小时：消耗按日录入，没有序列
+        assertTrue(PromoOverviewService.costSeries(d1, d2, com.fivetech.dashboard.enums.Granularity.HOUR, 24, calc).stream()
+            .allMatch(java.util.Objects::isNull));
+        // 首存成本、D0 ROI 走同一条路：11-09 首存 6 → 150 ÷ 6 = 25；淨充值 300 − 75 = 225 → 225 ÷ 150 − 1 = 50%
+        cube.add(d1.atStartOfDay(), all, "ftd_players", new BigDecimal("6"));
+        cube.add(d1.atStartOfDay(), all, "deposit_amount", new BigDecimal("300"));
+        cube.add(d1.atStartOfDay(), all, "withdraw_amount", new BigDecimal("75"));
+        for (String[] c : new String[][] { { "ftdCost", "25.00" }, { "roi", "50.00" } })
+        {
+            List<BigDecimal> v = PromoOverviewService.costSeries(d1, d2, com.fivetech.dashboard.enums.Granularity.DAY, 2,
+                (s, e) -> PromoOverviewService.siteCost(c[0], PromoCost.filter(spend, s, e, k -> true), cube, s, e));
+            assertEquals(0, new BigDecimal(c[1]).compareTo(v.get(0)), c[0]);
+            assertNull(v.get(1), c[0] + "：11-10 没有消耗");
+        }
+    }
+
+    /** 投放日报合计行的全站值：按日筛桶；已有值（消耗等）不覆盖；数据平台没有的列（提款）留空；比率按合计后的分子分母 */
+    @Test
+    void dailyReportSiteTotals()
+    {
+        com.fivetech.promo.analysis.market.MarketCube cube = new com.fivetech.promo.analysis.market.MarketCube();
+        LocalDateTime d1 = LocalDateTime.of(2026, 11, 9, 0, 0);
+        LocalDateTime d2 = LocalDateTime.of(2026, 11, 10, 0, 0);
+        String all = com.fivetech.promo.analysis.market.MarketCube.ALL;
+        cube.add(d1, all, "reg", new BigDecimal("100"));
+        cube.add(d1, all, "ftd_players", new BigDecimal("20"));
+        cube.add(d2, all, "reg", new BigDecimal("50"));
+        cube.add(d2, all, "ftd_players", new BigDecimal("5"));
+        cube.add(d2, all, "deposit_amount", new BigDecimal("880.5"));
+        cube.add(d2, all, "withdraw_amount", new BigDecimal("300"));
+        List<String> cols = PromoMetricCatalog.DAILY_REPORT_COLUMNS;
+        Object[] total = new Object[4 + cols.size()];
+        total[4 + cols.indexOf("spend")] = new BigDecimal("10");
+        PromoExportService.fillSiteTotals(total, cube, null);
+        assertEquals(0, new BigDecimal("150").compareTo((BigDecimal) total[4 + cols.indexOf("reg")]));
+        assertEquals(0, new BigDecimal("25").compareTo((BigDecimal) total[4 + cols.indexOf("ftd")]));
+        assertEquals(0, new BigDecimal("16.67").compareTo((BigDecimal) total[4 + cols.indexOf("ftdR")]));
+        assertEquals(0, new BigDecimal("10").compareTo((BigDecimal) total[4 + cols.indexOf("spend")]));
+        // 提款總額：精确 withdraw_amount（2026-11-12 接入）；提款人數数据平台还没有，留空
+        assertEquals(0, new BigDecimal("300").compareTo((BigDecimal) total[4 + cols.indexOf("wd")]));
+        assertNull(total[4 + cols.indexOf("wdU")]);
+        Object[] day = new Object[4 + cols.size()];
+        PromoExportService.fillSiteTotals(day, cube, b -> b.toLocalDate().equals(d2.toLocalDate()));
+        assertEquals(0, new BigDecimal("50").compareTo((BigDecimal) day[4 + cols.indexOf("reg")]));
+        assertEquals(0, new BigDecimal("880.5").compareTo((BigDecimal) day[4 + cols.indexOf("dep")]));
     }
 
     @Test

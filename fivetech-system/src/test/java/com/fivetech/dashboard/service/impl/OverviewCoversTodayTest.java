@@ -48,6 +48,7 @@ class OverviewCoversTodayTest
     void dayGranularity()
     {
         assertTrue(OverviewServiceImpl.coversToday(TODAY, TODAY.plusDays(1), NOW_HOUR, Granularity.DAY, NOW_HOUR));
+        assertTrue(OverviewServiceImpl.coversToday(TODAY, TODAY.plusHours(23), NOW_HOUR, Granularity.DAY, NOW_HOUR));
         assertTrue(OverviewServiceImpl.coversToday(TODAY, NOW_HOUR, NOW_HOUR, Granularity.DAY, NOW_HOUR));
         assertFalse(OverviewServiceImpl.coversToday(TODAY, TODAY.plusHours(6), TODAY.plusHours(6), Granularity.DAY, NOW_HOUR),
                 "日粒度只到 06:00，不是整个今天");

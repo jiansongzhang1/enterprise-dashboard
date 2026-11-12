@@ -54,7 +54,8 @@ public class MarketGateway
     public static final List<String> WIDE_BY_TERMINAL = List.of("reg", "ftd_players", "ftd_amount", "redeposit_amount");
 
     /** 精确来源：按桶去重的人数与金额 */
-    public static final List<String> PRECISE = List.of("deposit_users", "redeposit_users", "bet_users", "deposit_amount", "bet_amount");
+    public static final List<String> PRECISE = List.of("deposit_users", "redeposit_users", "bet_users", "deposit_amount", "withdraw_amount",
+        "bet_amount");
 
     private final UdsClient client;
 
@@ -276,6 +277,57 @@ public class MarketGateway
             d.add(0, "uds_rowkey");
         }
         return client.queryWithMeta(memberBody(d, new ArrayList<>(filters), order, limit, offset)).getRows();
+    }
+
+    // ------------------------------------------------------------------ 注册分群
+
+    /** 留存与回收要的分群指标：注册人数 reg，加上每个天数 N 的到期人数、留存人数、N 日累计存款额 */
+    public static List<String> cohortMetrics(List<Integer> offsets)
+    {
+        List<String> m = new ArrayList<>();
+        m.add("reg");
+        for (int n : offsets)
+        {
+            m.add("matured_d" + n);
+            m.add("retained_d" + n);
+            m.add("deposit_amount_d" + n);
+        }
+        return m;
+    }
+
+    /**
+     * 注册分群 {@code dashboard_market_cohort_v1}：注册日 [from, to]（两端都含，按日），按 dims 分组（空 = 整段一行）。
+     * <p>第 N 日还没结束的会员不计入：整行没到期时 {@code matured_dN = 0}、其余为 null（不是 0）。
+     * 只能按 reg_dt / referral_code / agent_login / terminal 分组，没有推广渠道维度。</p>
+     *
+     * @return 行；整数据集缺口（如 IVI 站点，200 + meta.omitted）返回 null
+     */
+    public List<UdsRow> cohort(LocalDate from, LocalDate to, List<String> dims, List<String> metrics)
+    {
+        Map<String, Object> time = new LinkedHashMap<>();
+        time.put("dimension", "reg_dt");
+        time.put("granularity", "DAY");
+        time.put("from", from.format(DATE));
+        // 分群数据集只有 DAY，to 写日期、闭区间
+        time.put("to", to.format(DATE));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("dataset", props.getCohortDataset());
+        body.put("dimensions", new ArrayList<>(dims));
+        body.put("metrics", new ArrayList<>(metrics));
+        body.put("time", time);
+        putFilters(body, new ArrayList<>());
+        List<Map<String, Object>> order = new ArrayList<>();
+        dims.forEach(d -> order.add(order(d, "ASC")));
+        body.put("orderBy", order);
+        body.put("limit", Math.max(1, Math.min(1000, props.getPageSize())));
+        body.put("offset", 0);
+        body.put("options", options());
+        UdsQueryResult first = client.queryWithMeta(body);
+        if (first.isDatasetOmitted())
+        {
+            return null;
+        }
+        return allRows(body, first);
     }
 
     // ------------------------------------------------------------------ 请求体

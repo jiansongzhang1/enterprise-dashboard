@@ -16,6 +16,12 @@ public class OverviewMonitoringVO implements Serializable
     /** 是否已有启用的告警规则 */
     private boolean configured;
 
+    /**
+     * 当前站点此刻是否有生效的监控：判定引擎已开启（monitor.engine.enabled）且本站至少有 1 条启用的规则。
+     * configured 只看规则，不看引擎；前端判断「有没有在监控」用 active
+     */
+    private boolean active;
+
     /** 已绑定的通知通道 */
     private List<String> channels = new ArrayList<>();
 
@@ -27,6 +33,16 @@ public class OverviewMonitoringVO implements Serializable
     public void setConfigured(boolean configured)
     {
         this.configured = configured;
+    }
+
+    public boolean isActive()
+    {
+        return active;
+    }
+
+    public void setActive(boolean active)
+    {
+        this.active = active;
     }
 
     public List<String> getChannels()
