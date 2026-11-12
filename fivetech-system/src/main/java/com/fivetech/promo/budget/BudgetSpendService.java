@@ -208,6 +208,10 @@ public class BudgetSpendService
             {
                 r.setWriteNote(w.getMessage());
             }
+            if (BudgetWriteOutcome.CONFIRM_REQUIRED.equals(w.getStatus()))
+            {
+                r.setTitle(confirmTitle(r.getValid(), r.getFailed()));
+            }
         }
         r.setWritten(written);
         log.info("[promo-budget] 导入 site={} kind={} file={} status={} total={} valid={} failed={} empty={} written={} operator={}",
@@ -373,6 +377,12 @@ public class BudgetSpendService
         BudgetWriteOutcome o = writer.resume(token.trim(), Boolean.TRUE.equals(confirm), dashboard.currentSite(), operator);
         log.info("[promo-budget] 继续写入 site={} confirm={} → {} operator={}", dashboard.currentSite(), confirm, o.getStatus(), operator);
         return o;
+    }
+
+    /** 确认页标题（OPT-14）：还没写入，不写「已匯入」 */
+    static String confirmTitle(int valid, int failed)
+    {
+        return "確認匯入 " + valid + " 行" + (failed > 0 ? "，" + failed + " 行有誤" : "");
     }
 
     // ------------------------------------------------------------------ helpers

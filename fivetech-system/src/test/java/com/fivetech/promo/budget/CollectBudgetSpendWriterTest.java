@@ -170,7 +170,8 @@ class CollectBudgetSpendWriterTest
         assertFalse(o.isWritten());
         assertEquals(List.of("2026-12-01"), o.getOverwriteDates());
         assertEquals(3, o.getSubmitRows());
-        assertTrue(o.getMessage().contains("整日替換"), o.getMessage());
+        // OPT-14：文件中的 12-01 × 2002 已有值 → 提示；不再写「整日替換」
+        assertEquals("12-01 已有消耗。確認後，文件中的推廣渠道按本次金額覆蓋，其他推廣渠道保持不變。", o.getMessage());
         assertNotNull(o.getToken());
 
         assertEquals(BudgetWriteOutcome.FAILED, w.resume(o.getToken(), true, "SITE-BR", "admin").getStatus());   // 换了站点不行
@@ -193,8 +194,37 @@ class CollectBudgetSpendWriterTest
         api.answers.add(resp(409, "{\"code\":\"overwrite_confirmation_required\",\"confirmation_id\":\"c1\",\"overwrite_dates\":[\"2026-12-01\"]}", null));
         CollectBudgetSpendWriter w = writer(props(), api, new FakeReader());
         BudgetWriteOutcome o = w.write("SITE-IN", BudgetKind.SPEND, List.of(rec(2, D1, "1001", "2001", "x", "1")), "admin");
+        assertEquals(BudgetWriteOutcome.CONFIRM_REQUIRED, o.getStatus());
+        assertNull(o.getMessage(), "文件中的日期 × 推廣渠道都沒有已有值：不出覆蓋提示，仍要確認");
         assertEquals(BudgetWriteOutcome.CANCELLED, w.resume(o.getToken(), false, "SITE-IN", "admin").getStatus());
         assertEquals(1, api.keys.size());
+    }
+
+    /** OPT-14 覆盖提示：只算文件里已有值的「日期 × 推广渠道」；连续日期合并，MM-DD，跨年写完整日期 */
+    @Test
+    void overwriteNoticeMergesRangesAndOnlyCountsFileCells()
+    {
+        // 12-01：文件里的 2002 已有值 → 算；12-02：文件里的 2003 没有值（别的渠道有也不算）
+        FakeReader r = udsDay1();
+        r.rows.add(new BudgetDataReader.Row(D2, "1001", "hada", "2001", "DSP-hada", new BigDecimal("3")));
+        assertEquals(Set.of(D1), CollectBudgetSpendWriter.overwrittenDates(Set.of(D1, D2), r.rows,
+            List.of(rec(2, D1, "1001", "2002", "meta-hada", "1"), rec(3, D2, "1002", "2003", "TG-jason", "1"))));
+        Set<LocalDate> days = new java.util.TreeSet<>();
+        for (int d : new int[] { 5, 6, 7, 10, 11 })
+        {
+            days.add(LocalDate.of(2026, 11, d));
+        }
+        assertEquals("11-05 – 11-07、11-10 – 11-11 已有消耗。確認後，文件中的推廣渠道按本次金額覆蓋，其他推廣渠道保持不變。",
+            CollectBudgetSpendWriter.overwriteNotice(BudgetKind.SPEND, days, days));
+        assertEquals("11-05 已有預算。確認後，文件中的推廣渠道按本次金額覆蓋，其他推廣渠道保持不變。",
+            CollectBudgetSpendWriter.overwriteNotice(BudgetKind.BUDGET, Set.of(LocalDate.of(2026, 11, 5)), days));
+        // 文件跨年：写完整日期
+        Set<LocalDate> cross = Set.of(LocalDate.of(2026, 12, 31), LocalDate.of(2027, 1, 1));
+        assertTrue(CollectBudgetSpendWriter.overwriteNotice(BudgetKind.SPEND, cross, cross).startsWith("2026-12-31 – 2027-01-01 已有消耗。"));
+        assertNull(CollectBudgetSpendWriter.overwriteNotice(BudgetKind.SPEND, Set.of(), days));
+        // 确认页标题
+        assertEquals("確認匯入 154 行", BudgetSpendService.confirmTitle(154, 0));
+        assertEquals("確認匯入 154 行，2 行有誤", BudgetSpendService.confirmTitle(154, 2));
     }
 
     @Test

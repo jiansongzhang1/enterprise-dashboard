@@ -27,6 +27,7 @@
 --   ⑩ 2026-11-10  个人视图 · 行维度去掉顺序限制            promo.channel.rows 的 rules 清空（推廣渠道不再要求排在推廣商之下）
 --   ⑪ 2026-11-10  站点管理 · 实时站点                      monitor_site_setting.realtime（站点管理可编辑；getInfo sites[]、运营总览 realtime 返回）
 --   ⑫ 2026-11-11  站点管理 · 数据起始日                    monitor_site_setting.data_start_date（站点管理可编辑；getInfo sites[].dataStartDate 返回）
+--   ⑬ 2026-11-12  推广分析 · 去掉行维度「推廣關係」、淨充值改为存提差   promo.channel.rows 删 relation；promoNet 的取数对照与说明（无结构变化）
 --
 -- 上线记录：
 --   （尚未上线）
@@ -860,3 +861,37 @@ COMMENT ON COLUMN monitor_site_setting.data_start_date IS '站点数据起始日
 -- ⑫ 自检：每个站点一行，data_start_date 默认为空（用 dashboard.launch-date）；在「系统管理 › 站点管理」里设置，或：
 --   UPDATE monitor_site_setting SET data_start_date = DATE '2026-03-01', update_time = localtimestamp WHERE upper(site_code) = 'H86';
 SELECT site_code, site_name, data_start_date FROM monitor_site_setting WHERE site_name IS NOT NULL ORDER BY sort_no, site_code;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑬ 2026-11-12 · 推广分析 · 去掉渠道表现行维度「推廣關係」；淨充值改为与存提差一致（新 JAR 上线时一起执行，顺序不限）
+--   1. 推廣關係（relation）数据近期不能同步，渠道表现的行维度去掉它：删除可选项 promo.channel.rows / relation。
+--      新 JAR 不再认 rows 里的 relation（4003）；用户已保存的视图里含 relation 的，后端读取时自动忽略，不用改数据。
+--      视图定义按「行数 + max(update_time)」热加载，删除后约 1 分钟生效，不用重启。
+--   2. 淨充值口径业务侧调整为「存款總額 − 提款總額」（与运营总览的存提差一致）：只更新指标管理里 promoNet 的取数对照与说明，
+--      页面取数由代码决定（deposit_amount − withdraw_amount）。
+--   回滚：INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+--           VALUES ('promo.channel.rows', 'relation', NULL, 'dim', '維度', 40, NULL) ON CONFLICT (slot_code, item_code) DO NOTHING;
+--         UPDATE dashboard_metric_card SET remark = E'推广分析 net：＝存款總額（2026-11-09 已确认；与运营总览的存提差 net 不同）\nUDS：可映射（精确数据集）',
+--                update_time = CURRENT_TIMESTAMP WHERE metric_code = 'promoNet';
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+DELETE FROM dashboard_view_slot_item WHERE slot_code = 'promo.channel.rows' AND item_code = 'relation';
+
+UPDATE dashboard_view_slot SET update_time = localtimestamp WHERE slot_code = 'promo.channel.rows';
+
+UPDATE dashboard_metric_card
+   SET source_table = 'dashboard_market_hour_v1',
+       source_field = 'deposit_amount',
+       remark       = E'推广分析 net：存款總額 − 提款總額（deposit_amount − withdraw_amount，2026-11-12 起与运营总览的存提差一致）\nUDS：可映射（精确数据集）',
+       update_by    = 'admin',
+       update_time  = CURRENT_TIMESTAMP
+ WHERE metric_code = 'promoNet'
+   AND position('withdraw_amount' IN coalesce(remark, '')) = 0;
+
+COMMIT;
+
+-- ⑬ 自检：行维度剩 agent / channel / terminal / date 4 项；promoNet 的说明含 withdraw_amount
+SELECT item_code, sort_no, default_sort FROM dashboard_view_slot_item WHERE slot_code = 'promo.channel.rows' ORDER BY sort_no;
+SELECT metric_code, source_table, source_field, remark FROM dashboard_metric_card WHERE metric_code = 'promoNet';

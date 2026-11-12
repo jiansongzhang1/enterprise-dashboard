@@ -56,12 +56,12 @@
 
 - 入口：`PromoOverviewService`（概览）、`PromoAnalysisService`（渠道表现 / 漏斗 / 留存 / 裂变）、`PromoExportService`（三个导出）。
 - 指标目录 `PromoMetricCatalog`，16 个概览指标 + `DAILY_REPORT_COLUMNS`（17 列）。
-- 指标口径：`net`（淨充值）= `deposit_amount`（存款總額，2026-11-09 确认）；`act`（激活）= `android_first_open`，只在全部 / Android 有值，口径待定。
+- 指标口径：`net`（淨充值）= `deposit_amount − withdraw_amount`（存提差，与运营总览一致；2026-11-12 业务调整，原为存款總額），任一项缺失为 null；`wd`（提款總額）= `withdraw_amount`（2026-11-12 接入，提款人數 `wdU` 仍无来源）；D0 ROI 跟着变，留存与回收的 ROAS / LTV 仍用 N 日累计存款额（2026-11-12 确认先保持，分群数据也没有提款字段）；`act`（激活）= `android_first_open`，只在全部 / Android 有值，口径待定。
 - 成本类（`PromoCost`）：CPA / 首存成本 / D0 ROI / UV 成本，按**有效格子**（日 × 推广渠道，消耗 > 0）计算。
   渠道行为数据缺源 → 推广商、渠道、终端都为「全部」时按**全站估算**（`PromoOverviewService.siteCost`），
   卡片 `note` 写明是估算；选了具体渠道仍返回 NO_SOURCE。
 - 留存与回收（2026-11-12 接入）：读 UDS `dashboard_market_cohort_v1`（`MarketGateway#cohort`，规则在 `PromoCohort`）。比率一律分子分母各自相加再除；`matured_dN = 0` 为 PENDING、其余列是 null 不是 0；ROAS 只算有消耗的注册日。分群数据没有推广渠道维度，选了推广商 / 渠道仍 NO_SOURCE；对比线新增 `terminal`。
-- 行维度（`ChannelTree`）：agent / channel / date / terminal / relation，1–5 层，**先后不限**（2026-11-10 去掉了「渠道须在推广商之下」）。
+- 行维度（`ChannelTree`）：agent / channel / date / terminal，1–4 层（推广关系 relation 2026-11-12 去掉，数据近期不能同步；SQL ⑬ 删视图可选项），**先后不限**（2026-11-10 去掉了「渠道须在推广商之下」）。
 - 变化归因看 `dashboard_metric_card.attributable`，注意推广分析用的是 `promoReg` 等 promo 前缀指标，不是运营总览的 `reg`。
 - 「仅登记」（status='1'）的指标不参与 `application.yml` 取数配置对照，指标管理不提示「與配置不一致」。
 

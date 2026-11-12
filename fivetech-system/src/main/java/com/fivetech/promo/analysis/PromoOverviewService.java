@@ -492,7 +492,11 @@ public class PromoOverviewService
         {
             int points = Math.max(0, slot.getPoints());
             boolean spendSeries = spendCard && "OK".equals(state);
+            // 成本类：每个时间片按同一套算法（有效格子 / 全站估算）各算一次
+            boolean costSeries = costCard && "OK".equals(state);
             c.setSeries(spendSeries ? spendSeries(data.spend, PromoSpend.kind(code), inScope, range.from, slot.getGranularity(), points)
+                : costSeries ? costSeries(range.from.toLocalDate(), w[1], slot.getGranularity(), points,
+                    (s, e) -> costOf(code, data, scope, s, e, false))
                 : fill && !costCard ? series(code, data.series, data.terminalKey, range.from, slot.getGranularity(), points)
                 : new ArrayList<>(Collections.nCopies(points, null)));
             if (compare == null)
@@ -504,6 +508,8 @@ public class PromoOverviewService
                 LocalDateTime prevStart = LocalDateTime.parse(compare.getFrom(), PromoTime.SLOT);
                 c.setPrevSeries(spendSeries
                     ? spendSeries(data.spend, PromoSpend.kind(code), inScope, prevStart, slot.getGranularity(), points)
+                    : costSeries && w[2] != null
+                    ? costSeries(prevStart.toLocalDate(), w[3], slot.getGranularity(), points, (s, e) -> costOf(code, data, scope, s, e, true))
                     : fill && !costCard && data.prevSeries != null
                     ? series(code, data.prevSeries, data.terminalKey, data.prevFrom, slot.getGranularity(), points)
                     : new ArrayList<>(Collections.nCopies(points, null)));
@@ -638,6 +644,37 @@ public class PromoOverviewService
             if (i >= 0 && i < points)
             {
                 out.set(i, out.get(i) == null ? r.getAmount() : out.get(i).add(r.getAmount()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 成本类（CPA、首存成本、D0 ROI、UV 成本）的序列：第 i 个时间片取 [片首日, min(片尾日, lastDay)]，用 calc 算一次。
+     * 日粒度一天一片，周粒度 7 天一片（与 {@link #index} 一致）；小时粒度没有（消耗按日录入，卡片标 DAILY_ONLY）。
+     * 片首日超过 lastDay（消耗只算到昨天）或该片不是 OK（没有消耗 NO_SPEND 等）为 null。
+     */
+    static List<BigDecimal> costSeries(LocalDate from, LocalDate lastDay, Granularity g, int points,
+        java.util.function.BiFunction<LocalDate, LocalDate, PromoCost.Result> calc)
+    {
+        List<BigDecimal> out = new ArrayList<>(Collections.nCopies(points, null));
+        if (g == Granularity.HOUR || from == null || lastDay == null)
+        {
+            return out;
+        }
+        int step = g == Granularity.WEEK ? 7 : 1;
+        for (int i = 0; i < points; i++)
+        {
+            LocalDate s = from.plusDays((long) i * step);
+            if (s.isAfter(lastDay))
+            {
+                break;
+            }
+            LocalDate e = s.plusDays(step - 1L);
+            PromoCost.Result r = calc.apply(s, e.isAfter(lastDay) ? lastDay : e);
+            if (r != null && "OK".equals(r.state()))
+            {
+                out.set(i, r.value());
             }
         }
         return out;

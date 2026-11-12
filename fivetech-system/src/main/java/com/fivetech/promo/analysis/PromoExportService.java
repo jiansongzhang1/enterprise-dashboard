@@ -120,7 +120,7 @@ public class PromoExportService
 
     /**
      * 合计行的行为数据（註冊、首存、存款、激活及由它们算的比率）用全站值：只在「全部推廣渠道」且取消「只含付費推廣渠道」时调用，
-     * 此时合计范围 = 全部有数据的推广渠道 = 全站（R2）。已有值的列（消耗、成本类）不覆盖；数据平台没有的列（UV、下載、提款）留空。
+     * 此时合计范围 = 全部有数据的推广渠道 = 全站（R2）。已有值的列（消耗、成本类）不覆盖；数据平台没有的列（UV、下載、提款人數）留空。
      */
     static void fillSiteTotals(Object[] row, com.fivetech.promo.analysis.market.MarketCube cube,
         java.util.function.Predicate<java.time.LocalDateTime> buckets)

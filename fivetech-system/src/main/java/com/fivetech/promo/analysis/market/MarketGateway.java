@@ -54,7 +54,8 @@ public class MarketGateway
     public static final List<String> WIDE_BY_TERMINAL = List.of("reg", "ftd_players", "ftd_amount", "redeposit_amount");
 
     /** 精确来源：按桶去重的人数与金额 */
-    public static final List<String> PRECISE = List.of("deposit_users", "redeposit_users", "bet_users", "deposit_amount", "bet_amount");
+    public static final List<String> PRECISE = List.of("deposit_users", "redeposit_users", "bet_users", "deposit_amount", "withdraw_amount",
+        "bet_amount");
 
     private final UdsClient client;
 

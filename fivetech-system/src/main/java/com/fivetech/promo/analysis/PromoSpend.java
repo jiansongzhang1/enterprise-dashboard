@@ -22,7 +22,7 @@ import com.fivetech.promo.budget.PromoChannelDictionary;
  * 推广分析读消耗 / 预算：UDS {@code import_yata_promo_cost / budget}（运营按「日 × 推广渠道」导入，站点默认币种）。
  * 概览卡、渠道表现、投放日报共用；读取开关与「预算与消耗」页面相同（promo.budget-import.read-enabled）。
  *
- * <p>消耗、预算带推广商 / 推广渠道 ID，所以按推广商、推广渠道筛选与拆分都能直接算；不按终端、推广关系拆（那些格子 NA）。
+ * <p>消耗、预算带推广商 / 推广渠道 ID，所以按推广商、推广渠道筛选与拆分都能直接算；不按终端拆（那些格子 NA）。
  * 没有导入记录返回 null（没录入），不当成 0。</p>
  *
  * @author fivetech
