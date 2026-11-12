@@ -8,7 +8,8 @@ import org.springframework.stereotype.Component;
  *
  * <ul>
  *   <li>{@code dashboard_market_hour_v1}：小时宽表（注册、首存、复存金额、激活…）与精确区间人数（存款、复存、投注人数，存款额、投注额）；</li>
- *   <li>{@code dashboard_market_member_snapshot_v1}：会员当前状态（流失人数、裂变层级的直属下级）。</li>
+ *   <li>{@code dashboard_market_member_snapshot_v1}：会员当前状态（流失人数、裂变层级的直属下级）；</li>
+ *   <li>{@code dashboard_market_cohort_v1}：注册分群（留存与回收的注册留存、LTV、ROAS）。</li>
  * </ul>
  * 站点由请求头 X-Uds-Site 区分（与其他 UDS 查询相同）；merchant-code 不为空时每个查询另加 merchant_code 过滤。
  *
@@ -25,6 +26,9 @@ public class MarketProperties
 
     private String memberDataset = "dashboard_market_member_snapshot_v1";
 
+    /** 注册分群（留存与回收）：按注册日 reg_dt，第 N 日到期人数 / 留存人数 / 累计存款额 */
+    private String cohortDataset = "dashboard_market_cohort_v1";
+
     /** 可选：merchant_code 过滤值（Postman 联调包里的 merchant_code）；为空不加 */
     private String merchantCode = "";
 
@@ -40,6 +44,8 @@ public class MarketProperties
     public void setHourDataset(String hourDataset) { this.hourDataset = hourDataset; }
     public String getMemberDataset() { return memberDataset; }
     public void setMemberDataset(String memberDataset) { this.memberDataset = memberDataset; }
+    public String getCohortDataset() { return cohortDataset; }
+    public void setCohortDataset(String cohortDataset) { this.cohortDataset = cohortDataset; }
     public String getMerchantCode() { return merchantCode; }
     public void setMerchantCode(String merchantCode) { this.merchantCode = merchantCode; }
     public int getPageSize() { return pageSize; }

@@ -155,14 +155,12 @@ public class OverviewServiceImpl implements IOverviewService
         //   例：现在 09:25，slotTo 传 06:00 / 10:00 / 次日 00:00 都按 10:00 处理，返回 00:00–10:00 共 10 个小时（09 点为实时数据）；
         // · 其他粒度：终点晚于它时截到它（之后的小时还没有数据）。
         // 发给 UDS 的 uds_hh to 同样向右取整（见 UdsRealtime）
-        Duration clampedBy = Duration.ZERO;
         LocalDateTime nowAt = LocalDateTime.now(properties.currentZone());
         LocalDateTime currentHour = com.fivetech.dashboard.gateway.uds.UdsRealtime.ceilHour(nowAt);
         boolean endsToday = to.minusNanos(1).toLocalDate().equals(nowAt.toLocalDate());
         boolean pinToNow = granularity == Granularity.HOUR ? endsToday || to.isAfter(currentHour) : to.isAfter(currentHour);
         if (pinToNow && currentHour.isAfter(from) && !to.isEqual(currentHour))
         {
-            clampedBy = Duration.between(currentHour, to);
             to = currentHour;
             notices.add(OverviewNoticeVO.info("SLOT_CLAMPED", "已截至當前時間",
                 "統計區間終點調整為 " + to.format(SLOT_IN) + "（當前小時為實時數據，尚未結束）"));
@@ -188,7 +186,9 @@ public class OverviewServiceImpl implements IOverviewService
         vo.setSlot(slot);
 
         // ---------- 2. 对比期 ----------
-        vo.setCompare(resolveCompare(query, from, to, clampedBy, granularity, notices));
+        // 对比期是已经走完的完整时段：主区间含今天时按补到今天 24:00 的终点（axisTo）推算，发给 UDS 不截断，
+        // 如今天 00:00–17:00 → 对比昨天 00:00–24:00；近 7 天（含今天）→ 再往前完整 7 天
+        vo.setCompare(resolveCompare(query, from, axisTo, notices));
         
 
         // ---------- 4. 上下文 ----------
@@ -611,8 +611,35 @@ public class OverviewServiceImpl implements IOverviewService
         return slot;
     }
 
+    /**
+     * 去年同期 / 上一周期的对比区间 [from, to)。
+     *
+     * @param to 对比期用的主区间终点：主区间含今天时是今天 24:00（不是截到的当前整点），对比期因此是完整时段
+     */
+    static LocalDateTime[] autoCompareRange(CompareType type, LocalDateTime from, LocalDateTime to)
+    {
+        if (type == CompareType.LAST_YEAR)
+        {
+            return new LocalDateTime[] { from.minusYears(1), to.minusYears(1) };
+        }
+        if (from.toLocalDate().equals(to.minusNanos(1).toLocalDate()))
+        {
+            // PREV_PERIOD · 区间在同一自然日内（站点时区）：固定对比前一天的同一时段。
+            // 例：今天（未走完也按 00:00–24:00）→ 昨天 00:00–24:00；昨天全天 → 前天全天。
+            // 不能用「等长紧邻」，否则今天 08:00–24:00 会对比到昨天 16:00–今天 08:00
+            return new LocalDateTime[] { from.minusDays(1), to.minusDays(1) };
+        }
+        // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前完整 7 天，按日逐格对齐）
+        Duration span = Duration.between(from, to);
+        return new LocalDateTime[] { from.minus(span), from };
+    }
+
+    /**
+     * @param to 对比期用的主区间终点（axisTo）：主区间含今天时已补到今天 24:00，
+     *           对比期总是完整时段，不随主区间截到当前整点
+     */
     private OverviewCompareVO resolveCompare(OverviewQuery query, LocalDateTime from, LocalDateTime to,
-            Duration clampedBy, Granularity granularity, List<OverviewNoticeVO> notices)
+            List<OverviewNoticeVO> notices)
     {
         CompareType type = query.getCompareType() == null ? CompareType.PREV_PERIOD : query.getCompareType();
         if (type == CompareType.NONE)
@@ -625,28 +652,16 @@ public class OverviewServiceImpl implements IOverviewService
         if (type == CompareType.CUSTOM)
         {
             // CUSTOM：按用户选择的区间取数，时间按站点时区（IST）的墙上时间理解，不做时区换算。
-            // 主区间终点被截到当前整点时：
-            // · 小时粒度：对比期终点同步往前截同样的时长，两边小时数对齐，逐小时对比才有意义；
-            // · 天 / 周粒度：对比期保持用户所选，不截断、不因此报错 —— 当天数据偏低用户自己知道原因
+            // 主区间终点被截到当前整点时，对比期保持用户所选、不截断（对比期已走完，按完整时段取数）
             cmpFrom = parseSlot(query.getCompareFrom(), "compareFrom");
             cmpTo = parseSlot(query.getCompareTo(), "compareTo");
             if (!cmpTo.isAfter(cmpFrom))
             {
                 throw new ServiceException("compareFrom 必须早于 compareTo", 4002);
             }
-            boolean clamped = clampedBy != null && !clampedBy.isZero();
-            boolean hourly = granularity == Granularity.HOUR;
-            if (clamped && hourly && cmpTo.minus(clampedBy).isAfter(cmpFrom))
-            {
-                cmpTo = cmpTo.minus(clampedBy);
-                notices.add(OverviewNoticeVO.info("CMP_CLAMPED", "對比期已同步截斷",
-                    "對比期終點調整為 " + cmpTo.format(SLOT_IN) + "，與主區間小時數一致"));
-            }
             // 对比期允许与主区间重叠（产品确认），不做重叠校验
-            // 长度校验用「截断前」的主区间：天 / 周粒度下主区间被截到当前整点不算长度不一致；
-            // 小时粒度两边已同步截断，用截断后的长度比较
-            LocalDateTime mainTo = clamped && !hourly ? to.plus(clampedBy) : to;
-            long mainDays = ChronoUnit.DAYS.between(from, mainTo);
+            // 长度校验用补到今天 24:00 的主区间：主区间被截到当前整点不算长度不一致
+            long mainDays = ChronoUnit.DAYS.between(from, to);
             long cmpDays = ChronoUnit.DAYS.between(cmpFrom, cmpTo);
             if (mainDays != cmpDays)
             {
@@ -658,39 +673,13 @@ public class OverviewServiceImpl implements IOverviewService
                     "主區間 " + mainDays + " 天，對比期 " + cmpDays + " 天，環比數值不可直接解讀"));
             }
         }
-        else if (type == CompareType.LAST_YEAR)
-        {
-            cmpFrom = from.minusYears(1);
-            cmpTo = to.minusYears(1);
-        }
-        else if (from.toLocalDate().equals(to.minusNanos(1).toLocalDate()))
-        {
-            // PREV_PERIOD · 区间在同一自然日内（站点时区 IST）：固定对比前一天的同一时段。
-            // 例：今天 00:00–12:00（终点已截到当前整点）→ 昨天 00:00–12:00；
-            //     昨天全天 → 前天全天。不能用「等长紧邻」，否则今天 00:00–12:00 会对比到昨天 12:00–24:00
-            cmpFrom = from.minusDays(1);
-            cmpTo = to.minusDays(1);
-        }
         else
         {
-            // PREV_PERIOD · 跨多天：与主区间等长且紧邻（如近 7 天对比再往前 7 天）
-            Duration span = Duration.between(from, to);
-            LocalDateTime requested = clampedBy == null ? to : to.plus(clampedBy);
-            if (clampedBy != null && !clampedBy.isZero()
-                && from.equals(from.toLocalDate().atStartOfDay()) && requested.equals(requested.toLocalDate().atStartOfDay()))
-            {
-                // 近 N 天含今天、终点截到当前整点（如 11-05 00:00 ~ 11-11 15:00）：对比期整体往前挪 N 天
-                // （10-29 00:00 ~ 11-04 15:00），逐日对齐，最后一天同样截到同一时刻；
-                // 不能用「等长紧邻」，否则对比期从 10-29 09:00 开始，按日的 prevSeries 每格都错开
-                long n = ChronoUnit.DAYS.between(from, requested);
-                cmpFrom = from.minusDays(n);
-                cmpTo = to.minusDays(n);
-            }
-            else
-            {
-                cmpTo = from;
-                cmpFrom = from.minus(span);
-            }
+            // 近 N 天含今天（如 11-05 00:00 ~ 11-11 15:00）：to 已补到 11-12 00:00，对比期 10-29 00:00 ~ 11-05 00:00，
+            // 完整 7 天、逐日对齐，最后一天不截断
+            LocalDateTime[] range = autoCompareRange(type, from, to);
+            cmpFrom = range[0];
+            cmpTo = range[1];
         }
 
         if (StringUtils.isNotEmpty(query.getCompareFrom()) && type != CompareType.CUSTOM)

@@ -332,4 +332,28 @@ class MarketGatewayTest
         new MarketGateway(c, new MarketProperties()).cube(FROM, TO, Granularity.DAY, List.of("rdR"), false);
         assertEquals(0, c.bodies.size(), "只选複存率时不调 UDS");
     }
+
+    /** 注册分群：dataset、reg_dt 按日、to 写日期（闭区间），一次取齐 1/3/7/15/30 日的到期 / 留存 / 存款额 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void cohortRequestBody()
+    {
+        FakeClient c = new FakeClient();
+        c.answers.add(List.of(row("reg_dt", "2026-11-10", "reg", 1262, "matured_d1", 1262, "retained_d1", 53)));
+        List<UdsRow> rows = new MarketGateway(c, new MarketProperties()).cohort(LocalDate.of(2026, 10, 13), LocalDate.of(2026, 11, 11),
+            List.of("reg_dt"), MarketGateway.cohortMetrics(List.of(1, 3, 7, 15, 30)));
+        assertEquals(1, rows.size());
+        Map<String, Object> body = c.bodies.get(0);
+        assertEquals("dashboard_market_cohort_v1", body.get("dataset"));
+        assertEquals(List.of("reg_dt"), body.get("dimensions"));
+        List<String> metrics = (List<String>) body.get("metrics");
+        assertEquals(16, metrics.size());
+        assertTrue(metrics.containsAll(List.of("reg", "matured_d1", "retained_d3", "deposit_amount_d30")));
+        Map<String, Object> time = (Map<String, Object>) body.get("time");
+        assertEquals("reg_dt", time.get("dimension"));
+        assertEquals("DAY", time.get("granularity"));
+        assertEquals("2026-10-13", time.get("from"));
+        assertEquals("2026-11-11", time.get("to"));
+        assertEquals("ONLINE", ((Map<String, Object>) body.get("options")).get("channel"));
+    }
 }

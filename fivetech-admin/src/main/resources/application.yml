@@ -705,6 +705,8 @@ promo:
     enabled: ${PROMO_MARKET_ENABLED:true}
     hour-dataset: ${PROMO_MARKET_HOUR_DATASET:dashboard_market_hour_v1}
     member-dataset: ${PROMO_MARKET_MEMBER_DATASET:dashboard_market_member_snapshot_v1}
+    # 注册分群（留存与回收）
+    cohort-dataset: ${PROMO_MARKET_COHORT_DATASET:dashboard_market_cohort_v1}
     # 可选：merchant_code 过滤（UDS 联调包里的 merchant_code）；为空只按站点头区分
     merchant-code: ${PROMO_MARKET_MERCHANT_CODE:}
     # 单次 limit（UDS 上限 1000），满页自动翻页

@@ -26,6 +26,7 @@
 - 「现在 / 今天」一律 `LocalDateTime.now(properties.currentZone())`，禁止 `LocalDateTime.now()`。
 - 区间左闭右开；`slotTo` 不含。前端要含今天，须传明天 00:00。
 - 终点截断：`UdsRealtime.ceilHour(now)`，16:50 → 17:00，把正在进行的小时一起查（UDS 2026-11-06 起支持实时）。
+- 对比期不截断（2026-11-11）：主区间含今天时按补到今天 24:00 的 `axisTo` 推算对比期，今天 00:00–17:00 对比昨天 00:00–24:00，近 7 天（含今天）对比再往前完整 7 天；CUSTOM 对比期也不再同步截断（`CMP_CLAMPED` 已去掉）。
 - 时间片个数 `countPoints`：小时按整点差；**日 / 周向上取整**，终点截到当前整点时今天也算一格（近 7 天 = 7 格）。
 - `coversToday`（= `anomalies.inScope`、基准线、逐时段监控列的开关）：起点必须是今天 00:00，终点落在今天内；
   小时粒度直接 true，日 / 周要求终点是明天 00:00 或已覆盖到当前整点。用**向下取整**的当前整点判断，否则 23:xx 会算成明天。
@@ -59,6 +60,7 @@
 - 成本类（`PromoCost`）：CPA / 首存成本 / D0 ROI / UV 成本，按**有效格子**（日 × 推广渠道，消耗 > 0）计算。
   渠道行为数据缺源 → 推广商、渠道、终端都为「全部」时按**全站估算**（`PromoOverviewService.siteCost`），
   卡片 `note` 写明是估算；选了具体渠道仍返回 NO_SOURCE。
+- 留存与回收（2026-11-12 接入）：读 UDS `dashboard_market_cohort_v1`（`MarketGateway#cohort`，规则在 `PromoCohort`）。比率一律分子分母各自相加再除；`matured_dN = 0` 为 PENDING、其余列是 null 不是 0；ROAS 只算有消耗的注册日。分群数据没有推广渠道维度，选了推广商 / 渠道仍 NO_SOURCE；对比线新增 `terminal`。
 - 行维度（`ChannelTree`）：agent / channel / date / terminal / relation，1–5 层，**先后不限**（2026-11-10 去掉了「渠道须在推广商之下」）。
 - 变化归因看 `dashboard_metric_card.attributable`，注意推广分析用的是 `promoReg` 等 promo 前缀指标，不是运营总览的 `reg`。
 - 「仅登记」（status='1'）的指标不参与 `application.yml` 取数配置对照，指标管理不提示「與配置不一致」。
