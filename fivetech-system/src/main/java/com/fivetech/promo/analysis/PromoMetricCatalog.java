@@ -85,26 +85,24 @@ public class PromoMetricCatalog
 
     static final String NOTE_TERMINAL = "不適用於所選終端";
 
-    static final String NOTE_ANDROID = "只有 Android 有值";
-
     /** 概览 16 个指标，按 FY-46 概览页的顺序 */
     public static final List<Spec> OVERVIEW = List.of(
-        new Spec("spend", "promoSpend", false, false, NOTE_SPEND, false, false, false, "所選範圍內運營匯入的消耗合計（全部數據，按日錄入）"),
-        new Spec("budget", "promoBudget", false, false, NOTE_SPEND, false, false, false, "所選範圍內運營匯入的預算合計"),
-        new Spec("cpa", "promoCpa", false, false, NOTE_SPEND, false, false, true, "有效格子的消耗 ÷ 有效格子的註冊人數（有效格子：已錄入消耗且 ＞ 0 的「日 × 推廣渠道」）"),
-        new Spec("ftdCost", "promoFtdCost", false, false, NOTE_SPEND, false, false, true, "有效格子的消耗 ÷ 有效格子的首存人數"),
-        new Spec("net", "promoNet", true, true, null, false, false, false, "存款總額 − 提款總額（同運營總覽「存提差」）"),
-        new Spec("roi", "promoRoi", false, false, NOTE_SPEND, false, false, true, "有效格子的淨充值 ÷ 有效格子的消耗 − 1"),
-        new Spec("lpUV", "promoLpUV", true, false, NOTE_TERMINAL, false, false, false, "落地頁去重訪問人數（玩家按用戶 ID、匿名按匿名標識）"),
-        new Spec("hUV", "promoHUV", true, false, NOTE_TERMINAL, false, false, false, "主頁去重訪問人數（含 Web 與 APP 內打開）"),
-        new Spec("dl", "promoDl", true, true, NOTE_ANDROID, true, false, false, "點擊下載 APK 的次數"),
-        new Spec("act", "promoAct", true, true, NOTE_ANDROID, true, false, false, "Android 安裝後首次啟動的人數"),
-        new Spec("reg", "promoReg", true, true, null, false, true, false, "註冊人數，按註冊時的推廣渠道與終端歸屬"),
-        new Spec("regR", "promoRegR", true, false, NOTE_TERMINAL, false, false, false, "註冊人數 ÷ 入口 UV（按渠道入口類型取 UV-落地頁或 UV-主頁，分子分母分別相加）"),
-        new Spec("ftd", "promoFtd", true, true, null, false, true, false, "首存人數，每人只算一次"),
-        new Spec("ftdR", "promoFtdR", true, true, null, false, false, false, "首存人數 ÷ 註冊人數"),
-        new Spec("ftdAmt", "promoFtdAmt", true, true, null, false, true, false, "首存金額"),
-        new Spec("rd", "promoRd", true, true, null, false, true, false, "首存後再次存款的人數；多天按日累加"));
+        new Spec("spend", "promoSpend", false, false, NOTE_SPEND, false, false, false, "運營按推廣渠道、日錄入的實際廣告消耗合計（次日錄入，今天沒有）；成本類指標只用消耗。"),
+        new Spec("budget", "promoBudget", false, false, NOTE_SPEND, false, false, false, "運營按推廣渠道、日錄入的預算合計，包含今天。"),
+        new Spec("cpa", "promoCpa", false, false, NOTE_SPEND, false, false, true, "消耗 ÷ 註冊人數。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。"),
+        new Spec("ftdCost", "promoFtdCost", false, false, NOTE_SPEND, false, false, true, "消耗 ÷ 首存人數。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。"),
+        new Spec("net", "promoNet", true, true, null, false, false, false, "存款總額 − 提款總額。"),
+        new Spec("roi", "promoRoi", false, false, NOTE_SPEND, false, false, true, "淨充值 ÷ 消耗 − 1。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。"),
+        new Spec("lpUV", "promoLpUV", true, false, NOTE_TERMINAL, false, false, false, "訪問落地頁的去重人數。登入玩家按用戶 ID、匿名訪客按匿名訪問標識去重。"),
+        new Spec("hUV", "promoHUV", true, false, NOTE_TERMINAL, false, false, false, "訪問主站首頁的去重人數，包括從落地頁進入、直接打開主站，以及在 APP 內打開首頁的人。"),
+        new Spec("dl", "promoDl", true, true, NOTE_TERMINAL, true, false, false, "點擊下載 APK 的次數。"),
+        new Spec("act", "promoAct", true, true, NOTE_TERMINAL, true, false, false, "Android 安裝後首次啟動的人數。"),
+        new Spec("reg", "promoReg", true, true, null, false, true, false, "完成會員註冊的人數，按註冊時的推廣渠道歸屬；全部＝直推＋裂變。"),
+        new Spec("regR", "promoRegR", true, false, NOTE_TERMINAL, false, false, false, "註冊人數 ÷ 入口 UV。經落地頁的推廣渠道用 UV-落地頁，直接進主站的推廣渠道（如官網）用 UV-主頁；多個渠道時分子、分母分別相加。"),
+        new Spec("ftd", "promoFtd", true, true, null, false, true, false, "完成生涯首筆存款的人數。按註冊時的終端歸屬。"),
+        new Spec("ftdR", "promoFtdR", true, true, null, false, false, false, "首存人數 ÷ 註冊人數。"),
+        new Spec("ftdAmt", "promoFtdAmt", true, true, null, false, true, false, "首存人數的首筆存款金額合計。"),
+        new Spec("rd", "promoRd", true, true, null, false, true, false, "完成首存後，在所選時間內再次存款的人數。按註冊時的終端歸屬。多天時按日累加（同一人在不同日期複存會重複計算）。"));
 
     private static final Map<String, Spec> BY_CODE = new LinkedHashMap<>();
 

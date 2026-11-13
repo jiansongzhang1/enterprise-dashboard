@@ -323,6 +323,23 @@ class PromoRulesTest
         assertEquals("NO_SPEND", PromoOverviewService.siteCost("cpa", Map.of(), cube, d1, d2).state());
     }
 
+    /** 卡片「?」口径与终端不适用文案按 FY-48 第四节 / R6 */
+    @Test
+    void overviewDefinitionsFollowFy48()
+    {
+        assertEquals("消耗 ÷ 註冊人數。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。", PromoMetricCatalog.spec("cpa").getDefinition());
+        assertEquals("消耗 ÷ 首存人數。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。", PromoMetricCatalog.spec("ftdCost").getDefinition());
+        assertEquals("淨充值 ÷ 消耗 − 1。只計已錄入消耗的推廣渠道與日期；沒有消耗的渠道與日期不計入。", PromoMetricCatalog.spec("roi").getDefinition());
+        assertEquals("存款總額 − 提款總額。", PromoMetricCatalog.spec("net").getDefinition());
+        assertEquals("首存人數 ÷ 註冊人數。", PromoMetricCatalog.spec("ftdR").getDefinition());
+        assertEquals(16, PromoMetricCatalog.OVERVIEW.size());
+        PromoMetricCatalog.OVERVIEW.forEach(x -> assertTrue(x.getDefinition().endsWith("。"), x.getCode()));
+        // 下載點擊、激活选 Web：不適用於所選終端；依赖消耗的：消耗不按終端拆分
+        assertEquals("不適用於所選終端", PromoMetricCatalog.spec("dl").getTerminalNote());
+        assertEquals("不適用於所選終端", PromoMetricCatalog.spec("act").getTerminalNote());
+        assertEquals("消耗不按終端拆分", PromoMetricCatalog.spec("cpa").getTerminalNote());
+    }
+
     /** 成本类序列：每片用同一套算法各算一次；没有消耗的片、超过最后一天的片为 null；周粒度 7 天一片；小时粒度全 null */
     @Test
     void costSeriesPerPoint()
