@@ -180,7 +180,7 @@ dashboard:
       # Yata 前端的登录令牌、当前站点、筛选条件都在 localStorage；打开页面前写进去
       # 可用占位符：{token} JWT、{userId} 截图帐号的用户 ID、{site} 订阅的站点编码
       token-cookie: ${DASHBOARD_SNAPSHOT_TOKEN_COOKIE:}
-      token-local-storage-key: ${DASHBOARD_SNAPSHOT_TOKEN_LS_KEY:access-token}
+      token-local-storage-key: ${DASHBOARD_SNAPSHOT_TOKEN_LS_KEY:access_token}
       token-local-storage-value: "{token}"
       site-storage-key: "yata.site.{userId}"
       site-storage-value: "{site}"

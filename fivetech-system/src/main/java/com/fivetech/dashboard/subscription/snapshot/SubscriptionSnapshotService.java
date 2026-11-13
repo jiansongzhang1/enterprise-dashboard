@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 订阅截图：用截图帐号的临时令牌，让本机无头 Chromium 打开运营总览页，截图后上传 Lark。
  *
- * <p>前端的登录令牌、当前站点、筛选条件都在 localStorage（{@code access-token}、{@code yata.site.{userId}}、
+ * <p>前端的登录令牌、当前站点、筛选条件都在 localStorage（{@code access_token}、{@code yata.site.{userId}}、
  * {@code overview-filters}），打开页面前写进去：筛选条件取订阅的 snapshot_filters，为空按统计范围生成（与卡片同一区间）。</p>
  *
  * <ul>

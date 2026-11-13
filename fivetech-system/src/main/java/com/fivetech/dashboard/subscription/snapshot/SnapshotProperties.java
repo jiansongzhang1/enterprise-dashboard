@@ -39,7 +39,7 @@ public class SnapshotProperties
     private String tokenCookie = "";
 
     /** 令牌写进 localStorage 的键（为空不写） */
-    private String tokenLocalStorageKey = "access-token";
+    private String tokenLocalStorageKey = "access_token";
 
     /** 令牌在 localStorage 里的值（{token} = JWT 原文） */
     private String tokenLocalStorageValue = "{token}";
