@@ -159,7 +159,6 @@ class MarketGatewayTest
         // 需确认的指标不取数：激活（设备数不是人数）、复存率（分母未定）
         assertNull(MarketValues.value("act", cube, "android", null));
         assertNull(MarketValues.value("rdR", cube, MarketCube.ALL, null));
-        assertTrue(MarketValues.CALIBER_DIFF.containsAll(java.util.Set.of("act", "rdR")));
         assertNull(MarketValues.value("lpUV", cube, MarketCube.ALL, null));
         // 按日期过滤
         assertEquals(new BigDecimal("50"), MarketValues.value("reg", cube, MarketCube.ALL,
