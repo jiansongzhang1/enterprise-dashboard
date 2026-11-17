@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "385c7538-e75d-4097-9aa8-de22e9d4909e",
+    "_postman_id": "19531af1-acba-49af-847a-601e6084839b",
     "name": "Fivetech Dashboard API · 风控分析 + 监控管理（条件规则 / 订单告警）· release_next ㉒㉓",
     "description": "本期新功能的接口用例：风控分析（选项、榜单条件、概览、榜单卡片、完整名单、导出、我的榜单、游戏分析）；监控管理（条件规则全流程、告警规则三类同表、异常事件改造与事件详情、订单告警列表与处理）。\n\n使用：\n1. 集合变量 baseUrl、siteCode；username / password 只填 Current value，运行前填 totp；\n2. 先在目标库执行 sql/release_next_postgresql.sql 的 ⑭–㉓，并部署新 JAR；账号需有 dashboard:risk:*、monitor:rule:*、monitor:event:* 权限；\n3. 按目录顺序整集运行（0.1 登录写入 token；用例之间靠集合变量传 id，第 7 组清理测试数据）；\n4. UDS 数据集未接入时，风控接口返回 dataPending=true、条件规则预览返回 dataPending、订单告警 udsOk=false，用例已兼容两种状态。\n\n若依返回 HTTP 恒为 200，断言看响应体 code。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -385,7 +385,8 @@
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
                   "pm.test('有 items 与 editable', () => { pm.expect(j.data).to.have.property('editable'); pm.expect(j.data.items || j.data.values || j.data).to.exist; });",
-                  "pm.collectionVariables.set('thresholdsJson', JSON.stringify(j.data));"
+                  "pm.collectionVariables.set('thresholdsJson', JSON.stringify(j.data));",
+                  "pm.test('defaults 含 5 项门槛与 channelRiskTypes', () => { ['bigOne','newDays','winMin','rtpBet','lowTurn','channelRiskTypes'].forEach(k => pm.expect(j.data.defaults).to.have.property(k)); });"
                 ]
               }
             }

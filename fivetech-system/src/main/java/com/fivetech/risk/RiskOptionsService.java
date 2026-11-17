@@ -319,6 +319,11 @@ public class RiskOptionsService
         List<Map<String, Object>> rts = new ArrayList<>();
         cfg.riskTypes.forEach(t -> rts.add(Map.of("code", t.code, "name", t.name)));
         out.put("riskTypeOptions", rts);
+        // 「默認 X」与「恢復默認」用：站点的默认 = 全站通用配置，全站本身的默认 = 系统默认
+        RiskBoards d = config.defaults(site);
+        Map<String, Object> defaults = new LinkedHashMap<>(d.thresholds);
+        defaults.put("channelRiskTypes", d.channelGlobalOrDefault());
+        out.put("defaults", defaults);
         out.put("editable", editable);
         ConfigItem it = config.thresholdItem(site);
         out.put("updateBy", it == null ? null : it.getUpdateBy() != null ? it.getUpdateBy() : it.getCreateBy());

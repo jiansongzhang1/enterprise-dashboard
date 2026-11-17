@@ -21,7 +21,8 @@ import com.fivetech.risk.game.RiskGameService;
  * <ul>
  *   <li>risk.overview.cards：风控概览的核心指标（指标管理 · RISK 页面）</li>
  *   <li>risk.rank.cards：显示为卡片的系统榜单（我的榜单是否显示为卡片存在 risk_my_board.show_card）；占比档位存在它的 attrs.bands</li>
- *   <li>risk.rank.cols.{榜单}：每张榜单的列设置（指标管理 · RISK_RANK 列）</li>
+ *   <li>risk.rank.cols.{榜单}：每张榜单的列设置（指标管理 · RISK_RANK 列）；我的榜单共用 risk.rank.cols.my，
+ *       渠道风险榜为 risk.rank.cols.chrisk（channelCols，「各風險類型人數」的编码为 riskTypeCounts，註冊用戶固定不在可选项里）</li>
  *   <li>risk.game.path / risk.game.cols：游戏分析的行维度、列设置（指标管理 · RISK_GAME 列）</li>
  * </ul>
  *
@@ -35,6 +36,9 @@ public class RiskViewItemSource implements ViewItemSource
     public static final String RANK_CARDS = "risk.rank.cards";
 
     public static final String RANK_COLS = "risk.rank.cols.";
+
+    /** 我的榜单共用一个列设置（默认同全部用户）；我的榜单本身不含列设置（FY-68 R1） */
+    public static final String RANK_COLS_MY = "risk.rank.cols.my";
 
     /** 渠道风险榜的个人风险类型（FY-71 R2）；没设过 = 跟随全局默认 */
     public static final String RANK_RISK_TYPES = "risk.rank.riskTypes";

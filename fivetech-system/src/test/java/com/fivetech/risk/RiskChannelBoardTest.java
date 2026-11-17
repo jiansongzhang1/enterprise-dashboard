@@ -197,6 +197,11 @@ class RiskChannelBoardTest
         assertEquals(List.of("highRtp", "bigWin"), f.config.boards(null).channelRiskGlobal, "只改门槛时保留全局风险类型");
         assertThrows(MonitorFieldException.class, () -> f.config.saveThresholds(null, Map.of("channelRiskTypes", List.of()), "risk@x"));
 
+        RiskBoards d = f.config.defaults(null);
+        assertEquals(new BigDecimal("7"), d.thresholds.get("newDays"), "默认值不跟着改过的值走");
+        assertEquals(List.of("newWin", "lowTurn", "bigWin"), d.channelGlobalOrDefault(), "全站本身的默认 = 系统默认");
+        assertEquals(new BigDecimal("10"), f.config.boards(null).thresholds.get("newDays"));
+
         f.rank.setPersonalRiskTypes(() -> List.of("newWin"));
         assertEquals(List.of("newWin"), f.rank.riskTypes(new RiskQuery(), f.config.boards(null)));
     }

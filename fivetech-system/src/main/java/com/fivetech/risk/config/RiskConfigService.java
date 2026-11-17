@@ -159,6 +159,37 @@ public class RiskConfigService
         return b;
     }
 
+    /**
+     * 「默認」值（榜单条件弹窗的「默認 X」与「恢復默認」）：站点的默认 = 全站通用配置（没配用代码默认）；
+     * 不分站点时（全站本身）= 代码默认。渠道风险榜风险类型的默认 = 全站的全局默认，没配用系统默认。
+     */
+    public RiskBoards defaults(String site)
+    {
+        boolean own = StringUtils.isNotEmpty(site);
+        RiskBoards b = new RiskBoards();
+        List<String> errors = new ArrayList<>();
+        b.readThresholds(own ? read(THRESHOLDS, "", DEFAULT_THRESHOLDS) : parse(DEFAULT_THRESHOLDS), errors);
+        if (!errors.isEmpty())
+        {
+            b = new RiskBoards();
+            b.readThresholds(parse(DEFAULT_THRESHOLDS), null);
+        }
+        RiskBoards boards = new RiskBoards();
+        boards.readBoards(own ? read(BOARDS, "", DEFAULT_BOARDS) : parse(DEFAULT_BOARDS), null, null);
+        if (boards.boards.isEmpty())
+        {
+            boards = new RiskBoards();
+            boards.readBoards(parse(DEFAULT_BOARDS), null, null);
+        }
+        b.riskTypes = boards.riskTypes;
+        b.channelRiskDefault = boards.channelRiskDefault;
+        if (!own)
+        {
+            b.channelRiskGlobal = new ArrayList<>();
+        }
+        return b;
+    }
+
     /** 游戏字典：{ platforms: [{code, name, brands:[{code,name}], gameTypes:[{code,name}]}], games: [{code, name, platform, brand, gameType}] } */
     @SuppressWarnings("unchecked")
     public Map<String, Object> gameDict(String site)

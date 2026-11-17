@@ -1086,7 +1086,7 @@ LEFT JOIN (VALUES
     ('risk.rank.cols.all', 'wd', 20),
     ('risk.rank.cols.all', 'bet', 30)
 ) AS d(slot_code, item_code, default_sort) ON d.slot_code = s.slot_code AND d.item_code = c.ext->>'apiCode'
-WHERE s.slot_code LIKE 'risk.rank.cols.%' AND s.slot_code NOT IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill')
+WHERE s.slot_code LIKE 'risk.rank.cols.%' AND s.slot_code NOT IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill', 'risk.rank.cols.my')
 ON CONFLICT (slot_code, item_code) DO NOTHING;
 
 -- 游戏分析：行维度（默认 平台 › 品牌 › 游戏）、列（默认 standard 8 列）
@@ -1283,11 +1283,11 @@ SELECT count(*) AS cond_fields FROM dashboard_metric_card WHERE page_scope = 'MO
 --   1. RISK_RANK_BOARDS 全站默认升级：渠道风险榜 chrisk、卡片 3 个数 stats、大额中奖 / 高RTP 卡片中间改为游戏分布、
 --      大额提款榜的名单条件 filters（去掉风险特征）、高RTP 风险类型加 RTP ≥ 100%、各榜默认列补 註冊時間 / 推廣渠道。
 --      只升级还是 ㉒ 写入的旧版本（不含 chrisk）；站点自己改过的配置不动，需按新结构手工补。
---   2. 个人视图配置位：渠道风险榜的列（渠道列）、下钻名单的列、个人风险类型（没设过 = 跟随全局默认）。
+--   2. 个人视图配置位：渠道风险榜的列（渠道列）、下钻名单的列、个人风险类型（没设过 = 跟随全局默认）、我的榜单共用的列。
 --   3. 用户类榜单列设置的默认列按新配置重排；大额提款榜默认只留打碼倍數。
 --   回滚：把 RISK_RANK_BOARDS 改回 ㉒ 的值；DELETE FROM dashboard_view_slot_item WHERE slot_code IN ('risk.rank.cols.chrisk',
---         'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes') OR (slot_code = 'risk.rank.cards' AND item_code = 'chrisk');
---         DELETE FROM dashboard_view_slot WHERE slot_code IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes');
+--         'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes', 'risk.rank.cols.my') OR (slot_code = 'risk.rank.cards' AND item_code = 'chrisk');
+--         DELETE FROM dashboard_view_slot WHERE slot_code IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes', 'risk.rank.cols.my');
 -- ----------------------------------------------------------------------------
 BEGIN;
 
@@ -1808,7 +1808,8 @@ UPDATE config_center
 INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
 ('risk.rank.cols.chrisk',      'RISK', '渠道風險榜 · 列',            'COLUMNS', 0, NULL, FALSE, '[]', NULL, 38, 'admin'),
 ('risk.rank.cols.chriskDrill', 'RISK', '渠道風險榜 · 下鑽名單 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 39, 'admin'),
-('risk.rank.riskTypes',        'RISK', '渠道風險榜 · 風險類型',      'COLUMNS', 1, 4,    FALSE, '[]', NULL, 40, 'admin')
+('risk.rank.riskTypes',        'RISK', '渠道風險榜 · 風險類型',      'COLUMNS', 1, 4,    FALSE, '[]', NULL, 40, 'admin'),
+('risk.rank.cols.my',          'RISK', '我的榜單 · 列（共用）',       'COLUMNS', 0, NULL, FALSE, '[]', NULL, 41, 'admin')
 ON CONFLICT (slot_code) DO NOTHING;
 
 -- 卡片：渠道风险榜可加为卡片（不在默认 6 张里）
@@ -1851,6 +1852,15 @@ LEFT JOIN (VALUES
     ('risk.rank.cols.chriskDrill', 'winLoss', 30),
     ('risk.rank.cols.chriskDrill', 'regTime', 40)
 ) AS d(slot_code, item_code, default_sort) ON d.item_code = c.ext->>'apiCode'
+WHERE c.page_scope = 'RISK_RANK' AND coalesce(c.ext->>'column', 'true') <> 'false'
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 我的榜单共用的列设置：可选项同用户类榜单，默认同全部用户（我的榜单本身不含列设置，FY-68 R1）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+SELECT 'risk.rank.cols.my', c.ext->>'apiCode', NULL, c.ext->>'group', NULL, c.sort_no, d.default_sort
+FROM dashboard_metric_card c
+LEFT JOIN (VALUES ('dep', 10), ('wd', 20), ('bet', 30), ('regTime', 40), ('channel', 50)) AS d(item_code, default_sort)
+  ON d.item_code = c.ext->>'apiCode'
 WHERE c.page_scope = 'RISK_RANK' AND coalesce(c.ext->>'column', 'true') <> 'false'
 ON CONFLICT (slot_code, item_code) DO NOTHING;
 
@@ -1903,7 +1913,7 @@ WHERE i.slot_code = d.slot_code AND i.item_code = d.item_code;
 
 COMMIT;
 
--- ㉔ 自检：配置已是新版本；新配置位 3 个；各榜默认列
+-- ㉔ 自检：配置已是新版本；新配置位 4 个；各榜默认列
 SELECT config_code, site_code, config_value LIKE '%"chrisk"%' AS upgraded FROM config_center WHERE config_code = 'RISK_RANK_BOARDS' ORDER BY site_code;
 SELECT s.slot_code, (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code) AS items,
        (SELECT string_agg(i.item_code, ',' ORDER BY i.default_sort) FROM dashboard_view_slot_item i
