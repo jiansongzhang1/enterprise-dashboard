@@ -132,10 +132,12 @@ class CollectBudgetSpendWriterTest
         assertEquals(List.of("2026-12-01", "2026-12-02"), o.getDates());
         JsonNode body = OM.readTree(api.bodies.get(0));
         assertFalse(body.has("confirmation_id"));
+        assertEquals("test", body.get("environment").asString());              // 环境确认，与 UDS 的 X-Uds-Environment 一致
         assertEquals(4, body.get("rows").size());
         assertEquals("120", body.get("rows").get(1).get("cost_amount").asString());
         assertTrue(body.get("rows").get(1).get("cost_amount").isString());     // 金额是字符串，不是 JSON 数字
-        assertTrue(api.bodies.get(0).startsWith("{\"rows\":[{\"biz_date\":\"2026-12-01\",\"promoter_id\":\"1001\""));
+        assertTrue(api.bodies.get(0)
+            .startsWith("{\"environment\":\"test\",\"rows\":[{\"biz_date\":\"2026-12-01\",\"promoter_id\":\"1001\""));
         assertNotNull(api.keys.get(0));
         assertEquals(BudgetKind.SPEND, api.kinds.get(0));
     }
@@ -182,7 +184,10 @@ class CollectBudgetSpendWriterTest
         JsonNode second = OM.readTree(api.bodies.get(1));
         assertEquals("c1", second.get("confirmation_id").asString());
         assertEquals(first.get("rows"), second.get("rows"));
-        assertTrue(api.bodies.get(1).endsWith(api.bodies.get(0).substring("{\"rows\":".length())));
+        // 重发时 rows 原样不变，只在前面多了 confirmation_id
+        String rowsPart = api.bodies.get(0).substring(api.bodies.get(0).indexOf("\"rows\":"));
+        assertTrue(api.bodies.get(1).endsWith(rowsPart));
+        assertEquals("test", second.get("environment").asString());
         // 用过的 token 失效
         assertEquals(BudgetWriteOutcome.FAILED, w.resume(o.getToken(), true, "SITE-IN", "admin").getStatus());
     }

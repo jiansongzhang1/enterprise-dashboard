@@ -340,6 +340,19 @@ public class UdsProperties
      * 身份头 X-Uds-*。直连 EC2 本机 8080（本地 SSM 隧道调试包）时 UDS 按它们识别调用方；
      * 经 8443 mTLS 网关时身份由客户端证书决定，这些头被忽略。为空的不发送。
      */
+    /**
+     * X-Uds-Environment：联调固定入口要 {@code test}，现网生产旧版不需要这个头（留空就不发）。
+     * 必须与采集提交 body 的 {@code environment} 一致，否则 UDS 会拒绝。
+     */
+    private String environment = "test";
+
+    /**
+     * 是否发送身份头（Principal / Tenant / Roles / Merchant-Codes）。
+     * 直连 EC2 本机 8080 调试时 UDS 靠这几个头识别调用方，必须开；
+     * 经 8443 mTLS 网关时身份由客户端证书决定，对接手册明确要求不要传，默认关。
+     */
+    private boolean sendIdentityHeaders = false;
+
     /** X-Uds-Principal */
     private String principal = "fivetech-dashboard";
 
@@ -1070,6 +1083,26 @@ public class UdsProperties
     public void setQueryPath(String queryPath)
     {
         this.queryPath = queryPath;
+    }
+
+    public String getEnvironment()
+    {
+        return environment;
+    }
+
+    public void setEnvironment(String environment)
+    {
+        this.environment = environment;
+    }
+
+    public boolean isSendIdentityHeaders()
+    {
+        return sendIdentityHeaders;
+    }
+
+    public void setSendIdentityHeaders(boolean sendIdentityHeaders)
+    {
+        this.sendIdentityHeaders = sendIdentityHeaders;
     }
 
     public String getPrincipal()

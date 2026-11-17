@@ -682,15 +682,20 @@ public class UdsClient
     {
         builder.timeout(Duration.ofSeconds(Math.max(1, properties.getReadTimeoutSeconds())))
             .header("Content-Type", "application/json");
-        // 身份头：直连 EC2 本机 8080（本地 SSM 隧道调试）时 UDS 按这三个头识别调用方，必须带；
-        // 经 8443 mTLS 网关时身份由客户端证书决定，网关会忽略这些头，带上也无害。配置为空的不发
-        header(builder, "X-Uds-Principal", properties.getPrincipal());
-        header(builder, "X-Uds-Tenant", properties.getTenant());
+        // 身份头：直连 EC2 本机 8080（本地 SSM 隧道调试）时 UDS 按这几个头识别调用方，必须带；
+        // 经 8443 mTLS 网关时身份由客户端证书决定，对接手册要求不要传这些头，所以默认关（send-identity-headers）
+        if (properties.isSendIdentityHeaders())
+        {
+            header(builder, "X-Uds-Principal", properties.getPrincipal());
+            header(builder, "X-Uds-Tenant", properties.getTenant());
+            header(builder, "X-Uds-Roles", properties.getRoles());
+            header(builder, "X-Uds-Merchant-Codes", properties.getMerchantCodes());
+        }
         // 多站点（与 UDS 约定）：每次请求都带 X-Uds-Site（默认站点也带，如 SITE-IN）
         header(builder, "X-Uds-Site", siteHeader(com.fivetech.common.utils.SiteContext.code(),
             com.fivetech.common.utils.SiteContext.udsSite(), dashboard));
-        header(builder, "X-Uds-Roles", properties.getRoles());
-        header(builder, "X-Uds-Merchant-Codes", properties.getMerchantCodes());
+        // 环境确认头：联调 test，生产旧版留空不发；与采集提交 body 的 environment 必须一致
+        header(builder, "X-Uds-Environment", properties.getEnvironment());
         // X-Request-Id 每次调用唯一（联调手册第 3 节）：一个页面请求会打出多次 UDS 调用，
         // 用「本系统 traceId + 序号后缀」，既能在 UDS 日志里逐条定位，又能按前缀串回同一次页面请求
         String traceId = TraceIdUtils.get();

@@ -9,6 +9,7 @@ import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import com.fivetech.dashboard.config.DashboardProperties;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,13 +25,16 @@ public class CollectSubmitClient implements CollectSubmitApi
 
     private final BudgetImportProperties props;
 
+    private final DashboardProperties dashboard;
+
     private final ObjectMapper objectMapper;
 
     private volatile HttpClient http;
 
-    public CollectSubmitClient(BudgetImportProperties props, ObjectMapper objectMapper)
+    public CollectSubmitClient(BudgetImportProperties props, DashboardProperties dashboard, ObjectMapper objectMapper)
     {
         this.props = props;
+        this.dashboard = dashboard;
         this.objectMapper = objectMapper;
     }
 
@@ -48,14 +52,19 @@ public class CollectSubmitClient implements CollectSubmitApi
         {
             return new Response(401, null, null, null, base.isEmpty() ? "未配置采集地址" : "未配置站点 " + site + " 的采集令牌");
         }
-        HttpRequest request = HttpRequest.newBuilder(URI.create(base + path))
+        // 站点：令牌本身已经绑定租户，对接手册的示例另要求带 X-Uds-Site，两边必须指向同一站点
+        String udsSite = dashboard == null ? null : dashboard.udsSite(site);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
             .timeout(Duration.ofSeconds(Math.max(1, props.getRequestTimeoutSeconds())))
             .header("Authorization", "Bearer " + token)
             .header("Idempotency-Key", idempotencyKey)
             .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-            .build();
+            .header("Accept", "application/json");
+        if (udsSite != null && !udsSite.isBlank())
+        {
+            builder.header("X-Uds-Site", udsSite.trim());
+        }
+        HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
         long start = System.currentTimeMillis();
         try
         {

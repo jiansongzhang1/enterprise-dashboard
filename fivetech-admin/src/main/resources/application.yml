@@ -242,11 +242,16 @@ dashboard:
       #    启动时设 UDS_BASE_URL=http://127.0.0.1:28080，先在本机保持隧道运行：
       #    aws ssm start-session --target i-09f193a56e56e2297 --region ap-southeast-1 \
       #      --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["8080"],"localPortNumber":["28080"]}'
-      #  - 服务器经 8443 mTLS 网关：身份由客户端证书决定（cmp1-backend），这些头被网关忽略，带上无害
+      #  - 服务器经 8443 mTLS 网关：身份由客户端证书决定（cmp1-backend），对接手册要求不要传这些头
       # X-Request-Id 每次调用唯一（traceId + 序号）
+      # 身份头总开关：本地调试直连 8080 时设 true，走 8443 网关时保持 false
+      send-identity-headers: ${UDS_SEND_IDENTITY_HEADERS:false}
       principal: ${UDS_PRINCIPAL:backend-local-debug}
       tenant: ${UDS_TENANT:site:SITE-IN}
       roles: ${UDS_ROLES:dashboard_ops}
+      # X-Uds-Environment：联调固定入口要 test；现网生产旧版还没有这个头，切生产时设成空串
+      # 必须与 promo.budget-import.environment 一致，混用会被平台拒绝
+      environment: ${UDS_ENVIRONMENT:test}
       # 批量查询（列表 + COUNT、周序列），Body 为数组，最多 50 项
       batch-path: ${UDS_BATCH_PATH:/v1/query/batch}
       # 扫描量预估：明细导出前用它判断走同步 XLSX 还是异步导出（只编译不执行，不返回结果总数）
@@ -707,6 +712,9 @@ promo:
     member-dataset: ${PROMO_MARKET_MEMBER_DATASET:dashboard_market_member_snapshot_v1}
     # 注册分群（留存与回收）
     cohort-dataset: ${PROMO_MARKET_COHORT_DATASET:dashboard_market_cohort_v1}
+    # 裂变层级（节点树 + 窗口事实）；节点主键是 merchant_code + agent_id，
+    # 目前只有 SITE-IN 的 node_* 是 SUPPORTED，九站是 UNSUPPORTED/PENDING_SOURCE，接口会按未接通返回
+    fission-dataset: ${PROMO_MARKET_FISSION_DATASET:dashboard_market_fission_v1}
     # 可选：merchant_code 过滤（UDS 联调包里的 merchant_code）；为空只按站点头区分
     merchant-code: ${PROMO_MARKET_MERCHANT_CODE:}
     # 单次 limit（UDS 上限 1000），满页自动翻页
@@ -721,6 +729,8 @@ promo:
     enabled: ${PROMO_BUDGET_IMPORT_ENABLED:false}
     # 读取开关：关闭时表格不查 UDS、预算模板不预填（写入也不可用：整日替换前要读已有数据）
     read-enabled: ${PROMO_BUDGET_READ_ENABLED:true}
+    # 提交 body 的环境确认：test / prod，与采集令牌、UDS 的 environment 必须指向同一环境
+    environment: ${COLLECT_ENVIRONMENT:test}
     # 采集接口地址，不带 /v1：内网 http://10.32.16.5:8090，本机转发 http://127.0.0.1:18090
     collect-base-url: ${COLLECT_BASE_URL:}
     # 采集 Bearer token 只从环境变量读
