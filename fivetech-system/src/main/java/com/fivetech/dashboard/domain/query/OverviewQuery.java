@@ -85,7 +85,7 @@ public class OverviewQuery implements Serializable
 
     // ---------- 推广分析（scene = PROMO）；运营总览忽略 ----------
 
-    /** OPS 运营总览（默认）/ PROMO 推广分析概览：决定取哪组指标、哪组数据、校验哪个权限 */
+    /** OPS 运营总览（默认）/ PROMO 推广分析概览 / RISK 风控分析概览：决定取哪组指标、哪组数据、校验哪个权限 */
     private String scene;
 
     /** 推广商编码（渠道字典的推广商 ID），与 channels 取并集；都为空 = 全部 */
@@ -122,6 +122,12 @@ public class OverviewQuery implements Serializable
     public boolean isPromo()
     {
         return scene != null && "PROMO".equalsIgnoreCase(scene.trim());
+    }
+
+    /** scene = RISK（风控分析 · 概览，不区分大小写） */
+    public boolean isRisk()
+    {
+        return scene != null && "RISK".equalsIgnoreCase(scene.trim());
     }
 
     public String getScene()

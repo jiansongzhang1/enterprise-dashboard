@@ -66,6 +66,9 @@ public class SysMenu extends BaseEntity
     /** 菜单图标 */
     private String icon;
 
+    /** 菜单分组（视角）：site 站点板块（默认）/ game 游戏板块；/getRouters 按它输出 group_code */
+    private String groupCode;
+
     /** 子菜单 */
     private List<SysMenu> children = new ArrayList<SysMenu>();
 
@@ -236,6 +239,16 @@ public class SysMenu extends BaseEntity
         this.icon = icon;
     }
 
+    public String getGroupCode()
+    {
+        return groupCode;
+    }
+
+    public void setGroupCode(String groupCode)
+    {
+        this.groupCode = groupCode;
+    }
+
     public List<SysMenu> getChildren()
     {
         return children;
@@ -264,6 +277,7 @@ public class SysMenu extends BaseEntity
             .append("status ", getStatus())
             .append("perms", getPerms())
             .append("icon", getIcon())
+            .append("groupCode", getGroupCode())
             .append("createBy", getCreateBy())
             .append("createTime", getCreateTime())
             .append("updateBy", getUpdateBy())

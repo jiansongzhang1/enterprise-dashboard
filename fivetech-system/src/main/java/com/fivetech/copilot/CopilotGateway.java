@@ -71,6 +71,15 @@ public class CopilotGateway
 
         /** 业务校验：返回 null 表示通过，否则返回不采用的原因（会写进记录和页面提示） */
         public Function<String, String> validator;
+
+        /** 可用工具；为空时不带工具调用（只在 messages 方式下生效） */
+        public java.util.List<AiClient.Tool> tools;
+
+        /** 执行工具；tools 不为空时必填 */
+        public AiClient.ToolExecutor toolExecutor;
+
+        /** 最多执行几轮工具 */
+        public int maxToolRounds;
     }
 
     /** 调用结果 */
@@ -141,8 +150,19 @@ public class CopilotGateway
         Outcome outcome;
         try
         {
-            AiClient.AiResult res = r.messages != null ? client.chat(r.model, r.system, r.messages, r.maxTokens)
-                : client.complete(r.model, r.system, r.user, r.maxTokens);
+            AiClient.AiResult res;
+            if (r.messages != null && r.tools != null && !r.tools.isEmpty() && r.toolExecutor != null)
+            {
+                res = client.chat(r.model, r.system, r.messages, r.maxTokens, r.tools, r.toolExecutor, r.maxToolRounds);
+            }
+            else if (r.messages != null)
+            {
+                res = client.chat(r.model, r.system, r.messages, r.maxTokens);
+            }
+            else
+            {
+                res = client.complete(r.model, r.system, r.user, r.maxTokens);
+            }
             u.setInputTokens(res.getInputTokens());
             u.setOutputTokens(res.getOutputTokens());
             if (res.getModel() != null)

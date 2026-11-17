@@ -128,9 +128,9 @@ public class OverviewServiceImpl implements IOverviewService
             }
             return promoOverview.query(query);
         }
-        if (StringUtils.isNotEmpty(query.getScene()) && !"OPS".equalsIgnoreCase(query.getScene().trim()))
+        if (StringUtils.isNotEmpty(query.getScene()) && !"OPS".equalsIgnoreCase(query.getScene().trim()) && !query.isRisk())
         {
-            throw new ServiceException("scene 只能是 OPS（運營總覽）或 PROMO（推廣分析）", 4003);
+            throw new ServiceException("scene 只能是 OPS（運營總覽）、PROMO（推廣分析）或 RISK（風控分析）", 4003);
         }
         OverviewVO vo = new OverviewVO();
         List<OverviewNoticeVO> notices = vo.getNotices();
@@ -216,7 +216,11 @@ public class OverviewServiceImpl implements IOverviewService
         // 异常提醒条：读监控模块的事件表，失败只少这一块，不影响指标
         try
         {
-            vo.setAnomalies(monitorOverviewService.anomalies(site(query), isToday, today));
+            // 异常提醒条只在运营总览出现；风控概览（scene = RISK）不出
+            if (!query.isRisk())
+            {
+                vo.setAnomalies(monitorOverviewService.anomalies(site(query), isToday, today));
+            }
         }
         catch (RuntimeException e)
         {
@@ -734,7 +738,7 @@ public class OverviewServiceImpl implements IOverviewService
     {
         MetricsBlockVO block = new MetricsBlockVO();
         List<MetricCardVO> items = new ArrayList<>(codes.size());
-        List<String> core = metricRegistry.coreOf(DashboardPage.OVERVIEW);
+        List<String> core = metricRegistry.coreOf(page(query));
 
         for (String code : codes)
         {
@@ -755,7 +759,7 @@ public class OverviewServiceImpl implements IOverviewService
             card.setValueFormat(def.getFormat());
             card.setDecimals(decimalsOf(def));
             // 序号 = 站点内名次（站点在「站点管理 › 指標配置」里调过顺序时按站点，否则按全站默认）；前端按 sortNo 直接展示
-            card.setSortNo(metricRegistry.pageSortNo(DashboardPage.OVERVIEW, site(query), code));
+            card.setSortNo(metricRegistry.pageSortNo(page(query), site(query), code));
             card.setUpdateFrequency(def.getUpdateFrequency());
             card.setDirection(def.getDirection());
             // 没有规则的指标 NOT_CONFIGURED，绝不填 OK：「没配规则」和「查过了一切正常」是两件事，后者染绿是骗人
@@ -819,7 +823,7 @@ public class OverviewServiceImpl implements IOverviewService
             }
             items.add(card);
         }
-        block.setGroups(buildGroups());
+        block.setGroups(buildGroups(page(query)));
         block.setItems(items);
         block.setTotal(items.size());
         block.setCoreCount((int) items.stream().filter(x -> "CORE".equals(x.getEmphasis())).count());
@@ -936,17 +940,26 @@ public class OverviewServiceImpl implements IOverviewService
      * 指标白名单。<b>传了不认识的 code 直接报 4003</b>，不静默丢弃——
      * 少一列而不报错，排查时没人想得到是入参拼错了。
      */
+    /**
+     * 页面：scene = RISK 为风控概览（指标取 dashboard_page_metric 的 RISK 页），其余为运营总览。
+     * 两者共用同一套取数与组装：风控概览的指标、顺序、默认卡片都在「指标管理」里配，不写在代码里
+     */
+    static DashboardPage page(OverviewQuery query)
+    {
+        return query != null && query.isRisk() ? DashboardPage.RISK : DashboardPage.OVERVIEW;
+    }
+
     private List<String> resolveMetricCodes(OverviewQuery query)
     {
         // 按站点的顺序与显示（dashboard_page_metric_site）；站点隐藏的指标不返回，传了也当作不在页面上
-        List<String> configured = metricRegistry.columnsOf(DashboardPage.OVERVIEW, site(query));
+        List<String> configured = metricRegistry.columnsOf(page(query), site(query));
         List<String> requested = query.getMetrics();
         if (requested == null || requested.isEmpty())
         {
             return filterByGroup(configured, query.getGroup());
         }
         // 不认识的编码看全站页面配置：站点隐藏的指标是认识的，传了只是不返回，不报 4003
-        List<String> known = metricRegistry.columnsOf(DashboardPage.OVERVIEW);
+        List<String> known = metricRegistry.columnsOf(page(query));
         List<String> unknown = new ArrayList<>();
         for (String code : requested)
         {
@@ -1034,10 +1047,10 @@ public class OverviewServiceImpl implements IOverviewService
      * <p>count 按<b>页面配置</b>统计，不按本次返回的 items——请求带了 group 筛选时，
      * 其余分组的按钮仍要显示原本的数量，不能跟着变 0。</p>
      */
-    private List<MetricGroupVO> buildGroups()
+    private List<MetricGroupVO> buildGroups(DashboardPage page)
     {
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (String code : metricRegistry.columnsOf(DashboardPage.OVERVIEW, properties.currentSite()))
+        for (String code : metricRegistry.columnsOf(page, properties.currentSite()))
         {
             MetricDefinition def = metricRegistry.get(code);
             if (def != null && def.getGroup() != null)

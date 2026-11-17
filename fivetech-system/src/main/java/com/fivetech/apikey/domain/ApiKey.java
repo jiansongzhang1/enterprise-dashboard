@@ -29,7 +29,7 @@ public class ApiKey
     /** 绑定账号的登录名（列表显示用，联表查出） */
     private String userName;
 
-    /** 能访问的接口路径，逗号分隔，如 /notification/lark/send；必须在 security.api-key.paths 允许的范围内 */
+    /** 能访问的接口路径（Ant 风格），逗号分隔，如 /monitor/rules/*&#47;alert；必须在 security.api-key.paths 允许的范围内 */
     private String allowedPaths;
 
     /** 允许的来源 IP，逗号分隔；为空不限 */

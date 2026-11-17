@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.fivetech.common.enums.BusinessType;
+import com.fivetech.common.annotation.Log;
 import com.fivetech.common.core.controller.BaseController;
 import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.dashboard.domain.query.BetRecordQuery;
@@ -84,6 +86,7 @@ public class RecordQueryController extends BaseController
     }
 
     @PreAuthorize("@ss.hasPermi('dashboard:record:member')")
+    @Log(title = "明细查询 · 会员", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/member")
     public ResponseEntity<?> member(@Validated @RequestBody MemberRecordQuery query)
     {
@@ -106,6 +109,7 @@ public class RecordQueryController extends BaseController
      * 存款明细（时间按创建时间）；export_csv=true 时下载 XLSX
      */
     @PreAuthorize("@ss.hasPermi('dashboard:record:deposit')")
+    @Log(title = "明细查询 · 存款", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/deposit")
     public ResponseEntity<?> deposit(@Validated @RequestBody DepositRecordQuery query)
     {
@@ -125,6 +129,7 @@ public class RecordQueryController extends BaseController
      * 提款明细（时间按创建时间）；export_csv=true 时下载 XLSX
      */
     @PreAuthorize("@ss.hasPermi('dashboard:record:withdraw')")
+    @Log(title = "明细查询 · 提款", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/withdraw")
     public ResponseEntity<?> withdraw(@Validated @RequestBody WithdrawRecordQuery query)
     {
@@ -144,6 +149,7 @@ public class RecordQueryController extends BaseController
      * 投注明细（时间按投注时间）；export_csv=true 时下载 XLSX
      */
     @PreAuthorize("@ss.hasPermi('dashboard:record:bet')")
+    @Log(title = "明细查询 · 投注", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/bet")
     public ResponseEntity<?> bet(@Validated @RequestBody BetRecordQuery query)
     {

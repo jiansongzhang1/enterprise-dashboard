@@ -1,6 +1,7 @@
 package com.fivetech.system.domain.vo;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
@@ -40,6 +41,12 @@ public class RouterVo
      * 路由参数：如 {"id": 1, "name": "ry"}
      */
     private String query;
+
+    /**
+     * 菜单分组（视角）：site 站点板块（默认）/ game 游戏板块。JSON 里叫 group_code，与 component 平级，每个节点都输出
+     */
+    @JsonProperty("group_code")
+    private String groupCode;
 
     /**
      * 当你一个路由下面的 children 声明的路由大于1个时，自动会变成嵌套的模式--如组件页面
@@ -144,5 +151,16 @@ public class RouterVo
     public void setChildren(List<RouterVo> children)
     {
         this.children = children;
+    }
+
+    @JsonProperty("group_code")
+    public String getGroupCode()
+    {
+        return groupCode;
+    }
+
+    public void setGroupCode(String groupCode)
+    {
+        this.groupCode = groupCode;
     }
 }

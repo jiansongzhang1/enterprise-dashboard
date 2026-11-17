@@ -157,6 +157,9 @@ public final class SubscriptionBrief
 
         public Integer sendHour;
 
+        /** 发送频率文字（如「每週一 10:00」「每 4 小時（10:00–22:00）」）；为空时按 sendHour 写「每日 HH:00」 */
+        public String frequency;
+
         public String overviewUrl;
 
         public boolean test;
@@ -179,7 +182,8 @@ public final class SubscriptionBrief
         b.compare = vo.getCompare() == null ? DASH : span(vo.getCompare().getFrom(), vo.getCompare().getTo(), g);
         b.asOf = vo.getAsOf() == null ? DASH : shortTime(vo.getAsOf());
         b.footer = "資料截至 " + b.asOf
-            + (ctx.sendHour == null ? "" : " · 每日 " + String.format("%02d:00", ctx.sendHour) + " 發送")
+            + (ctx.frequency != null ? " · " + ctx.frequency + " 發送"
+                : ctx.sendHour == null ? "" : " · 每日 " + String.format("%02d:00", ctx.sendHour) + " 發送")
             + (ctx.timezone == null ? "" : " · " + ctx.timezone);
 
         if (vo.getSlot() != null)

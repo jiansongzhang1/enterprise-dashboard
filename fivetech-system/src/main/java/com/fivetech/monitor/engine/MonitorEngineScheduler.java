@@ -90,7 +90,52 @@ public class MonitorEngineScheduler
                     log.error("[monitor] 站点 {} 本轮判定失败，下一轮重试", code, e);
                 }
             }
+            pollCond(now);
         });
+    }
+
+    /** 条件规则（release_next ㉓）：与指标规则同一把锁、同一轮，逐站点检测 */
+    private void pollCond(LocalDateTime now)
+    {
+        if (condJob == null)
+        {
+            return;
+        }
+        List<String> sites;
+        try
+        {
+            sites = condJob.sites();
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[monitor] 查询有条件规则的站点失败", e);
+            return;
+        }
+        for (String site : sites)
+        {
+            if (!dashboard.isKnownSite(site))
+            {
+                log.warn("[monitor] 站点 {} 有启用的条件规则但不在 dashboard.sites 配置里，跳过", site);
+                continue;
+            }
+            String code = dashboard.canonical(site);
+            try
+            {
+                SiteContext.callWith(code, dashboard.udsSite(code), () -> condJob.run(code, now));
+            }
+            catch (RuntimeException e)
+            {
+                log.error("[monitor] 站点 {} 条件规则本轮检测失败，下一轮重试", code, e);
+            }
+        }
+    }
+
+    private com.fivetech.monitor.cond.CondJob condJob;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCondJob(com.fivetech.monitor.cond.CondJob condJob)
+    {
+        this.condJob = condJob;
     }
 
     @Scheduled(cron = "${monitor.engine.notify-cron:30 * * * * *}", zone = "${dashboard.timezone:Asia/Kolkata}")

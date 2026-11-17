@@ -46,6 +46,8 @@ class MonitorMapperScopeTest
             "MonitorMetaMapper.selectOwnerCandidate",
             // 判定任务入口：跨站点找出有启用规则的站点，之后每个站点的查询都带 scope
             "MonitorEngineMapper.selectEngineSites",
+            // 条件规则检测入口：跨站点找出有启用条件规则的站点，之后每个站点的查询都带 scope
+            "MonitorCondMapper.selectCondSites",
             // 发送任务入口：跨站点找出有到期待发送记录的站点，之后每个站点的查询都带 scope
             "MonitorNotifyMapper.selectNotifySites",
             // 系统管理 · 站点管理：列出全部站点的设置和用过的包网（system:site:list 权限）

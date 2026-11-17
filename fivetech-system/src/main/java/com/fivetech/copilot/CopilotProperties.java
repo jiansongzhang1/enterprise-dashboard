@@ -204,6 +204,49 @@ public class CopilotProperties
         public void setMaxChars(int maxChars) { this.maxChars = maxChars; }
         public int getContextCacheSeconds() { return contextCacheSeconds; }
         public void setContextCacheSeconds(int contextCacheSeconds) { this.contextCacheSeconds = contextCacheSeconds; }
+
+        private DataQuery dataQuery = new DataQuery();
+
+        public DataQuery getDataQuery() { return dataQuery; }
+        public void setDataQuery(DataQuery dataQuery) { this.dataQuery = dataQuery == null ? new DataQuery() : dataQuery; }
+    }
+
+    /**
+     * AI 助手查审计日志（受限工具）。模型只能填筛选条件，SQL 由后端拼；权限跟随页面
+     * （操作日志 monitor:operlog:list、登录日志 monitor:logininfor:list），没权限的工具不会给模型。
+     */
+    public static class DataQuery
+    {
+        /** 总开关；关掉后助手只按上下文回答，不查库 */
+        private boolean enabled = true;
+
+        /** 单次最多返回几条 */
+        private int maxRows = 50;
+
+        /** 模型不指定条数时返回几条 */
+        private int defaultRows = 20;
+
+        /** 模型不指定时间范围时往前查几天 */
+        private int defaultDays = 7;
+
+        /** 时间跨度上限（天）；超过时截断，防止全表扫 */
+        private int maxDays = 90;
+
+        /** 一次提问最多执行几轮工具；用完后再问一次模型要文字回答 */
+        private int maxRounds = 3;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getMaxRows() { return Math.max(1, maxRows); }
+        public void setMaxRows(int maxRows) { this.maxRows = maxRows; }
+        public int getDefaultRows() { return Math.max(1, Math.min(getMaxRows(), defaultRows)); }
+        public void setDefaultRows(int defaultRows) { this.defaultRows = defaultRows; }
+        public int getDefaultDays() { return Math.max(1, defaultDays); }
+        public void setDefaultDays(int defaultDays) { this.defaultDays = defaultDays; }
+        public int getMaxDays() { return Math.max(1, maxDays); }
+        public void setMaxDays(int maxDays) { this.maxDays = maxDays; }
+        public int getMaxRounds() { return Math.max(0, maxRounds); }
+        public void setMaxRounds(int maxRounds) { this.maxRounds = maxRounds; }
     }
 
     private Chat chat = new Chat();

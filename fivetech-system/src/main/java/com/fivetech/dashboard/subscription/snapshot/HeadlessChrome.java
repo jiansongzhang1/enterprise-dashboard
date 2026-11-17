@@ -73,6 +73,8 @@ final class HeadlessChrome implements AutoCloseable
         String readySelector;
         String busySelector;
         String hideSelector;
+        String expandSelector;
+        String extraCss;
         String loginKeyword;
         int idleMillis = 800;
         int settleMillis = 1500;
@@ -488,8 +490,16 @@ final class HeadlessChrome implements AutoCloseable
         }
         else
         {
-            expr = "[0, 0, document.documentElement.clientWidth || innerWidth,"
-                + " Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)]";
+            // 整页高度：根元素 / body，再加上所有还在内部滚动的容器（放不开的情况兜底）
+            expr = "(() => {"
+                + " let h = Math.max(document.documentElement.scrollHeight,"
+                + "   document.body ? document.body.scrollHeight : 0);"
+                + " for (const e of document.querySelectorAll('*')) {"
+                + "  if (e.scrollHeight - e.clientHeight > 4 && e.clientHeight > 0) {"
+                + "   const r = e.getBoundingClientRect();"
+                + "   if (r.width > 0) { h = Math.max(h, r.top + scrollY + e.scrollHeight); }"
+                + "  } }"
+                + " return [0, 0, document.documentElement.clientWidth || innerWidth, h]; })()";
         }
         JsonNode v = eval(expr, session, step);
         if (v == null || !v.isArray() || v.size() < 4)
@@ -527,9 +537,20 @@ final class HeadlessChrome implements AutoCloseable
     String preludeScript(Shot s)
     {
         StringBuilder css = new StringBuilder("*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}");
+        // 放开根元素的高度限制，否则撑大视口也只拿得到一屏
+        css.append("html,body{height:auto!important;max-height:none!important;overflow:visible!important}");
         if (notBlank(s.hideSelector))
         {
             css.append(s.hideSelector).append("{display:none!important}");
+        }
+        if (notBlank(s.expandSelector))
+        {
+            css.append(s.expandSelector)
+                .append("{height:auto!important;max-height:none!important;overflow:visible!important}");
+        }
+        if (notBlank(s.extraCss))
+        {
+            css.append(s.extraCss);
         }
         return "(() => {"
             + "try { const kv = " + json.valueToTree(s.localStorage).toString() + ";"

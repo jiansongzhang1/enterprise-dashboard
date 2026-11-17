@@ -27,7 +27,13 @@ public enum DashboardPage
      * 推广分析 · 概览（FY-46）。指标在 UDS 接入前是「仅登记」（status = '1'），不进注册表的取数快照，
      * 由 {@code PromoMetricCatalog} 每次读库；is_default = 打开页面默认显示的卡。
      */
-    PROMO("dashboard:promo:view");
+    PROMO("dashboard:promo:view"),
+
+    /**
+     * 风控分析 · 概览。与运营总览共用取数与组装（OverviewServiceImpl），只是指标集不同：
+     * 指标、顺序、默认卡片（emphasis = CORE）都在 dashboard_page_metric 的 RISK 页，在「指标管理」里维护。
+     */
+    RISK("dashboard:risk:view");
 
     private final String permission;
 

@@ -101,6 +101,23 @@ public class MetricDictItem
     /** 可歸因：推广分析概览选中该卡并请求 attribution 时返回变化归因（dashboard_metric_card.attributable） */
     private Boolean attributable;
 
+    /**
+     * 所属范围：指标用在哪个页面——OVERVIEW 运营总览 / PROMO 推广分析 / RISK 风控分析；为空（null）= 适用于所有页面
+     * （dashboard_metric_card.page_scope）。修改时传空串表示清空为「所有页面」，不传（null）沿用原值
+     */
+    private String pageScope;
+
+    /**
+     * 页面专属属性（dashboard_metric_card.ext，jsonb）：排行榜列（RISK_RANK）、游戏分析列（RISK_GAME）、
+     * 条件规则字段（MONITOR_COND）在页面上怎么用——接口编码、分组、聚合方式、能否排行、能否做名单条件、支持的维度等。
+     * 结构见 {@link com.fivetech.dashboard.service.MetricExt}。不传沿用原值，传空对象清空。
+     */
+    private java.util.Map<String, Object> ext;
+
+    /** ext 的库内文本（mapper 用） */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String extJson;
+
     /** 门槛条下限 */
     private java.math.BigDecimal gaugeMin;
 
@@ -433,6 +450,36 @@ public class MetricDictItem
     public Boolean getAttributable()
     {
         return attributable;
+    }
+
+    public String getPageScope()
+    {
+        return pageScope;
+    }
+
+    public void setPageScope(String pageScope)
+    {
+        this.pageScope = pageScope;
+    }
+
+    public java.util.Map<String, Object> getExt()
+    {
+        return ext;
+    }
+
+    public void setExt(java.util.Map<String, Object> ext)
+    {
+        this.ext = ext;
+    }
+
+    public String getExtJson()
+    {
+        return extJson;
+    }
+
+    public void setExtJson(String extJson)
+    {
+        this.extJson = extJson;
     }
 
     public void setAttributable(Boolean attributable)

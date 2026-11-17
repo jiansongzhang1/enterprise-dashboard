@@ -22,6 +22,8 @@
         <druid.version>1.2.28</druid.version>
         <yauaa.version>8.2.0</yauaa.version>
         <pagehelper.boot.version>4.1.1</pagehelper.boot.version>
+        <!-- MSK IAM 认证插件（连 MSK 用 SASL_SSL + AWS_MSK_IAM） -->
+        <aws-msk-iam-auth.version>2.2.0</aws-msk-iam-auth.version>
         <fastjson.version>2.0.64</fastjson.version>
         <oshi.version>7.4.4</oshi.version>
         <commons.io.version>2.22.0</commons.io.version>
@@ -83,6 +85,13 @@
                 <groupId>nl.basjes.parse.useragent</groupId>
                 <artifactId>yauaa</artifactId>
                 <version>${yauaa.version}</version>
+            </dependency>
+
+            <!-- MSK IAM 认证：spring-kafka 的版本由 spring-boot-dependencies 管理，这里只管这个插件 -->
+            <dependency>
+                <groupId>software.amazon.msk</groupId>
+                <artifactId>aws-msk-iam-auth</artifactId>
+                <version>${aws-msk-iam-auth.version}</version>
             </dependency>
 
             <!-- pagehelper 分页插件 -->

@@ -114,6 +114,22 @@ public class ConfigCenterService
     }
 
     /**
+     * 读取生效的那一条：站点自己的优先，没有再用全站通用；都没有返回 null（风控页面要显示最后修改人与时间）。
+     */
+    public ConfigItem effective(String configCode, String siteCode)
+    {
+        if (StringUtils.isNotEmpty(siteCode))
+        {
+            ConfigItem own = mapper.selectOne(configCode, siteCode.trim());
+            if (own != null)
+            {
+                return own;
+            }
+        }
+        return mapper.selectOne(configCode, "");
+    }
+
+    /**
      * 读取配置值：站点自己的优先，没有再用全站通用；都没有返回 null。
      */
     public String value(String configCode, String siteCode)

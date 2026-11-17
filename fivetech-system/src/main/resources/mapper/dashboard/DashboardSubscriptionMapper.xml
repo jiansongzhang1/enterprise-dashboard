@@ -18,6 +18,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="aiModel"     column="ai_model"     />
 		<result property="snapshotEnabled" column="snapshot_enabled" />
 		<result property="snapshotFilters"   column="snapshot_filters"   />
+		<result property="freqType"    column="freq_type"    />
+		<result property="freqDow"     column="freq_dow"     />
+		<result property="freqEvery"   column="freq_every"   />
+		<result property="freqTo"      column="freq_to"      />
+		<result property="viewGran"    column="view_gran"    />
+		<result property="viewCmp"     column="view_cmp"     />
+		<result property="viewFrom"    column="view_from"    />
+		<result property="viewTo"      column="view_to"      />
+		<result property="viewCmpFrom" column="view_cmp_from" />
+		<result property="viewCmpTo"   column="view_cmp_to"  />
+		<result property="sourcePage"  column="source_page"  />
+		<result property="ownerUserId" column="owner_user_id" />
 		<result property="lastSlot"    column="last_slot"    />
 		<result property="lastRunAt"   column="last_run_at"  />
 		<result property="lastStatus"  column="last_status"  />
@@ -42,11 +54,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="messageId"      column="message_id"      />
 		<result property="operator"       column="operator"        />
 		<result property="createTime"     column="create_time"     />
+		<result property="runId"          column="run_id"          />
+		<result property="result"         column="result"          />
+		<result property="reasonCode"     column="reason_code"     />
+		<result property="attempts"       column="attempts"        />
 	</resultMap>
 
 	<sql id="cols">
 		select id, site_code, name, description, range_code, metrics, send_hour, receivers, enabled, ai_enabled, ai_model,
-		       snapshot_enabled, snapshot_filters, last_slot, last_run_at, last_status, last_error, create_by, create_time, update_by, update_time
+		       snapshot_enabled, snapshot_filters, freq_type, freq_dow, freq_every, freq_to, view_gran, view_cmp, view_from, view_to,
+		       view_cmp_from, view_cmp_to, source_page, owner_user_id, last_slot, last_run_at, last_status, last_error, create_by, create_time, update_by, update_time
 		  from dashboard_subscription
 	</sql>
 
@@ -77,9 +94,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
 		insert into dashboard_subscription (site_code, name, description, range_code, metrics, send_hour, receivers, enabled,
-		                                    ai_enabled, ai_model, snapshot_enabled, snapshot_filters, create_by, create_time, update_by, update_time)
+		                                    ai_enabled, ai_model, snapshot_enabled, snapshot_filters,
+		                                    freq_type, freq_dow, freq_every, freq_to, view_gran, view_cmp, view_from, view_to,
+		                                    view_cmp_from, view_cmp_to, source_page, owner_user_id,
+		                                    create_by, create_time, update_by, update_time)
 		values (#{siteCode}, #{name}, #{description}, #{rangeCode}, #{metrics}, #{sendHour}, #{receivers}, #{enabled},
 		        coalesce(#{aiEnabled}, false), #{aiModel}, coalesce(#{snapshotEnabled}, false), #{snapshotFilters},
+		        coalesce(#{freqType}, 'DAY'), #{freqDow}, #{freqEvery}, #{freqTo}, #{viewGran}, coalesce(#{viewCmp}, 'PREV'),
+		        #{viewFrom}, #{viewTo}, #{viewCmpFrom}, #{viewCmpTo}, coalesce(#{sourcePage}, 'ov'), #{ownerUserId},
 		        #{createBy}, localtimestamp, #{createBy}, localtimestamp)
 	</insert>
 
@@ -89,6 +111,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       send_hour = #{sendHour}, receivers = #{receivers}, enabled = #{enabled},
 		       ai_enabled = coalesce(#{aiEnabled}, false), ai_model = #{aiModel},
 		       snapshot_enabled = coalesce(#{snapshotEnabled}, false), snapshot_filters = #{snapshotFilters},
+		       freq_type = coalesce(#{freqType}, 'DAY'), freq_dow = #{freqDow}, freq_every = #{freqEvery}, freq_to = #{freqTo},
+		       view_gran = #{viewGran}, view_cmp = coalesce(#{viewCmp}, 'PREV'), view_from = #{viewFrom}, view_to = #{viewTo},
+		       view_cmp_from = #{viewCmpFrom}, view_cmp_to = #{viewCmpTo}, owner_user_id = #{ownerUserId},
 		       update_by = #{updateBy}, update_time = localtimestamp
 		 where id = #{id} and del_flag = '0'
 	</update>
@@ -121,17 +146,167 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
 	<insert id="insertLog">
 		insert into dashboard_subscription_log (subscription_id, site_code, trigger_type, period, receiver_type, receiver_id,
-		                                        receiver_name, status, error, message_id, operator, create_time)
+		                                        receiver_name, status, error, message_id, operator, create_time,
+		                                        run_id, result, reason_code, attempts)
 		values (#{subscriptionId}, #{siteCode}, #{triggerType}, #{period}, #{receiverType}, #{receiverId},
-		        #{receiverName}, #{status}, #{error}, #{messageId}, #{operator}, localtimestamp)
+		        #{receiverName}, #{status}, #{error}, #{messageId}, #{operator}, localtimestamp,
+		        #{runId}, #{result}, #{reasonCode}, #{attempts})
 	</insert>
 
 	<select id="selectLogs" resultMap="LogResult">
 		select id, subscription_id, site_code, trigger_type, period, receiver_type, receiver_id, receiver_name,
-		       status, error, message_id, operator, create_time
+		       status, error, message_id, operator, create_time, run_id, result, reason_code, attempts
 		  from dashboard_subscription_log
 		 where subscription_id = #{subscriptionId}
 		 order by id desc
 		 limit #{limit}
+	</select>
+
+	<!-- ===================== 推送批次与发送历史（2026-11-13） ===================== -->
+
+	<resultMap type="com.fivetech.dashboard.subscription.DashboardSubscriptionRun" id="RunResult">
+		<id     property="id"             column="id"              />
+		<result property="subscriptionId" column="subscription_id" />
+		<result property="siteCode"       column="site_code"       />
+		<result property="triggerType"    column="trigger_type"    />
+		<result property="planAt"         column="plan_at"         />
+		<result property="sentAt"         column="sent_at"         />
+		<result property="period"         column="period"          />
+		<result property="comparePeriod"  column="compare_period"  />
+		<result property="result"         column="result"          />
+		<result property="reasonCode"     column="reason_code"     />
+		<result property="error"          column="error"           />
+		<result property="receiverTotal"  column="receiver_total"  />
+		<result property="sent"           column="sent"            />
+		<result property="failed"         column="failed"          />
+		<result property="aiStatus"       column="ai_status"       />
+		<result property="aiError"        column="ai_error"        />
+		<result property="snapshotStatus" column="snapshot_status" />
+		<result property="snapshotError"  column="snapshot_error"  />
+		<result property="operator"       column="operator"        />
+		<result property="startedAt"      column="started_at"      />
+		<result property="finishedAt"     column="finished_at"     />
+	</resultMap>
+
+	<insert id="insertRun" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+		insert into dashboard_subscription_run (subscription_id, site_code, trigger_type, plan_at, sent_at, period, compare_period,
+		                                        result, reason_code, error, receiver_total, sent, failed, ai_status, ai_error,
+		                                        snapshot_status, snapshot_error, operator, started_at, finished_at)
+		values (#{subscriptionId}, #{siteCode}, #{triggerType}, #{planAt}, #{sentAt}, #{period}, #{comparePeriod},
+		        coalesce(#{result}, 'RUNNING'), #{reasonCode}, #{error}, coalesce(#{receiverTotal}, 0), coalesce(#{sent}, 0),
+		        coalesce(#{failed}, 0), #{aiStatus}, #{aiError}, #{snapshotStatus}, #{snapshotError}, #{operator},
+		        localtimestamp, case when coalesce(#{result}, 'RUNNING') = 'RUNNING' then null else localtimestamp end)
+	</insert>
+
+	<update id="finishRun">
+		update dashboard_subscription_run
+		   set result = #{result}, reason_code = #{reasonCode}, error = #{error}, sent_at = #{sentAt},
+		       period = #{period}, compare_period = #{comparePeriod},
+		       receiver_total = coalesce(#{receiverTotal}, 0), sent = coalesce(#{sent}, 0), failed = coalesce(#{failed}, 0),
+		       ai_status = #{aiStatus}, ai_error = #{aiError}, snapshot_status = #{snapshotStatus}, snapshot_error = #{snapshotError},
+		       finished_at = localtimestamp
+		 where id = #{id}
+	</update>
+
+	<!-- 中断的批次（进程退出）：开始超过 minutes 分钟仍是 RUNNING 的改为 FAIL -->
+	<update id="failStaleRuns">
+		update dashboard_subscription_run
+		   set result = 'FAIL', error = '發送中斷', finished_at = localtimestamp
+		 where result = 'RUNNING' and started_at &lt; localtimestamp - make_interval(mins => #{minutes})
+	</update>
+
+	<!-- 该订阅进行中的批次数（立即发送防重复点击） -->
+	<select id="countRunning" resultType="int">
+		select count(*) from dashboard_subscription_run
+		 where subscription_id = #{subscriptionId} and result = 'RUNNING'
+		   and started_at &gt;= localtimestamp - make_interval(mins => #{minutes})
+	</select>
+
+	<!-- 各订阅最近一次结束的批次（列表「發送」列的上次结果） -->
+	<select id="selectLastRuns" resultMap="RunResult">
+		select distinct on (subscription_id) id, subscription_id, site_code, trigger_type, plan_at, sent_at, period, compare_period,
+		       result, reason_code, error, receiver_total, sent, failed, ai_status, ai_error, snapshot_status, snapshot_error,
+		       operator, started_at, finished_at
+		  from dashboard_subscription_run
+		 where upper(site_code) = upper(#{siteCode}) and result &lt;&gt; 'RUNNING'
+		 order by subscription_id, sent_at desc nulls last, id desc
+	</select>
+
+	<!-- 某批次的逐群结果 -->
+	<select id="selectRunLogs" resultMap="LogResult">
+		select id, subscription_id, site_code, trigger_type, period, receiver_type, receiver_id, receiver_name,
+		       status, error, message_id, operator, create_time, run_id, result, reason_code, attempts
+		  from dashboard_subscription_log
+		 where run_id = #{runId}
+		 order by id
+	</select>
+
+	<resultMap type="com.fivetech.dashboard.subscription.SubscriptionHistoryRow" id="HistoryResult">
+		<result property="logId"            column="log_id"            />
+		<result property="runId"            column="run_id"            />
+		<result property="subscriptionId"   column="subscription_id"   />
+		<result property="subscriptionName" column="subscription_name" />
+		<result property="deleted"          column="deleted"           />
+		<result property="triggerType"      column="trigger_type"      />
+		<result property="operator"         column="operator"          />
+		<result property="planAt"           column="plan_at"           />
+		<result property="sentAt"           column="sent_at"           />
+		<result property="period"           column="period"            />
+		<result property="comparePeriod"    column="compare_period"    />
+		<result property="receiverId"       column="receiver_id"       />
+		<result property="receiverName"     column="receiver_name"     />
+		<result property="result"           column="result"            />
+		<result property="reasonCode"       column="reason_code"       />
+		<result property="attempts"         column="attempts"          />
+	</resultMap>
+
+	<sql id="historyWhere">
+		  from dashboard_subscription_log l
+		  join dashboard_subscription_run r on r.id = l.run_id
+		  join dashboard_subscription s on s.id = r.subscription_id
+		 where upper(r.site_code) = upper(#{q.siteCode}) and r.result &lt;&gt; 'RUNNING'
+		<if test="q.from != null"> and r.sent_at &gt;= #{q.from}</if>
+		<if test="q.to != null"> and r.sent_at &lt; #{q.to}</if>
+		<if test="q.subscriptionIds != null and q.subscriptionIds.size() > 0">
+		   and r.subscription_id in <foreach collection="q.subscriptionIds" item="x" open="(" separator="," close=")">#{x}</foreach>
+		</if>
+		<if test="q.results != null and q.results.size() > 0">
+		   and l.result in <foreach collection="q.results" item="x" open="(" separator="," close=")">#{x}</foreach>
+		</if>
+		<if test="q.chatIds != null and q.chatIds.size() > 0">
+		   and l.receiver_id in <foreach collection="q.chatIds" item="x" open="(" separator="," close=")">#{x}</foreach>
+		</if>
+	</sql>
+
+	<!-- 发送历史：一次发送 × 一个接收群一行，新的在前 -->
+	<select id="selectHistory" resultMap="HistoryResult">
+		select l.id as log_id, l.run_id, r.subscription_id, s.name as subscription_name, (s.del_flag = '2') as deleted,
+		       r.trigger_type, r.operator, r.plan_at, r.sent_at, r.period, r.compare_period,
+		       l.receiver_id, l.receiver_name, l.result, l.reason_code, l.attempts
+		<include refid="historyWhere"/>
+		 order by r.sent_at desc, r.subscription_id, l.id
+		 limit #{q.limit} offset #{q.offset}
+	</select>
+
+	<select id="countHistory" resultType="long">
+		select count(*)
+		<include refid="historyWhere"/>
+	</select>
+
+	<!-- 筛选项：发送历史里出现过的群（最近的名字） -->
+	<select id="selectHistoryChats" resultType="java.util.LinkedHashMap">
+		select distinct on (l.receiver_id) l.receiver_id as "chatId", l.receiver_name as "name"
+		  from dashboard_subscription_log l
+		  join dashboard_subscription_run r on r.id = l.run_id
+		 where upper(r.site_code) = upper(#{siteCode})
+		 order by l.receiver_id, l.id desc
+	</select>
+
+	<!-- 筛选项：本站全部订阅（含已删除，按编号） -->
+	<select id="selectAllWithDeleted" resultType="java.util.LinkedHashMap">
+		select id as "id", name as "name", (del_flag = '2') as "deleted"
+		  from dashboard_subscription
+		 where upper(site_code) = upper(#{siteCode})
+		 order by id
 	</select>
 </mapper>

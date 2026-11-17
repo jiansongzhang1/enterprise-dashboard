@@ -23,6 +23,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="minSampleValue"  column="min_sample_value" />
 		<result property="notifyChatId"    column="notify_chat_id"   />
 		<result property="notifyChatName"  column="notify_chat_name" />
+		<result property="notifyChats"     column="notify_chats"     />
 		<result property="enabled"         column="enabled"          />
 		<result property="pausedAt"        column="paused_at"        />
 		<result property="lastNotifiedAt"  column="last_notified_at" />
@@ -44,6 +45,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="createByEmail"   column="create_by_email"  />
 		<result property="updateByEmail"   column="update_by_email"  />
 		<result property="lastTriggerHour" column="last_trigger_hour"/>
+		<result property="ruleType"        column="rule_type"        />
+		<result property="ruleName"        column="rule_name"        />
+		<result property="description"     column="description"      />
+		<result property="level"           column="level"            />
+		<result property="notifyEnabled"   column="notify_enabled"   />
+		<result property="currency"        column="currency"         />
+		<result property="config"          column="config"           />
+		<result property="version"         column="version"          />
+		<result property="ownerName"       column="owner_name"       />
+		<result property="editTime"        column="edit_time"        />
+		<result property="editBy"          column="edit_by"          />
+		<result property="editByEmail"     column="edit_by_email"    />
 	</resultMap>
 
 	<resultMap type="com.fivetech.monitor.domain.MonitorOccupiedMetric" id="OccupiedResult">
@@ -61,8 +74,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       r.warn_low, r.warn_high, r.crit_low, r.crit_high, r.period_hours, r.duration_count,
 		       r.escalate_hours, r.mute_hours, r.min_sample_key, r.min_sample_value,
 		       r.notify_chat_id, r.notify_chat_name,
+		       <include refid="com.fivetech.monitor.mapper.MonitorCommon.ruleChatsJson"><property name="alias" value="r"/></include> as notify_chats,
 		       r.enabled, r.paused_at, r.last_notified_at, r.last_judged_at, r.judge_error, r.del_flag,
 		       r.create_by, r.create_time, r.update_by, r.update_time,
+		       r.rule_type, r.rule_name, r.description, r.level, r.notify_enabled, r.currency,
+		       r.config::text as config, r.version, u.nick_name as owner_name,
+		       coalesce(r.edit_time, r.update_time, r.create_time) as edit_time,
+		       coalesce(r.edit_by, r.update_by) as edit_by, eb.email as edit_by_email,
 		       c.metric_name, c.value_format, c.value_decimals,
 		       case when r.min_sample_key = 'base' then '基准'
 		            else coalesce(sc.metric_name, r.min_sample_key) end as min_sample_label,
@@ -79,6 +97,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  left join sys_user u  on u.user_id = r.owner_user_id
 		  left join sys_user cu on cu.user_name = r.create_by and cu.del_flag = '0'
 		  left join sys_user mu on mu.user_name = r.update_by and mu.del_flag = '0'
+		  left join sys_user eb on eb.user_name = coalesce(r.edit_by, r.update_by) and eb.del_flag = '0'
 		  left join monitor_lark_chat ch on ch.site_code = r.site_code and ch.chat_id = r.notify_chat_id
 		  left join (select ev.rule_id, max(ev.trigger_hour) as last_trigger_hour
 		               from monitor_event ev
@@ -88,9 +107,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	</sql>
 
 	<!-- 分页由 Service 里的 PageHelper.startPage 加在这条语句上 -->
+	<!--
+	  告警规则列表（release_next ㉓ 起三类规则同一张表）：默认按最近修改从新到旧（edit_time，启停不改它），相同时按编号从大到小。
+	  ruleTypes 为空 = 全部类型。
+	-->
 	<select id="selectRuleList" resultMap="MonitorRuleResult">
 		<include refid="selectRuleVo"/>
 		 where r.del_flag = '0'
+		<if test="q != null and q.ruleTypes != null and q.ruleTypes.size() > 0">
+		   and r.rule_type in <foreach collection="q.ruleTypes" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q != null and q.ownerIds != null and q.ownerIds.size() > 0">
+		   and r.owner_user_id in <foreach collection="q.ownerIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q != null and q.enableds != null and q.enableds.size() > 0">
+		   and r.enabled in <foreach collection="q.enableds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q != null and q.chatIds != null and q.chatIds.size() > 0">
+		   and (<foreach collection="q.chatIds" item="v" separator=" or ">r.notify_chats @> jsonb_build_array(jsonb_build_object('chatId', #{v}))</foreach>)
+		</if>
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>
@@ -98,7 +133,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   and r.enabled = #{q.enabled}
 		</if>
 		<if test="q != null and q.chatId != null and q.chatId != ''">
-		   and r.notify_chat_id = #{q.chatId}
+		   and r.notify_chats @> jsonb_build_array(jsonb_build_object('chatId', #{q.chatId}))
 		</if>
 		<if test="q != null and q.metricCode != null and q.metricCode != ''">
 		   and r.metric_code = #{q.metricCode}
@@ -107,7 +142,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<if test="q != null and q.ownerId != null">
 		   and r.owner_user_id = #{q.ownerId}
 		</if>
-		 order by r.rule_no
+		 order by coalesce(r.edit_time, r.update_time, r.create_time) desc nulls last, r.rule_no desc
 	</select>
 
 	<select id="selectRuleById" resultMap="MonitorRuleResult">
@@ -125,6 +160,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  from monitor_rule r
 		  left join sys_user u on u.user_id = r.owner_user_id
 		 where r.del_flag = '0'
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>
@@ -136,13 +172,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		    site_code, rule_no, metric_code, owner_user_id, judge_type,
 		    warn_low, warn_high, crit_low, crit_high,
 		    period_hours, duration_count, escalate_hours, mute_hours,
-		    min_sample_key, min_sample_value, notify_chat_id, notify_chat_name, enabled, paused_at, del_flag,
+		    min_sample_key, min_sample_value, notify_chat_id, notify_chat_name, notify_chats, enabled, paused_at, del_flag,
 		    create_by, create_time, update_by, update_time
 		) values (
 		    #{siteCode}, #{ruleNo}, #{metricCode}, #{ownerUserId}, #{judgeType},
 		    #{warnLow,jdbcType=NUMERIC}, #{warnHigh,jdbcType=NUMERIC}, #{critLow,jdbcType=NUMERIC}, #{critHigh,jdbcType=NUMERIC},
 		    #{periodHours}, #{durationCount}, #{escalateHours,jdbcType=SMALLINT}, #{muteHours},
-		    #{minSampleKey}, #{minSampleValue}, #{notifyChatId,jdbcType=VARCHAR}, #{notifyChatName,jdbcType=VARCHAR}, #{enabled},
+		    #{minSampleKey}, #{minSampleValue}, #{notifyChatId,jdbcType=VARCHAR}, #{notifyChatName,jdbcType=VARCHAR},
+		    coalesce(#{notifyChats,jdbcType=VARCHAR}, '[]')::jsonb, #{enabled},
 		    #{pausedAt,jdbcType=TIMESTAMP}, '0',
 		    #{createBy}, #{createTime}, #{createBy}, #{createTime}
 		)
@@ -162,17 +199,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       min_sample_value = #{rule.minSampleValue},
 		       notify_chat_id   = #{rule.notifyChatId,jdbcType=VARCHAR},
 		       notify_chat_name = #{rule.notifyChatName,jdbcType=VARCHAR},
+		       notify_chats     = coalesce(#{rule.notifyChats,jdbcType=VARCHAR}, '[]')::jsonb,
+		       version          = nextval('monitor_rule_version_seq'),
 		       update_by        = #{rule.updateBy},
-		       update_time      = #{rule.updateTime}
+		       update_time      = #{rule.updateTime},
+		       edit_time        = #{rule.updateTime},
+		       edit_by          = #{rule.updateBy}
 		 where rule_id = #{rule.ruleId}
 		   and site_code = #{scope.siteCode}
 		   and del_flag = '0'
+		   and rule_type = 'METRIC'
 	</update>
 
 	<update id="updateEnabled">
 		update monitor_rule
 		   set enabled     = #{enabled},
 		       <if test="!enabled">paused_at = #{pausedAt,jdbcType=TIMESTAMP},</if>
+		       version     = nextval('monitor_rule_version_seq'),
 		       update_by   = #{updateBy},
 		       update_time = #{updateTime}
 		 where rule_id = #{ruleId}
@@ -184,6 +227,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		update monitor_rule
 		   set del_flag    = '2',
 		       enabled     = false,
+		       version     = nextval('monitor_rule_version_seq'),
 		       update_by   = #{updateBy},
 		       update_time = #{updateTime}
 		 where rule_id = #{ruleId}
@@ -210,11 +254,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		   and site_code = #{scope.siteCode}
 	</delete>
 
+	<!-- 启用规则数上限只算指标规则（订单规则不由本系统判定） -->
 	<select id="countEnabledRules" resultType="java.lang.Integer">
 		select count(*)
 		  from monitor_rule r
 		 where r.del_flag = '0'
 		   and r.enabled = true
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>

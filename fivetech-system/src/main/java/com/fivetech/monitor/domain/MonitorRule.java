@@ -54,6 +54,9 @@ public class MonitorRule
     /** 保存规则时的群名 */
     private String notifyChatName;
 
+    /** 通知群（最多 5 个），JSON；notify_chat_id 为第一个 */
+    private String notifyChats;
+
     private Boolean enabled;
 
     private LocalDateTime pausedAt;
@@ -104,6 +107,33 @@ public class MonitorRule
 
     /** 最近一条事件的 trigger_hour */
     private LocalDateTime lastTriggerHour;
+
+    /** 规则类型：METRIC 指标规则 / COND 条件规则 / ORDER 订单规则；旧数据为 METRIC */
+    private String ruleType;
+
+    /** 规则名称（条件规则、订单规则） */
+    private String ruleName;
+
+    /** 规则说明 */
+    private String description;
+
+    /** 等级（条件规则、订单规则）：CRIT / WARN */
+    private String level;
+
+    /** 是否发送通知（条件规则、订单规则）；指标规则为 null */
+    private Boolean notifyEnabled;
+
+    /** 保存时的站点币种（订单规则） */
+    private String currency;
+
+    /** 订单规则的条件（jsonb 文本，见 OrderRuleConfig） */
+    private String config;
+
+    /** 版本号（monitor_rule_version_seq），每次保存、启停取新值 */
+    private Long version;
+
+    /** 负责人昵称（查询时关联，只读） */
+    private String ownerName;
 
     public Long getRuleId()
     {
@@ -283,6 +313,17 @@ public class MonitorRule
     public void setNotifyChatName(String notifyChatName)
     {
         this.notifyChatName = notifyChatName;
+    }
+
+    /** 通知群（release_next ㉑）：[{chatId, name, status?}] 的 JSON，读写都经 {@link com.fivetech.monitor.service.MonitorChats} */
+    public String getNotifyChats()
+    {
+        return notifyChats;
+    }
+
+    public void setNotifyChats(String notifyChats)
+    {
+        this.notifyChats = notifyChats;
     }
 
     public Boolean getEnabled()
@@ -494,4 +535,110 @@ public class MonitorRule
     {
         this.lastTriggerHour = lastTriggerHour;
     }
+
+    public String getRuleType()
+    {
+        return ruleType;
+    }
+
+    public void setRuleType(String ruleType)
+    {
+        this.ruleType = ruleType;
+    }
+
+    public String getRuleName()
+    {
+        return ruleName;
+    }
+
+    public void setRuleName(String ruleName)
+    {
+        this.ruleName = ruleName;
+    }
+
+    public String getDescription()
+    {
+        return description;
+    }
+
+    public void setDescription(String description)
+    {
+        this.description = description;
+    }
+
+    public String getLevel()
+    {
+        return level;
+    }
+
+    public void setLevel(String level)
+    {
+        this.level = level;
+    }
+
+    public Boolean getNotifyEnabled()
+    {
+        return notifyEnabled;
+    }
+
+    public void setNotifyEnabled(Boolean notifyEnabled)
+    {
+        this.notifyEnabled = notifyEnabled;
+    }
+
+    public String getCurrency()
+    {
+        return currency;
+    }
+
+    public void setCurrency(String currency)
+    {
+        this.currency = currency;
+    }
+
+    public String getConfig()
+    {
+        return config;
+    }
+
+    public void setConfig(String config)
+    {
+        this.config = config;
+    }
+
+    public Long getVersion()
+    {
+        return version;
+    }
+
+    public void setVersion(Long version)
+    {
+        this.version = version;
+    }
+
+    public String getOwnerName()
+    {
+        return ownerName;
+    }
+
+    public void setOwnerName(String ownerName)
+    {
+        this.ownerName = ownerName;
+    }
+
+    /** 最近一次修改配置的时间（release_next ㉓；启停不改它，告警规则列表按它排序）；没有时为 update_time / create_time */
+    private java.time.LocalDateTime editTime;
+
+    public java.time.LocalDateTime getEditTime() { return editTime; }
+    public void setEditTime(java.time.LocalDateTime editTime) { this.editTime = editTime; }
+
+    /** 最近一次修改配置的人（登录名，release_next ㉓；启停不改它）；没有时为 update_by */
+    private String editBy;
+
+    private String editByEmail;
+
+    public String getEditBy() { return editBy; }
+    public void setEditBy(String editBy) { this.editBy = editBy; }
+    public String getEditByEmail() { return editByEmail; }
+    public void setEditByEmail(String editByEmail) { this.editByEmail = editByEmail; }
 }

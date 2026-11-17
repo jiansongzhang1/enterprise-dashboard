@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 风控分析 · 我的榜单（risk_my_board）：按「用户 + 站点」隔离，逻辑删除 -->
+<mapper namespace="com.fivetech.risk.mapper.RiskMyBoardMapper">
+
+	<resultMap type="com.fivetech.risk.my.RiskMyBoard" id="RiskMyBoardResult">
+		<id     property="boardId"    column="board_id"    />
+		<result property="userId"     column="user_id"     />
+		<result property="siteCode"   column="site_code"   />
+		<result property="boardName"  column="board_name"  />
+		<result property="conditions" column="conditions"  />
+		<result property="rankCol"    column="rank_col"    />
+		<result property="rankDir"    column="rank_dir"    />
+		<result property="orderNum"   column="order_num"   />
+		<result property="showCard"   column="show_card"   />
+		<result property="createBy"   column="create_by"   />
+		<result property="createTime" column="create_time" />
+		<result property="updateBy"   column="update_by"   />
+		<result property="updateTime" column="update_time" />
+	</resultMap>
+
+	<sql id="cols">
+		select board_id, user_id, site_code, board_name, conditions::text as conditions, rank_col, rank_dir, order_num, show_card,
+		       create_by, create_time, update_by, update_time
+		  from risk_my_board
+	</sql>
+
+	<select id="selectMine" resultMap="RiskMyBoardResult">
+		<include refid="cols"/>
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and del_flag = '0'
+		 order by order_num, board_id
+	</select>
+
+	<select id="selectMineById" resultMap="RiskMyBoardResult">
+		<include refid="cols"/>
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and board_id = #{boardId} and del_flag = '0'
+	</select>
+
+	<select id="countMine" resultType="int">
+		select count(*) from risk_my_board
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and del_flag = '0'
+	</select>
+
+	<select id="countName" resultType="int">
+		select count(*) from risk_my_board
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and del_flag = '0'
+		   and lower(board_name) = lower(#{name})
+		<if test="excludeId != null">and board_id &lt;&gt; #{excludeId}</if>
+	</select>
+
+	<insert id="insert" useGeneratedKeys="true" keyProperty="boardId" keyColumn="board_id">
+		insert into risk_my_board (user_id, site_code, board_name, conditions, rank_col, rank_dir, order_num, show_card,
+		                           del_flag, create_by, create_time)
+		values (#{userId}, #{siteCode}, #{boardName}, cast(#{conditions} as jsonb), #{rankCol}, #{rankDir},
+		        coalesce((select max(order_num) + 1 from risk_my_board
+		                   where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and del_flag = '0'), 1),
+		        #{showCard}, '0', #{createBy}, current_timestamp)
+	</insert>
+
+	<update id="update">
+		update risk_my_board
+		<set>
+			<if test="boardName != null">board_name = #{boardName},</if>
+			<if test="conditions != null">conditions = cast(#{conditions} as jsonb),</if>
+			<if test="rankCol != null">rank_col = #{rankCol},</if>
+			<if test="rankDir != null">rank_dir = #{rankDir},</if>
+			<if test="showCard != null">show_card = #{showCard},</if>
+			update_by = #{updateBy},
+			update_time = current_timestamp
+		</set>
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and board_id = #{boardId} and del_flag = '0'
+	</update>
+
+	<update id="softDelete">
+		update risk_my_board
+		   set del_flag = '2', update_by = #{updateBy}, update_time = current_timestamp
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and board_id = #{boardId} and del_flag = '0'
+	</update>
+
+	<update id="updateOrder">
+		update risk_my_board
+		   set order_num = #{orderNum}
+		 where user_id = #{userId} and upper(site_code) = upper(#{siteCode}) and board_id = #{boardId} and del_flag = '0'
+	</update>
+</mapper>

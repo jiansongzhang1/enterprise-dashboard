@@ -4,7 +4,8 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 订阅（dashboard_subscription）：每天在站点时区的某个整点，把运营总览某个范围的指标整理成简报卡片，发到 Lark 群或个人。
+ * 订阅（dashboard_subscription）：按发送频率（每日 / 每週 / 每 N 小時，站点时区整点）把运营总览某个视图的指标整理成简报卡片，
+ * 发到 Lark 群（2026-11-13 起只发群；旧数据里的个人在上线迁移时去掉）。
  *
  * <ul>
  *   <li>{@code metrics}：勾选的指标编码，逗号分隔；发送时按站点运营总览的顺序输出，站点已隐藏或下线的指标跳过；</li>
@@ -48,6 +49,40 @@ public class DashboardSubscription implements Serializable
 
     /** 截图的筛选条件 JSON（前端 localStorage overview-filters 的值，如 {"range":"custom","gran":"day","from":"…","to":"…","cmp":"previous-period"}，可用 {from} {to}）；为空按统计范围生成 */
     private String snapshotFilters;
+
+    /** 发送频率：DAY / WEEK / HOURS（{@link SubscriptionSchedule}）；send_hour 为每日、每週的发送整点，每 N 小時的「從」 */
+    private String freqType;
+
+    /** 每週：週几（1=週一 … 7=週日） */
+    private Integer freqDow;
+
+    /** 每 N 小時：N（1–12） */
+    private Integer freqEvery;
+
+    /** 每 N 小時：「到」的整点（含） */
+    private Integer freqTo;
+
+    /** 视图（发起订阅时运营总览的选择，建立后不可改）：粒度 HOUR / DAY / WEEK */
+    private String viewGran;
+
+    /** 视图：对比 PREV（上一周期）/ CUSTOM（自訂） */
+    private String viewCmp;
+
+    /** 视图：固定日期（range_code = CUSTOM）的起止 */
+    private java.time.LocalDate viewFrom;
+
+    private java.time.LocalDate viewTo;
+
+    /** 视图：自訂对比的起止 */
+    private java.time.LocalDate viewCmpFrom;
+
+    private java.time.LocalDate viewCmpTo;
+
+    /** 来源页面，本期只有 ov（运营总览） */
+    private String sourcePage;
+
+    /** 负责人（sys_user.user_id）；默认建立人，可转交、管理员可接管 */
+    private Long ownerUserId;
 
     private String lastSlot;
 
@@ -113,6 +148,56 @@ public class DashboardSubscription implements Serializable
     public boolean isSnapshotOn() { return Boolean.TRUE.equals(snapshotEnabled); }
     public String getSnapshotFilters() { return snapshotFilters; }
     public void setSnapshotFilters(String snapshotFilters) { this.snapshotFilters = snapshotFilters; }
+
+    public String getFreqType() { return freqType; }
+
+    public void setFreqType(String freqType) { this.freqType = freqType; }
+
+    public Integer getFreqDow() { return freqDow; }
+
+    public void setFreqDow(Integer freqDow) { this.freqDow = freqDow; }
+
+    public Integer getFreqEvery() { return freqEvery; }
+
+    public void setFreqEvery(Integer freqEvery) { this.freqEvery = freqEvery; }
+
+    public Integer getFreqTo() { return freqTo; }
+
+    public void setFreqTo(Integer freqTo) { this.freqTo = freqTo; }
+
+    public String getViewGran() { return viewGran; }
+
+    public void setViewGran(String viewGran) { this.viewGran = viewGran; }
+
+    public String getViewCmp() { return viewCmp; }
+
+    public void setViewCmp(String viewCmp) { this.viewCmp = viewCmp; }
+
+    public java.time.LocalDate getViewFrom() { return viewFrom; }
+
+    public void setViewFrom(java.time.LocalDate viewFrom) { this.viewFrom = viewFrom; }
+
+    public java.time.LocalDate getViewTo() { return viewTo; }
+
+    public void setViewTo(java.time.LocalDate viewTo) { this.viewTo = viewTo; }
+
+    public java.time.LocalDate getViewCmpFrom() { return viewCmpFrom; }
+
+    public void setViewCmpFrom(java.time.LocalDate viewCmpFrom) { this.viewCmpFrom = viewCmpFrom; }
+
+    public java.time.LocalDate getViewCmpTo() { return viewCmpTo; }
+
+    public void setViewCmpTo(java.time.LocalDate viewCmpTo) { this.viewCmpTo = viewCmpTo; }
+
+    public boolean isCustomCompare() { return "CUSTOM".equals(viewCmp) && viewCmpFrom != null && viewCmpTo != null; }
+
+    public String getSourcePage() { return sourcePage; }
+
+    public void setSourcePage(String sourcePage) { this.sourcePage = sourcePage; }
+
+    public Long getOwnerUserId() { return ownerUserId; }
+
+    public void setOwnerUserId(Long ownerUserId) { this.ownerUserId = ownerUserId; }
 
     public String getLastSlot() { return lastSlot; }
 

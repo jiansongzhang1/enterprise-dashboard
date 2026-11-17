@@ -57,6 +57,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 5.1 渠道表现 · 取一层 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 渠道表现查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/channels/table")
     public AjaxResult channelTable(@RequestBody ChannelTableQuery query)
     {
@@ -75,6 +76,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 6.1 获客漏斗 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 获客与留存查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/acquisition/funnel")
     public AjaxResult funnel(@RequestBody PromoFilter query)
     {
@@ -83,6 +85,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 6.3 留存与回收 · 概要 4 张卡 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 留存与回收查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/cohort/summary")
     public AjaxResult cohortSummary(@RequestBody CohortQuery query)
     {
@@ -91,6 +94,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 6.4 留存与回收 · 曲线 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 留存曲线查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/cohort/curves")
     public AjaxResult cohortCurves(@RequestBody CohortQuery query)
     {
@@ -99,6 +103,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 6.5 留存与回收 · 按注册日明细 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 留存批次查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/cohort/batches")
     public AjaxResult cohortBatches(@RequestBody CohortQuery query)
     {
@@ -107,6 +112,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 7.2 裂变层级 · 逐层代理列表 */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 裂变层级查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/fission/agents")
     public AjaxResult fissionAgents(@RequestBody FissionQuery query)
     {
@@ -115,6 +121,7 @@ public class PromoAnalysisController extends BaseController
 
     /** 7.2 裂变层级 · 定位（完整帐号或用户 ID） */
     @PreAuthorize("@ss.hasPermi('dashboard:promo:view')")
+    @Log(title = "推广分析 · 裂变定位查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @GetMapping("/fission/locate")
     public AjaxResult fissionLocate(@RequestParam(required = false) String q)
     {

@@ -71,13 +71,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	<select id="selectChatOptions" resultMap="MonitorLarkChatOptionResult">
 		select c.chat_id, c.name, c.status, coalesce(ref.cnt, 0) as ref_count
 		  from monitor_lark_chat c
-		  left join (select r.notify_chat_id, count(*) as cnt
+		  <!-- 引用数：规则的 notify_chats 里有这个群（release_next ㉑；旧数据 notify_chats 为空时看 notify_chat_id） -->
+		  left join (select rc.chat_id, count(distinct r.rule_id) as cnt
 		               from monitor_rule r
+		              cross join lateral (
+		                    select x->>'chatId' as chat_id from jsonb_array_elements(r.notify_chats) x
+		                    union
+		                    select r.notify_chat_id where jsonb_array_length(r.notify_chats) = 0 and r.notify_chat_id is not null) rc
 		              where r.del_flag = '0'
 		              <include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 		                  <property name="alias" value="r"/>
 		              </include>
-		              group by r.notify_chat_id) ref on ref.notify_chat_id = c.chat_id
+		              group by rc.chat_id) ref on ref.chat_id = c.chat_id
 		 where (c.status = 'ok' or ref.cnt > 0)
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="c"/>

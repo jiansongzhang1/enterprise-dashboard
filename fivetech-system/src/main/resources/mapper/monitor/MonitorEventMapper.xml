@@ -33,6 +33,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="chatName"      column="chat_name"       />
 		<result property="chatStatus"    column="chat_status"     />
 		<result property="notifyError"   column="notify_error"    />
+		<result property="notifyBatch"   column="notify_batch"    />
 		<result property="muteSentAt"    column="mute_sent_at"    />
 		<result property="muteHours"     column="mute_hours"      />
 		<result property="handleStatus"  column="handle_status"   />
@@ -40,11 +41,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="handledBy"     column="handled_by"      />
 		<result property="handledAt"     column="handled_at"      />
 		<result property="handleReset"   column="handle_reset"    />
+		<result property="ruleType"      column="rule_type"       />
+		<result property="ruleName"      column="rule_name"       />
+		<result property="detail"        column="detail"          />
 	</resultMap>
 
 	<!--
 	  负责人按规则的 owner_user_id（规则逻辑删除后仍保留，已删除规则的事件按删除时的负责人筛）。
 	  通知群：该事件最近一条发送记录的群；还没有发送记录时用触发时规则快照里的群（MON-32），老事件没有快照再用规则当前的群。发送失败的原因取最近一条发送记录的 error_msg。
+	  notify_batch（release_next ㉑，规则可选多个群）：最近一次发送（同一 data_hour + notify_type）里每个群一条的结果，Service 按群汇总成「通知送達」。
 	  range（trigger_hour 区间）不影响异常中的事件。
 	-->
 	<select id="selectEventList" resultMap="EventRowResult">
@@ -57,19 +62,31 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       case when e.notify_status = 'failed' then nl.error_msg end as notify_error,
 		       coalesce(nl.chat_id, nullif(e.rule_snapshot->>'notifyChatId', ''), r.notify_chat_id) as chat_id,
 		       coalesce(ch.name, nullif(e.rule_snapshot->>'notifyChatName', ''), r.notify_chat_name) as chat_name, ch.status as chat_status,
+		       nb.chats as notify_batch,
 		       e.handle_status, e.handle_note,
-		       coalesce(nullif(hu.email, ''), hu.user_name) as handled_by, e.handled_at, e.handle_reset
+		       coalesce(nullif(hu.email, ''), hu.user_name) as handled_by, e.handled_at, e.handle_reset,
+		       coalesce(e.rule_type, 'METRIC') as rule_type, r.rule_name, e.detail::text as detail
 		  from monitor_event e
 		  left join monitor_rule r          on r.rule_id = e.rule_id and r.site_code = e.site_code
 		  left join dashboard_metric_card c on c.metric_code = e.metric_code
 		  left join sys_user ou             on ou.user_id = r.owner_user_id
 		  left join sys_user hu             on hu.user_id = e.handled_by
 		  left join lateral (
-		        select n.chat_id, n.error_msg
+		        select n.chat_id, n.error_msg, n.data_hour, n.notify_type
 		          from monitor_notify_log n
 		         where n.event_id = e.event_id and n.site_code = e.site_code and n.chat_id is not null
 		         order by n.id desc
 		         limit 1) nl on true
+		  left join lateral (
+		        select jsonb_agg(jsonb_build_object('chatId', n2.chat_id, 'name', lc2.name, 'chatStatus', lc2.status,
+		                                            'status', n2.status,
+		                                            'sentAt', to_char(n2.sent_at, 'YYYY-MM-DD"T"HH24:MI:SS'),
+		                                            'error', n2.error_msg) order by n2.id)::text as chats
+		          from monitor_notify_log n2
+		          left join monitor_lark_chat lc2 on lc2.site_code = n2.site_code and lc2.chat_id = n2.chat_id
+		         where n2.event_id = e.event_id and n2.site_code = e.site_code and n2.chat_id is not null
+		           and n2.data_hour is not distinct from nl.data_hour
+		           and n2.notify_type is not distinct from nl.notify_type) nb on true
 		  left join monitor_lark_chat ch    on ch.site_code = e.site_code
 		                                   and ch.chat_id = coalesce(nl.chat_id, nullif(e.rule_snapshot->>'notifyChatId', ''), r.notify_chat_id)
 		 where e.event_type = 'alert'
@@ -87,6 +104,19 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		</if>
 		<if test="q.ownerId != null">
 		   and r.owner_user_id = #{q.ownerId}
+		</if>
+		<!-- release_next ㉓：规则类型、多选筛选；选了指标时只返回指标规则的事件（条件规则事件的 metric_code 为空） -->
+		<if test="q.ruleTypes != null and q.ruleTypes.size() > 0">
+		   and coalesce(e.rule_type, 'METRIC') in <foreach collection="q.ruleTypes" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q.metricCodes != null and q.metricCodes.size() > 0">
+		   and e.metric_code in <foreach collection="q.metricCodes" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q.statuses != null and q.statuses.size() > 0">
+		   and e.status in <foreach collection="q.statuses" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q.ownerIds != null and q.ownerIds.size() > 0">
+		   and r.owner_user_id in <foreach collection="q.ownerIds" item="v" open="(" separator="," close=")">#{v}</foreach>
 		</if>
 		<if test="q.rangeFrom != null">
 		   and (e.status = 'open' or (e.trigger_hour &gt;= #{q.rangeFrom}

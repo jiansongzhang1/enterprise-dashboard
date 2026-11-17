@@ -318,8 +318,8 @@ public class DashboardConfigValidator
         for (DashboardPage page : DashboardPage.values())
         {
             Set<String> used = usedByPage.get(page.name());
-            // 推广分析是新页面：没执行 release_next ⑤ 时只告警，不挡运营总览启动
-            List<String> sink = page == DashboardPage.PROMO ? result.getWarnings() : result.getErrors();
+            // 推广分析、风控分析是新页面：没执行对应 SQL 时只告警，不挡运营总览启动
+            List<String> sink = page == DashboardPage.PROMO || page == DashboardPage.RISK ? result.getWarnings() : result.getErrors();
             if (used == null || used.isEmpty())
             {
                 sink.add("页面 " + page.name() + " 没有任何可用指标，页面会是空的");

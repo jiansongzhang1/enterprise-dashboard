@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -33,6 +34,11 @@ import com.fivetech.monitor.exception.MonitorFieldException;
  *   <li>仅登记（status = '1'，后台新增的都是）：运营总览、指标汇总不加载、不能建告警规则；
  *       还能改名称、分组、格式、方向、更新频率；没有任何引用时可以删除。要接入取数需另改配置与 SQL。</li>
  *   <li>可歸因（attributable）：所有状态都能改，只影响推广分析概览的变化归因，保存后立即生效。</li>
+ *   <li>所属范围（pageScope）：OVERVIEW 运营总览 / PROMO 推广分析 / RISK 风控分析，为空 = 适用于所有页面；所有状态都能改，
+ *       登记时也能填。另有三个「页面目录」范围：RISK_RANK 风控排行榜的列与名单条件、RISK_GAME 游戏分析的列、
+ *       MONITOR_COND 条件规则的字段目录——这些不进运营总览的注册表，由各自页面按范围读取（已接入 = 可用，仅登记 = 不出现）。</li>
+ *   <li>页面属性（ext）：目录范围的指标多一组属性（接口编码、分组、聚合方式、能否排行 / 做条件、支持的维度等），
+ *       结构与校验见 {@link MetricExt}；所有状态都能改，保存后各页面在缓存过期（默认 60 秒）后生效。</li>
  * </ul>
  *
  * @author fivetech
@@ -55,6 +61,16 @@ public class MetricDictService
     static final Set<String> DIRECTIONS = new HashSet<>(Arrays.asList("up", "down", "flat", "range"));
 
     static final Set<String> FREQUENCIES = new HashSet<>(Arrays.asList("realtime", "hour", "day"));
+
+    /** 所属范围的取值；为空 = 适用于所有页面 */
+    public static final List<String> PAGE_SCOPES = List.of("OVERVIEW", "PROMO", "RISK",
+        MetricExt.SCOPE_RISK_RANK, MetricExt.SCOPE_RISK_GAME, MetricExt.SCOPE_MONITOR_COND);
+
+    /** ext 的序列化 */
+    private static final tools.jackson.databind.ObjectMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+
+    /** 列表按所属范围筛选时，只看「适用于所有页面」（page_scope 为空）的指标 */
+    public static final String SCOPE_ALL = "ALL";
 
     /** 四个 UDS 字段列：属性名 → 显示名（对照不一致时用） */
     static final Map<String, String> UDS_FIELDS = new LinkedHashMap<>();
@@ -85,11 +101,18 @@ public class MetricDictService
 
     // ------------------------------------------------------------------ 查询
 
-    /**
-     * 列表：{ rows, groups, datasets }。keyword 匹配编码、名称、英文名、口径；status = 0 已接入 / 1 仅登记。
-     */
     public Map<String, Object> list(String keyword, String groupCode, String status)
     {
+        return list(keyword, groupCode, status, null);
+    }
+
+    /**
+     * 列表：{ rows, groups, datasets, pageScopes }。keyword 匹配编码、名称、英文名、口径；status = 0 已接入 / 1 仅登记；
+     * pageScope = OVERVIEW / PROMO / RISK 只看该范围的指标，ALL 只看适用于所有页面（范围为空）的指标，不传不筛。
+     */
+    public Map<String, Object> list(String keyword, String groupCode, String status, String pageScope)
+    {
+        String scope = StringUtils.trimToEmpty(pageScope).toUpperCase(Locale.ROOT);
         List<MetricDictItem> all = mapper.selectAll();
         decorate(all);
         List<MetricDictItem> rows = new ArrayList<>();
@@ -104,6 +127,10 @@ public class MetricDictService
             {
                 continue;
             }
+            if (!scope.isEmpty() && !(SCOPE_ALL.equals(scope) ? it.getPageScope() == null : scope.equals(it.getPageScope())))
+            {
+                continue;
+            }
             if (!kw.isEmpty() && !contains(kw, it.getMetricCode(), it.getMetricName(), it.getMetricNameEn(), it.getRemark()))
             {
                 continue;
@@ -115,6 +142,7 @@ public class MetricDictService
         out.put("total", rows.size());
         out.put("groups", mapper.selectGroups());
         out.put("datasets", datasets());
+        out.put("pageScopes", PAGE_SCOPES);
         return out;
     }
 
@@ -167,9 +195,19 @@ public class MetricDictService
         }
         copyBasic(body, item, errors);
         copyDictionary(body, item, errors);
+        String scope = pageScope(body.getPageScope(), errors);
+        Map<String, Object> ext = MetricExt.validate(scope, body.getExt(), errors);
         failIfAny(errors);
         item.setCreateBy(operator);
         mapper.insertRegistered(item);
+        if (scope != null)
+        {
+            mapper.updatePageScope(item.getMetricCode(), scope, operator);
+        }
+        if (ext != null)
+        {
+            mapper.updateExt(item.getMetricCode(), toJson(ext), operator);
+        }
         return item.getMetricCode();
     }
 
@@ -198,6 +236,12 @@ public class MetricDictService
         boolean registered = STATUS_REGISTERED.equals(existing.getStatus());
         MetricDictItem merged = withDefaults(body, existing);
         copyBasic(merged, item, errors);
+        // 所属范围：不传沿用原值；传空串清空为「所有页面」
+        String scope = body.getPageScope() == null ? existing.getPageScope() : pageScope(body.getPageScope(), errors);
+        // 页面属性：传了按新范围校验；没传但改了范围时，原有的属性也要按新范围校验（不能留着别的范围的属性）
+        Map<String, Object> oldExt = parseExt(existing.getExtJson());
+        Map<String, Object> ext = body.getExt() != null ? MetricExt.validate(scope, body.getExt(), errors)
+            : java.util.Objects.equals(scope, existing.getPageScope()) ? oldExt : MetricExt.validate(scope, oldExt, errors);
         if (!registered)
         {
             rejectLiveBasicChanges(body, existing, errors);
@@ -216,6 +260,14 @@ public class MetricDictService
         {
             // 可歸因只影响推广分析概览（每次读库），不需要重载注册表
             mapper.updateAttributable(existing.getMetricCode(), body.getAttributable(), operator);
+        }
+        if (!java.util.Objects.equals(scope, existing.getPageScope()))
+        {
+            mapper.updatePageScope(existing.getMetricCode(), scope, operator);
+        }
+        if (!java.util.Objects.equals(ext, oldExt))
+        {
+            mapper.updateExt(existing.getMetricCode(), ext == null ? null : toJson(ext), operator);
         }
         if (registered)
         {
@@ -288,12 +340,41 @@ public class MetricDictService
         {
             throw MonitorException.notFound("指標不存在");
         }
+        it.setExt(parseExt(it.getExtJson()));
         return it;
+    }
+
+    /** 库内 ext 文本 → Map；空或解析失败返回 null */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> parseExt(String text)
+    {
+        if (StringUtils.isEmpty(text))
+        {
+            return null;
+        }
+        try
+        {
+            Object v = JSON.readValue(text, Object.class);
+            return v instanceof Map<?, ?> m && !m.isEmpty() ? new LinkedHashMap<>((Map<String, Object>) m) : null;
+        }
+        catch (RuntimeException e)
+        {
+            return null;
+        }
+    }
+
+    static String toJson(Map<String, Object> ext)
+    {
+        return JSON.writeValueAsString(ext);
     }
 
     /** 补上线上配置对照、引用情况、能否删除 */
     void decorate(List<MetricDictItem> all)
     {
+        for (MetricDictItem it : all)
+        {
+            it.setExt(parseExt(it.getExtJson()));
+        }
         Map<String, List<String>> pages = new LinkedHashMap<>();
         for (Map<String, Object> r : mapper.selectPageRefs())
         {
@@ -496,6 +577,23 @@ public class MetricDictService
     }
 
     /** 传了（非 null）且与原值不同 */
+    /** 所属范围：空 = 所有页面（null）；其他只能是 OVERVIEW / PROMO / RISK（不区分大小写） */
+    static String pageScope(String value, Map<String, String> errors)
+    {
+        String v = StringUtils.trimToEmpty(value).toUpperCase(Locale.ROOT);
+        if (v.isEmpty())
+        {
+            return null;
+        }
+        if (!PAGE_SCOPES.contains(v))
+        {
+            errors.put("pageScope", "所屬範圍只能是 運營總覽（OVERVIEW）、推廣分析（PROMO）、風控分析（RISK）、"
+                + "風控排行榜（RISK_RANK）、遊戲分析（RISK_GAME）、條件規則（MONITOR_COND），或留空表示所有頁面");
+            return null;
+        }
+        return v;
+    }
+
     private static boolean changed(String given, String current)
     {
         return given != null && !Objects.equals(StringUtils.trimToNull(given), StringUtils.trimToNull(current));

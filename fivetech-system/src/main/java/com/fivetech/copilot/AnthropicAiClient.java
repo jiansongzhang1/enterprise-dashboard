@@ -6,6 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,140 @@ public class AnthropicAiClient implements AiClient
         return send(model, m);
     }
 
+    @Override
+    public AiResult chat(String model, String system, List<Message> messages, int maxTokens,
+            List<Tool> tools, ToolExecutor executor, int maxRounds)
+    {
+        if (tools == null || tools.isEmpty() || executor == null)
+        {
+            return chat(model, system, messages, maxTokens);
+        }
+        List<Object> conversation = new ArrayList<>();
+        for (Message msg : messages)
+        {
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("role", "assistant".equals(msg.getRole()) ? "assistant" : "user");
+            x.put("content", msg.getContent());
+            conversation.add(x);
+        }
+        List<Map<String, Object>> specs = new ArrayList<>();
+        for (Tool t : tools)
+        {
+            Map<String, Object> spec = new LinkedHashMap<>();
+            spec.put("name", t.getName());
+            spec.put("description", t.getDescription());
+            spec.put("input_schema", t.getInputSchema());
+            specs.add(spec);
+        }
+        List<String> used = new ArrayList<>();
+        int in = 0;
+        int out = 0;
+        int rounds = Math.max(0, maxRounds);
+        // 最后一轮不带 tools，逼模型用已有结果给出文字回答
+        for (int round = 0; round <= rounds; round++)
+        {
+            boolean last = round == rounds;
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("max_tokens", Math.max(1, maxTokens));
+            if (system != null && !system.isEmpty())
+            {
+                body.put("system", system);
+            }
+            body.put("messages", conversation);
+            if (!last)
+            {
+                body.put("tools", specs);
+            }
+            JsonNode root = postJson(model, body);
+            JsonNode usage = root.path("usage");
+            in += usage.path("input_tokens").asInt(0);
+            out += usage.path("output_tokens").asInt(0);
+            List<ToolCall> calls = toolCalls(root);
+            if (last || calls.isEmpty())
+            {
+                AiResult r = parse(root, model);
+                return new AiResult(r.getText(), r.getModel(), in, out, r.getStopReason(), used);
+            }
+            Map<String, Object> assistant = new LinkedHashMap<>();
+            assistant.put("role", "assistant");
+            assistant.put("content", root.path("content"));
+            conversation.add(assistant);
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (ToolCall call : calls)
+            {
+                used.add(call.getName());
+                String text;
+                try
+                {
+                    text = executor.execute(call);
+                }
+                catch (RuntimeException e)
+                {
+                    // 工具失败不中断对话：把原因告诉模型，由它决定怎么回答
+                    log.warn("[copilot] 工具执行失败 tool={}：{}", call.getName(), e.getMessage());
+                    text = "工具執行失敗：" + e.getMessage();
+                }
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("type", "tool_result");
+                result.put("tool_use_id", call.getId());
+                result.put("content", text == null || text.isEmpty() ? "（沒有結果）" : text);
+                results.add(result);
+            }
+            Map<String, Object> user = new LinkedHashMap<>();
+            user.put("role", "user");
+            user.put("content", results);
+            conversation.add(user);
+        }
+        throw new AiException("AI 工具調用未結束", 0, "tool_loop");
+    }
+
+    /** 响应里的 tool_use 块 */
+    private List<ToolCall> toolCalls(JsonNode root)
+    {
+        List<ToolCall> calls = new ArrayList<>();
+        for (JsonNode block : root.path("content"))
+        {
+            if (!"tool_use".equals(block.path("type").asString()))
+            {
+                continue;
+            }
+            Map<String, Object> input = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonNode> e : block.path("input").properties())
+            {
+                input.put(e.getKey(), plain(e.getValue()));
+            }
+            calls.add(new ToolCall(block.path("id").asString(), block.path("name").asString(), input));
+        }
+        return calls;
+    }
+
+    /** JSON 值转成普通 Java 值（工具入参只会是字符串、数字、布尔） */
+    private static Object plain(JsonNode n)
+    {
+        if (n == null || n.isNull())
+        {
+            return null;
+        }
+        if (n.isNumber())
+        {
+            return n.numberValue();
+        }
+        if (n.isBoolean())
+        {
+            return n.booleanValue();
+        }
+        return n.asString();
+    }
+
     private AiResult send(String model, Map<String, Object> requestBody)
+    {
+        return parse(postJson(model, requestBody), model);
+    }
+
+    /** 发一次请求（含重试），返回响应的 JSON 根节点；工具循环要看原始 content 块，所以不能直接 parse 成 AiResult */
+    private JsonNode postJson(String model, Map<String, Object> requestBody)
     {
         CopilotProperties.Anthropic cfg = properties.getAnthropic();
         if (!properties.isConfigured())
@@ -129,10 +263,12 @@ public class AnthropicAiClient implements AiClient
             int status = response.statusCode();
             if (status == 200)
             {
-                AiResult r = parse(response.body(), model);
-                log.info("[copilot] model={} in={} out={} stop={} {}ms", r.getModel(), r.getInputTokens(), r.getOutputTokens(),
-                    r.getStopReason(), System.currentTimeMillis() - started);
-                return r;
+                JsonNode root = readTree(response.body());
+                JsonNode usage = root.path("usage");
+                log.info("[copilot] model={} in={} out={} stop={} {}ms", model, usage.path("input_tokens").asInt(0),
+                    usage.path("output_tokens").asInt(0), root.path("stop_reason").asString(),
+                    System.currentTimeMillis() - started);
+                return root;
             }
             last = error(status, response.body());
             log.warn("[copilot] 调用失败 model={} status={} type={} attempt={}：{}", model, status, last.getType(), attempt + 1,
@@ -162,17 +298,20 @@ public class AnthropicAiClient implements AiClient
         return m;
     }
 
-    private AiResult parse(String json, String model)
+    private JsonNode readTree(String json)
     {
-        JsonNode root;
         try
         {
-            root = objectMapper.readTree(json);
+            return objectMapper.readTree(json);
         }
         catch (RuntimeException e)
         {
             throw new AiException("AI 回應不是合法 JSON", 200, "bad_response");
         }
+    }
+
+    private AiResult parse(JsonNode root, String model)
+    {
         StringBuilder text = new StringBuilder();
         for (JsonNode block : root.path("content"))
         {

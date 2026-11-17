@@ -47,4 +47,36 @@ public interface DashboardSubscriptionMapper
 
     /** 最近的发送记录，新的在前 */
     List<DashboardSubscriptionLog> selectLogs(@Param("subscriptionId") Long subscriptionId, @Param("limit") int limit);
+
+    // ---------------- 推送批次与发送历史（2026-11-13） ----------------
+
+    /** 开始一次推送（result 为空 = RUNNING）；回填 id */
+    int insertRun(com.fivetech.dashboard.subscription.DashboardSubscriptionRun run);
+
+    /** 结束一次推送：写结果、计数、AI 与截图状态 */
+    int finishRun(com.fivetech.dashboard.subscription.DashboardSubscriptionRun run);
+
+    /** 开始超过 minutes 分钟仍是 RUNNING 的批次改为 FAIL（发送中断） */
+    int failStaleRuns(@Param("minutes") int minutes);
+
+    /** 该订阅 minutes 分钟内开始、仍在进行中的批次数 */
+    int countRunning(@Param("subscriptionId") Long subscriptionId, @Param("minutes") int minutes);
+
+    /** 本站各订阅最近一次结束的批次 */
+    List<com.fivetech.dashboard.subscription.DashboardSubscriptionRun> selectLastRuns(@Param("siteCode") String siteCode);
+
+    /** 某批次的逐群结果 */
+    List<DashboardSubscriptionLog> selectRunLogs(@Param("runId") Long runId);
+
+    /** 发送历史（分页） */
+    List<com.fivetech.dashboard.subscription.SubscriptionHistoryRow> selectHistory(
+            @Param("q") com.fivetech.dashboard.subscription.SubscriptionHistoryQuery q);
+
+    long countHistory(@Param("q") com.fivetech.dashboard.subscription.SubscriptionHistoryQuery q);
+
+    /** 发送历史里出现过的群：[{chatId, name}] */
+    List<java.util.Map<String, Object>> selectHistoryChats(@Param("siteCode") String siteCode);
+
+    /** 本站全部订阅（含已删除）：[{id, name, deleted}] */
+    List<java.util.Map<String, Object>> selectAllWithDeleted(@Param("siteCode") String siteCode);
 }

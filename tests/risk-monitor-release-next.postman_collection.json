@@ -1,0 +1,6083 @@
+{
+  "info": {
+    "_postman_id": "385c7538-e75d-4097-9aa8-de22e9d4909e",
+    "name": "Fivetech Dashboard API · 风控分析 + 监控管理（条件规则 / 订单告警）· release_next ㉒㉓",
+    "description": "本期新功能的接口用例：风控分析（选项、榜单条件、概览、榜单卡片、完整名单、导出、我的榜单、游戏分析）；监控管理（条件规则全流程、告警规则三类同表、异常事件改造与事件详情、订单告警列表与处理）。\n\n使用：\n1. 集合变量 baseUrl、siteCode；username / password 只填 Current value，运行前填 totp；\n2. 先在目标库执行 sql/release_next_postgresql.sql 的 ⑭–㉓，并部署新 JAR；账号需有 dashboard:risk:*、monitor:rule:*、monitor:event:* 权限；\n3. 按目录顺序整集运行（0.1 登录写入 token；用例之间靠集合变量传 id，第 7 组清理测试数据）；\n4. UDS 数据集未接入时，风控接口返回 dataPending=true、条件规则预览返回 dataPending、订单告警 udsOk=false，用例已兼容两种状态。\n\n若依返回 HTTP 恒为 200，断言看响应体 code。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// 按站点时区 Asia/Kolkata 生成日期变量，用例不会过期",
+          "const IST = 330 * 60 * 1000; const now = new Date(Date.now() + IST); const pad = n => String(n).padStart(2, '0');",
+          "const day = o => { const d = new Date(now.getTime() + o * 86400000); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };",
+          "pm.collectionVariables.set('today', day(0)); pm.collectionVariables.set('d7', day(-7)); pm.collectionVariables.set('d120', day(-120));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "totp",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "siteCode",
+      "value": "SITE-IN"
+    },
+    {
+      "key": "myUserId",
+      "value": ""
+    },
+    {
+      "key": "ownerUserId",
+      "value": ""
+    },
+    {
+      "key": "boardCode",
+      "value": ""
+    },
+    {
+      "key": "thresholdsJson",
+      "value": ""
+    },
+    {
+      "key": "myBoardId",
+      "value": ""
+    },
+    {
+      "key": "myBoardId2",
+      "value": ""
+    },
+    {
+      "key": "dupName",
+      "value": ""
+    },
+    {
+      "key": "expandKey",
+      "value": ""
+    },
+    {
+      "key": "gameCode",
+      "value": ""
+    },
+    {
+      "key": "condRuleId",
+      "value": ""
+    },
+    {
+      "key": "condEditTime",
+      "value": ""
+    },
+    {
+      "key": "condDataReady",
+      "value": ""
+    },
+    {
+      "key": "condEventId",
+      "value": ""
+    },
+    {
+      "key": "metricEventId",
+      "value": ""
+    },
+    {
+      "key": "orderRuleId",
+      "value": ""
+    },
+    {
+      "key": "orderNo",
+      "value": ""
+    },
+    {
+      "key": "orderEventId",
+      "value": ""
+    },
+    {
+      "key": "today",
+      "value": ""
+    },
+    {
+      "key": "d7",
+      "value": ""
+    },
+    {
+      "key": "d120",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 准备",
+      "item": [
+        {
+          "name": "0.1 登录（获取 token）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"code\": \"{{totp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('拿到 token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 当前用户（myUserId）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/getInfo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "getInfo"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.collectionVariables.set('myUserId', j.user.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 可选负责人（ownerUserId）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/owners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "owners"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const list = j.data || [];",
+                  "pm.test('有负责人可选', () => pm.expect(list.length).to.be.above(0));",
+                  "const me = list.find(o => String(o.userId) === String(pm.collectionVariables.get('myUserId'))) || list[0];",
+                  "if (me) pm.collectionVariables.set('ownerUserId', me.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 未登录访问风控 → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "options"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [401]', () => pm.expect([401]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 风控分析",
+      "item": [
+        {
+          "name": "1.1 筛选项与字典 GET /options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "options"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('有榜单、列、名单条件字段', () => { pm.expect(j.data.boards).to.be.an('array').that.is.not.empty; pm.expect(j.data.columns).to.be.an('array').that.is.not.empty; pm.expect(j.data.conditionFields).to.be.an('array'); });",
+                  "pm.test('排行榜列 31 项、游戏列 20 项（与 release_next ㉒ 一致；指标管理改过则以实际为准）', () => { pm.expect(j.data.columns.length).to.be.at.least(1); pm.expect(j.data.gameColumns.length).to.be.at.least(1); });",
+                  "pm.test('没有渠道风险榜', () => pm.expect(j.data.boards.map(b => b.code)).to.not.include('channel'));",
+                  "const b = j.data.boards.find(x => x.code !== 'all') || j.data.boards[0]; pm.collectionVariables.set('boardCode', b.code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 读榜单条件 GET /rank/thresholds",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/thresholds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "thresholds"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('有 items 与 editable', () => { pm.expect(j.data).to.have.property('editable'); pm.expect(j.data.items || j.data.values || j.data).to.exist; });",
+                  "pm.collectionVariables.set('thresholdsJson', JSON.stringify(j.data));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 改榜单条件（newDays=7，需 dashboard:risk:cond:edit；无权限 403）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/thresholds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "thresholds"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newDays\": 7\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 403]', () => pm.expect([200, 403]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 [校验] 榜单条件超出上下限 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/thresholds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "thresholds"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newDays\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [400, 403]', () => pm.expect([400, 403]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 风控概览 scene=RISK",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"RISK\",\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"compareType\": \"PREV_PERIOD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('返回指标卡', () => pm.expect(j.data).to.be.an('object'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 风控概览导出（需 dashboard:risk:export）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"RISK\",\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('xlsx 或 无权限', () => { const ct = pm.response.headers.get('Content-Type') || ''; if (ct.includes('json')) pm.expect([403, 500]).to.include(pm.response.json().code); else pm.expect(ct).to.include('sheet'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 榜单卡片 POST /rank/cards（默认卡片）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "cards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('cards 数组 + dataPending 标志', () => { pm.expect(j.data.cards).to.be.an('array'); pm.expect(j.data).to.have.property('dataPending'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 榜单卡片：指定 boards + 占比档位",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "cards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"boards\": [\n    \"{{boardCode}}\",\n    \"bigw\"\n  ],\n  \"bands\": [\n    1,\n    5,\n    10\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 完整名单 POST /rank/list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"{{boardCode}}\",\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('rows / total / dataPending', () => { pm.expect(j.data).to.have.property('dataPending'); if (!j.data.dataPending) { pm.expect(j.data.rows).to.be.an('array'); pm.expect(j.data.total).to.be.a('number'); } });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.10 完整名单：名单条件 + 排行字段 + 表格排序",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"all\",\n  \"conditions\": [\n    {\n      \"field\": \"dep\",\n      \"min\": 1000\n    },\n    {\n      \"field\": \"regDays\",\n      \"max\": 30\n    }\n  ],\n  \"rankCol\": \"winLoss\",\n  \"rankDir\": \"desc\",\n  \"viewSortCol\": \"dep\",\n  \"viewSortDir\": \"desc\",\n  \"pageNum\": 1,\n  \"pageSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11 大额提款榜：单笔提款 + 用户字段条件（FY-70）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"bigw\",\n  \"custom\": true,\n  \"conditions\": [\n    {\n      \"field\": \"amount\",\n      \"min\": 20000\n    },\n    {\n      \"field\": \"regDays\",\n      \"max\": 7\n    }\n  ],\n  \"cols\": [\n    \"turnX\",\n    \"dep\"\n  ],\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('modified + totals', () => { pm.expect(j.data.modified).to.eql(true); pm.expect(j.data.totals).to.have.property('count'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11a [校验] 大额提款榜单笔提款最小值越界 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"bigw\",\n  \"conditions\": [\n    {\n      \"field\": \"amount\",\n      \"min\": 500\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11b [校验] 大额提款榜不能加有效投注列 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"bigw\",\n  \"cols\": [\n    \"bet\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11c 盈利榜：custom=true 替换默认条件（改过后金额类从高到低仍有占比）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"pnl\",\n  \"custom\": true,\n  \"conditions\": [\n    {\n      \"field\": \"winLoss\",\n      \"min\": 0.01\n    },\n    {\n      \"field\": \"dep\",\n      \"min\": 1000\n    }\n  ],\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('modified', () => pm.expect(j.data.modified).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11d 名单内搜索 POST /rank/search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "search"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"all\",\n  \"keyword\": \"10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('items 数组', () => pm.expect(j.data.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11e [校验] 搜索少于 2 个字 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "search"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"all\",\n  \"keyword\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11f 渠道风险榜卡片",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "cards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"boards\": [\n    \"chrisk\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('风险类型与 3 个数', () => { const c = j.data.cards[0]; pm.expect(c.group).to.eql('CHANNEL'); pm.expect(c.riskTypes.selected).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11g 渠道风险榜名单（渠道树，注册 / 首存待接入）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"chrisk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('rows 为推广商 › 渠道', () => { pm.expect(j.data.rows).to.be.an('array'); pm.expect(j.data).to.have.property('acquisitionPending'); pm.expect(j.data.columns[0].code).to.eql('regUsers'); });",
+                  "const a = (j.data.rows || [])[0]; const c = a && (a.children || [])[0]; if (c) pm.collectionVariables.set('drillChannel', c.channelId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11h 渠道风险榜：条件 + 排行 + 指定风险类型",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"chrisk\",\n  \"riskTypes\": [\n    \"newWin\",\n    \"bigWin\"\n  ],\n  \"rankCol\": \"riskUsers\",\n  \"conditions\": [\n    {\n      \"field\": \"riskUsers\",\n      \"min\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11i 渠道风险榜下钻（全部渠道 · 低打碼提款）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"chrisk\",\n  \"drill\": {\n    \"riskType\": \"lowTurn\"\n  },\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('排行固定按提款', () => pm.expect(j.data.rankCol).to.eql('wd'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11j [校验] 渠道风险榜不支持的条件 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"chrisk\",\n  \"conditions\": [\n    {\n      \"field\": \"ftdAmt\",\n      \"min\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11k 导出渠道风险榜",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"chrisk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('xlsx 或 无权限 / 未开启导出', () => { const ct = pm.response.headers.get('Content-Type') || ''; if (ct.includes('json')) pm.expect([403, 500]).to.include(pm.response.json().code); else pm.expect(ct).to.include('sheet'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11l 我的风险类型 GET /rank/risk-types",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/risk-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "risk-types"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('source', () => pm.expect(['PERSONAL','GLOBAL','SYSTEM']).to.include(j.data.source));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11m 保存我的风险类型",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/risk-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "risk-types"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"types\": [\n    \"newWin\",\n    \"highRtp\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('个人设置生效', () => pm.expect(j.data.source).to.eql('PERSONAL'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11n [校验] 风险类型不存在 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/risk-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "risk-types"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"types\": [\n    \"nope\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11o 恢復默認（跟随全局）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/risk-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "risk-types"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"types\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('不再是个人设置', () => pm.expect(j.data.source).to.not.eql('PERSONAL'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11p 全部用户搜索 POST /users/search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/users/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "users",
+                "search"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"keyword\": \"10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('items + dataPending', () => { pm.expect(j.data.items).to.be.an('array'); pm.expect(j.data).to.have.property('dataPending'); });",
+                  "const u = (j.data.items || [])[0]; if (u) pm.collectionVariables.set('drawerUserId', u.userId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11q 用户详情抽屉（註冊當日）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/users/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "users",
+                "detail"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{drawerUserId}}\",\n  \"listFrom\": \"{{d7}} 00:00\",\n  \"listTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('drawerUserId')) pm.collectionVariables.set('drawerUserId', '10001');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 404]', () => pm.expect([200, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11r 抽屉：注册 7 日 · 资金流水（存款）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/users/funds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "users",
+                "funds"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{drawerUserId}}\",\n  \"window\": \"REG_7\",\n  \"type\": \"DEPOSIT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400, 404]', () => pm.expect([200, 400, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11s 抽屉：自定义 · 遊戲",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/users/games",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "users",
+                "games"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{drawerUserId}}\",\n  \"window\": \"CUSTOM\",\n  \"from\": \"{{d7}}\",\n  \"to\": \"{{today}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400, 404]', () => pm.expect([200, 400, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.11t [校验] 抽屉时间范围非法 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/users/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "users",
+                "detail"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{drawerUserId}}\",\n  \"window\": \"NOPE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [400, 404]', () => pm.expect([400, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.12 [校验] 未传时间 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"board\": \"all\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));",
+                  "pm.test('data 指出 slotFrom', () => pm.expect(JSON.stringify(j.data)).to.include('slotFrom'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.13 [校验] 时间范围超过 93 天 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"board\": \"all\",\n  \"slotFrom\": \"{{d120}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.14 [校验] 结束早于开始 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"board\": \"all\",\n  \"slotFrom\": \"{{today}} 00:00\",\n  \"slotTo\": \"{{d7}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.15 [校验] 未知名单条件字段 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"all\",\n  \"conditions\": [\n    {\n      \"field\": \"notAField\",\n      \"min\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.16 [校验] 不存在的榜单 → 400 / 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"nope\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [400, 404]', () => pm.expect([400, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.17 导出完整名单（需 dashboard:risk:export）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"{{boardCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('xlsx 或 无权限 / 未开启导出', () => { const ct = pm.response.headers.get('Content-Type') || ''; if (ct.includes('json')) pm.expect([403, 500]).to.include(pm.response.json().code); else pm.expect(ct).to.include('sheet'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 风控分析 · 我的榜单",
+      "item": [
+        {
+          "name": "2.1 我的榜单列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 新建我的榜单",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM大戶{{$randomInt}}\",\n  \"conditions\": [\n    {\n      \"field\": \"dep\",\n      \"min\": 20000\n    }\n  ],\n  \"rankCol\": \"dep\",\n  \"rankDir\": \"desc\",\n  \"showCard\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('返回 id 与 code m:id', () => { pm.expect(j.data.id).to.be.a('number'); pm.expect(j.data.code).to.eql('m:' + j.data.id); });",
+                  "pm.collectionVariables.set('myBoardId', j.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 新建第二个（排序用）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM新號{{$randomInt}}\",\n  \"conditions\": [],\n  \"rankCol\": \"winLoss\",\n  \"rankDir\": \"desc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.collectionVariables.set('myBoardId2', j.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 [校验] 重名 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{dupName}}\",\n  \"conditions\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({url: pm.collectionVariables.get('baseUrl') + '/dashboard/risk/my-boards', header: {Authorization: 'Bearer ' + pm.collectionVariables.get('token'), 'X-Site-Code': pm.collectionVariables.get('siteCode')}}, (e, r) => { const b = (r.json().data.rows || r.json().data || []).find(x => String(x.id) === String(pm.collectionVariables.get('myBoardId'))); pm.collectionVariables.set('dupName', b ? b.name : 'x'); });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 [校验] 排行字段不能用「该笔投注额」/ 未知字段 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM錯誤\",\n  \"rankCol\": \"nope\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 用我的榜单查名单（board = m:id）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/rank/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "rank",
+                "list"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"board\": \"m:{{myBoardId}}\",\n  \"pageNum\": 1,\n  \"pageSize\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.7 修改：改名 + 关卡片",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/{{myBoardId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "{{myBoardId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM大戶改{{$randomInt}}\",\n  \"showCard\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.8 排序（两个对调）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/reorder",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "reorder"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({url: pm.collectionVariables.get('baseUrl') + '/dashboard/risk/my-boards', header: {Authorization: 'Bearer ' + pm.collectionVariables.get('token'), 'X-Site-Code': pm.collectionVariables.get('siteCode')}}, (e, r) => { const d = r.json().data; const ids = (d.rows || d || []).map(x => x.id).reverse(); pm.request.body.raw = JSON.stringify({ids}); });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.9 [校验] 排序缺少榜单 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/reorder",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "reorder"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{myBoardId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.10 删除",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/{{myBoardId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "{{myBoardId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.11 删除第二个",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/{{myBoardId2}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "{{myBoardId2}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.12 再删 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/{{myBoardId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "{{myBoardId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.13 修改已删除 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/my-boards/{{myBoardId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "my-boards",
+                "{{myBoardId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 风控分析 · 游戏分析",
+      "item": [
+        {
+          "name": "3.1 游戏表（默认路径 平台 › 品牌 › 游戏）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/table",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "table"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('rows + dataPending', () => { pm.expect(j.data).to.have.property('dataPending'); pm.expect(j.data.rows).to.be.an('array'); });",
+                  "const r = (j.data.rows || [])[0]; if (r && r.key) pm.collectionVariables.set('expandKey', r.key);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 游戏表：自定义路径 + 列排序",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/table",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "table"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"path\": [\n    \"gameType\",\n    \"game\"\n  ],\n  \"sortCol\": \"ggr\",\n  \"sortDir\": \"desc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 游戏表：展开一行（expandKey）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/table",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "table"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"expandKey\": \"{{expandKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400]', () => pm.expect([200, 400]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 [校验] 非法路径维度 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/table",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "table"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"path\": [\n    \"nope\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 游戏抽屉（汇总 + Top 10 用户 + 近 7 日）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "detail"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"gameCode\": \"{{gameCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('gameCode')) pm.collectionVariables.set('gameCode', 'pg-mahjong-ways');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('summary / topUsers', () => { pm.expect(j.data).to.have.property('summary'); pm.expect(j.data.topUsers).to.be.an('array'); });",
+                  "if (!j.data.dataPending) pm.test('days 7 项', () => pm.expect(j.data.days.length).to.eql(7));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 [校验] 抽屉未传 gameCode → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "detail"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 导出游戏分析",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/risk/games/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "risk",
+                "games",
+                "export"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('xlsx 或 无权限 / 未开启导出', () => { const ct = pm.response.headers.get('Content-Type') || ''; if (ct.includes('json')) pm.expect([403, 500]).to.include(pm.response.json().code); else pm.expect(ct).to.include('sheet'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. 监控管理 · 条件规则",
+      "item": [
+        {
+          "name": "4.1 字段目录 GET /cond-rules/fields",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/fields",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "fields"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('分组 user / fund / game', () => pm.expect(j.data.groups.map(g => g.code)).to.eql(['user','fund','game']));",
+                  "pm.test('字段来自指标管理（27 项预置）', () => { pm.expect(j.data.fields.length).to.be.above(0); pm.expect(j.data.fields.map(f => f.code)).to.include.members(['reg','ftdr']); });",
+                  "pm.test('窗口与连续次数上限 4/3/3/2/2/4', () => pm.expect(j.data.windows.map(w => w.durationMax)).to.eql([4,3,3,2,2,4]));",
+                  "pm.test('快照字段只能当前值', () => { const f = j.data.fields.find(x => x.snapshot); if (f) pm.expect(f.defaultHow).to.eql('CUR'); });",
+                  "pm.test('选项：hows / ops / levels / muteHours / maxConditions', () => { pm.expect(j.data.muteHours).to.eql([1,2,4,12]); pm.expect(j.data.maxConditions).to.eql(5); pm.expect(j.data.ops.BASE.map(o => o.code)).to.eql(['UP','DOWN','CHG']); });",
+                  "pm.collectionVariables.set('condDataReady', String(j.data.dataReady));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 新建条件规则（2 个条件，ALL，通知关闭）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"scope\": {},\n      \"how\": \"BASE\",\n      \"op\": \"UP\",\n      \"unit\": \"PCT\",\n      \"threshold\": 50\n    },\n    {\n      \"field\": \"ftdr\",\n      \"scope\": {},\n      \"how\": \"CUR\",\n      \"op\": \"LT\",\n      \"threshold\": 5,\n      \"minSample\": 100\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('返回 ruleId / ruleCode', () => { pm.expect(j.data.ruleId).to.be.a('number'); pm.expect(j.data.ruleCode).to.match(/^R-\\d{3,}$/); });",
+                  "pm.collectionVariables.set('condRuleId', j.data.ruleId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 详情 GET /cond-rules/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('设置与新建一致', () => { pm.expect(j.data.matchMode).to.eql('ALL'); pm.expect(j.data.window).to.eql('1h'); pm.expect(j.data.durationCount).to.eql(2); pm.expect(j.data.conditions.length).to.eql(2); pm.expect(j.data.notifyEnabled).to.eql(false); });",
+                  "pm.test('门槛去尾零', () => pm.expect(j.data.conditions[0].threshold).to.eql(50));",
+                  "pm.test('摘要', () => pm.expect(j.data.summary).to.include('連續 2 次'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 修改：4h / ANY / 连续 1 次 / 单条件带范围",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ANY\",\n  \"window\": \"4h\",\n  \"durationCount\": 1,\n  \"level\": \"WARN\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"dep\",\n      \"scope\": {},\n      \"how\": \"YD\",\n      \"op\": \"DOWN\",\n      \"unit\": \"PCT\",\n      \"threshold\": 30\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 详情反映修改",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('已改', () => { pm.expect(j.data.window).to.eql('4h'); pm.expect(j.data.matchMode).to.eql('ANY'); pm.expect(j.data.level).to.eql('WARN'); pm.expect(j.data.conditions.length).to.eql(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 [校验] 一次报全：名称、连续次数超上限、静默、条件",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"24h\",\n  \"durationCount\": 3,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 3,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"nope\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 1\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"BASE\",\n      \"op\": \"GT\",\n      \"threshold\": 1\n    },\n    {\n      \"field\": \"ftdr\",\n      \"how\": \"CUR\",\n      \"op\": \"OUT\",\n      \"threshold\": [\n        8,\n        3\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));",
+                  "const s = JSON.stringify(j.data);",
+                  "pm.test('各字段都报', () => { ['name','durationCount','muteHours','conditions[0].field','conditions[1].op','conditions[2].threshold'].forEach(k => pm.expect(s).to.include(k)); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.7 [校验] 快照字段用较基准 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"wPendN\",\n      \"how\": \"BASE\",\n      \"op\": \"UP\",\n      \"unit\": \"PCT\",\n      \"threshold\": 10\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.8 [校验] 字段不支持的维度 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"scope\": {\n        \"pay\": \"upi\"\n      },\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 10\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.9 [校验] 渠道值格式不对 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"scope\": {\n        \"ch\": \"1001\"\n      },\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 10\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.10 [校验] 超过 5 个条件 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 1\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 2\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 3\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 4\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 5\n    },\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 6\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.11 [校验] 开启通知但没选群 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": true,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"scope\": {},\n      \"how\": \"BASE\",\n      \"op\": \"UP\",\n      \"unit\": \"PCT\",\n      \"threshold\": 50\n    },\n    {\n      \"field\": \"ftdr\",\n      \"scope\": {},\n      \"how\": \"CUR\",\n      \"op\": \"LT\",\n      \"threshold\": 5,\n      \"minSample\": 100\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.12 [校验] 没有样本口径的字段设最小样本 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM疑似批量註冊{{$randomInt}}\",\n  \"description\": \"Postman 用例\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"notifyChatIds\": [],\n  \"muteHours\": 2,\n  \"enabled\": true,\n  \"conditions\": [\n    {\n      \"field\": \"dep\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 1,\n      \"minSample\": 10\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.13 触发预览（近 30 天回测）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchMode\": \"ALL\",\n  \"window\": \"1h\",\n  \"durationCount\": 2,\n  \"level\": \"CRIT\",\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"how\": \"BASE\",\n      \"op\": \"UP\",\n      \"unit\": \"PCT\",\n      \"threshold\": 50\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "if (j.data.dataPending) { pm.test('数据未接入：提示', () => pm.expect(j.data.message).to.be.a('string')); } else {",
+                  "  pm.test('summary / usual / runs', () => { pm.expect(j.data.summary.text).to.be.a('string'); pm.expect(j.data.usual).to.be.an('array').with.lengthOf(1); pm.expect(j.data.runs).to.be.an('array'); pm.expect(j.data.periods).to.be.within(700, 721); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.14 触发预览：多条件返回 conditionHours / matchedHours",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchMode\": \"ANY\",\n  \"window\": \"TODAY\",\n  \"durationCount\": 1,\n  \"level\": \"WARN\",\n  \"conditions\": [\n    {\n      \"field\": \"reg\",\n      \"how\": \"CUR\",\n      \"op\": \"GT\",\n      \"threshold\": 10\n    },\n    {\n      \"field\": \"dep\",\n      \"how\": \"YD\",\n      \"op\": \"CHG\",\n      \"unit\": \"PCT\",\n      \"threshold\": 30\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "if (!j.data.dataPending) pm.test('多条件统计', () => { pm.expect(j.data.conditionHours).to.have.lengthOf(2); pm.expect(j.data).to.have.property('matchedHours'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.14b 条件参考信息 condition-info（样本中位数、历史天数、基准起判日）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/condition-info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "condition-info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"field\": \"ftdr\",\n  \"scope\": {},\n  \"window\": \"1h\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "if (j.data.dataPending) { pm.test('数据未接入', () => pm.expect(j.data.dataPending).to.eql(true)); } else {",
+                  "  pm.test('结构', () => { pm.expect(j.data).to.have.property('historyDays'); pm.expect(j.data).to.have.property('baseReady'); pm.expect(j.data).to.have.property('ydReady'); pm.expect(j.data.sample).to.have.property('median'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.14c [校验] condition-info 字段 / 时段不合法 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/condition-info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "condition-info"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"field\": \"nope\",\n  \"window\": \"2h\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));",
+                  "pm.test('field 与 window 都报', () => { const s = JSON.stringify(j.data); pm.expect(s).to.include('field'); pm.expect(s).to.include('window'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.15 [校验] 预览参数不合法 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"window\": \"2h\",\n  \"conditions\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.16 测试告警（发到规则的群；通知关闭没选群 → 400，凭证未配 → 4802）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}/test-alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}",
+                "test-alert"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400, 4802]', () => pm.expect([200, 400, 4802]).to.include(j.code));",
+                  "if (j.code === 200) pm.test('正文带【測試】、chats 逐群结果', () => { pm.expect(j.data.content).to.include('【測試】'); pm.expect(j.data.chats).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.17 告警规则列表 ruleType=COND（三类同一张表）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=COND&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "COND"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const rows = j.data.rows || [];",
+                  "const r = rows.find(x => String(x.ruleId) === String(pm.collectionVariables.get('condRuleId')));",
+                  "pm.test('只含条件规则且含新建的', () => { pm.expect(rows.every(x => x.ruleType === 'COND')).to.be.true; pm.expect(r).to.exist; });",
+                  "pm.test('trigger / detect 结构', () => { pm.expect(r.trigger.conditions).to.be.an('array'); pm.expect(r.trigger.summary).to.be.a('string'); pm.expect(r.detect.text).to.eql('每 4 小時'); pm.expect(r.canCopy).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.17b 列表的修改人 / 修改时间不受启停影响（edit_time / edit_by）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=COND&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "COND"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.ruleId) === String(pm.collectionVariables.get('condRuleId')));",
+                  "pm.collectionVariables.set('condEditTime', r.updateTime);",
+                  "pm.test('有修改人', () => pm.expect(r.updateBy).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.18 告警规则列表：多选筛选（ruleType=METRIC,ORDER&owner=me&enabled=true）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=METRIC,ORDER&owner=me&enabled=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "METRIC,ORDER"
+                },
+                {
+                  "key": "owner",
+                  "value": "me"
+                },
+                {
+                  "key": "enabled",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('不含条件规则', () => pm.expect((j.data.rows || []).some(x => x.ruleType === 'COND')).to.be.false);",
+                  "pm.test('按最近修改倒序（启停不算）', () => { const t = (j.data.rows || []).map(x => x.updateTime || ''); pm.expect([...t].sort().reverse()).to.eql(t); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.19 暂停",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{condRuleId}}/enabled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{condRuleId}}",
+                "enabled"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.20 列表：detect.paused = true",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=COND&enabled=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "COND"
+                },
+                {
+                  "key": "enabled",
+                  "value": "false"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.ruleId) === String(pm.collectionVariables.get('condRuleId')));",
+                  "pm.test('暂停中', () => pm.expect(r.detect.paused).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.21 启用",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{condRuleId}}/enabled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{condRuleId}}",
+                "enabled"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.21b 启停后列表 updateTime 不变",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=COND&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "COND"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.ruleId) === String(pm.collectionVariables.get('condRuleId')));",
+                  "pm.test('updateTime 与启停前一致', () => pm.expect(r.updateTime).to.eql(pm.collectionVariables.get('condEditTime')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.22 指标规则详情接口取条件规则 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{condRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{condRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.23 不存在的条件规则 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.24 其他站点 → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "X-Site-Code",
+                "value": "SITE-NOT-MINE"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [403, 404]', () => pm.expect([403, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. 监控管理 · 异常事件（改造）",
+      "item": [
+        {
+          "name": "5.1 事件列表带 orderPendingTotal",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?handle=all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('两个页签的未处理数', () => { pm.expect(j.data.pendingTotal).to.be.a('number'); pm.expect(j.data.orderPendingTotal).to.be.a('number'); });",
+                  "const m = (j.data.rows || []).find(x => x.ruleType !== 'COND'); if (m) pm.collectionVariables.set('metricEventId', m.eventId);",
+                  "const c = (j.data.rows || []).find(x => x.ruleType === 'COND'); if (c) pm.collectionVariables.set('condEventId', c.eventId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 ruleType=COND：条件规则的行",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?handle=all&ruleType=COND",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "ruleType",
+                  "value": "COND"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const rows = j.data.rows || [];",
+                  "pm.test('只有条件规则', () => pm.expect(rows.every(x => x.ruleType === 'COND')).to.be.true);",
+                  "if (rows.length) pm.test('cond / currentText / judgeTip / canDetail', () => { const r = rows[0]; pm.expect(r.cond.basis).to.be.an('array'); pm.expect(r.currentText).to.be.a('string'); pm.expect(r.judgeTip).to.include('檢測'); pm.expect(r.canDetail).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 metricCode 多选：不返回条件规则事件",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?handle=all&metricCode=reg,dep&status=open,resolved",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "metricCode",
+                  "value": "reg,dep"
+                },
+                {
+                  "key": "status",
+                  "value": "open,resolved"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('无 COND 行', () => pm.expect((j.data.rows || []).some(x => x.ruleType === 'COND')).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.4 range=custom（含两端）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?handle=all&range=custom&from={{d7}}&to={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "range",
+                  "value": "custom"
+                },
+                {
+                  "key": "from",
+                  "value": "{{d7}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{today}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.5 [校验] custom 超过 90 天 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?range=custom&from={{d120}}&to={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "custom"
+                },
+                {
+                  "key": "from",
+                  "value": "{{d120}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{today}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.6 [校验] custom 结束早于开始 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events?range=custom&from={{today}}&to={{d7}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "custom"
+                },
+                {
+                  "key": "from",
+                  "value": "{{today}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{d7}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.7 事件详情：条件规则（有条件规则事件时）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events/{{condEventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events",
+                "{{condEventId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('condEventId')) pm.collectionVariables.set('condEventId', '999999999');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.collectionVariables.get('condEventId') === '999999999') { pm.test('没有条件规则事件 → 404', () => pm.expect(j.code).to.eql(404)); } else {",
+                  "  pm.test('code = 200', () => pm.expect(j.code).to.eql(200));",
+                  "  pm.test('状态、条件明细、走势、规则快照', () => { pm.expect(j.data.statusText).to.be.a('string'); pm.expect(j.data.conditions).to.be.an('array'); pm.expect(j.data.series).to.be.an('array'); pm.expect(j.data.rule).to.have.property('changedAfter'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.8 事件详情：指标规则的事件 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events/{{metricEventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events",
+                "{{metricEventId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('metricEventId')) pm.collectionVariables.set('metricEventId', '999999999');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [400, 404]', () => pm.expect([400, 404]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.9 事件详情：不存在 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/events/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "events",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. 监控管理 · 订单告警",
+      "item": [
+        {
+          "name": "6.1 新建订单规则（通知关闭，命中只记录）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PM大額提款{{$randomInt}}\",\n  \"ownerUserId\": {{ownerUserId}},\n  \"triggerAt\": \"SUBMIT\",\n  \"amountMode\": \"SINGLE\",\n  \"amountThreshold\": 50000,\n  \"level\": \"CRIT\",\n  \"notifyEnabled\": false,\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.collectionVariables.set('orderRuleId', j.data.ruleId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 写回一笔命中（POST /monitor/rules/{id}/alert）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{orderRuleId}}/alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{orderRuleId}}",
+                "alert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"send\": false,\n  \"orderNo\": \"{{orderNo}}\",\n  \"amount\": 52000.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('orderNo', 'PMW' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('记录了事件', () => { pm.expect(j.data.events[0].eventId).to.be.a('number'); pm.expect(j.data.events[0].duplicate).to.eql(false); });",
+                  "pm.collectionVariables.set('orderEventId', j.data.events[0].eventId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 订单告警列表（默认只看未处理）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const rows = j.data.rows || [];",
+                  "const r = rows.find(x => String(x.eventId) === String(pm.collectionVariables.get('orderEventId')));",
+                  "pm.test('含新事件、未处理', () => { pm.expect(r).to.exist; pm.expect(r.handle.status).to.eql('pending'); });",
+                  "pm.test('行结构', () => { pm.expect(r.orderNo).to.eql(pm.collectionVariables.get('orderNo')); pm.expect(r.rule.ruleCode).to.match(/^R-/); pm.expect(r.rule.summary).to.include('單筆提款'); pm.expect(r.triggerLabel).to.eql('提交時間'); pm.expect(r.amount).to.eql(52000.5); pm.expect(r.notify.status).to.eql('LOG_ONLY'); pm.expect(r).to.have.property('order'); pm.expect(r).to.have.property('user'); });",
+                  "pm.test('pendingTotal / udsOk', () => { pm.expect(j.data.pendingTotal).to.be.at.least(1); pm.expect(j.data).to.have.property('udsOk'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 筛选：ruleId + owner + range=today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?ruleId={{orderRuleId}}&owner={{ownerUserId}}&range=today",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "ruleId",
+                  "value": "{{orderRuleId}}"
+                },
+                {
+                  "key": "owner",
+                  "value": "{{ownerUserId}}"
+                },
+                {
+                  "key": "range",
+                  "value": "today"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('只有这条规则的', () => pm.expect((j.data.rows || []).every(x => String(x.rule.ruleId) === String(pm.collectionVariables.get('orderRuleId')))).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.5 range=custom",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?handle=all&range=custom&from={{d7}}&to={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "range",
+                  "value": "custom"
+                },
+                {
+                  "key": "from",
+                  "value": "{{d7}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{today}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.6 按订单状态筛选（UDS 未接入 → 400）",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?orderStatus=PENDING,PAID",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "orderStatus",
+                  "value": "PENDING,PAID"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400]', () => pm.expect([200, 400]).to.include(j.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.7 [校验] orderStatus 非法 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?orderStatus=DONE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "orderStatus",
+                  "value": "DONE"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.8 [校验] pageSize 101 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?pageSize=101",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "101"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.9 [校验] custom 超 90 天 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?range=custom&from={{d120}}&to={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "custom"
+                },
+                {
+                  "key": "from",
+                  "value": "{{d120}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{today}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.10 [校验] 标记处理不填说明 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/handle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "handle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventIds\": [\n    \"{{orderEventId}}\"\n  ],\n  \"note\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.11 [校验] 没选事件 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/handle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "handle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventIds\": [],\n  \"note\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 400', () => pm.expect(j.code, j.msg).to.eql(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.12 [校验] 含不存在的事件 → 404（不做部分成功）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/handle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "handle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventIds\": [\n    \"{{orderEventId}}\",\n    999999999\n  ],\n  \"note\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.13 标记已处理",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/handle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "handle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventIds\": [\n    \"{{orderEventId}}\"\n  ],\n  \"note\": \"已聯繫用戶核實\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('updated = 1', () => pm.expect(j.data.updated).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.14 handle=done 里能看到说明与处理人",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?handle=done&ruleId={{orderRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "done"
+                },
+                {
+                  "key": "ruleId",
+                  "value": "{{orderRuleId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.eventId) === String(pm.collectionVariables.get('orderEventId')));",
+                  "pm.test('已处理', () => { pm.expect(r.handle.status).to.eql('done'); pm.expect(r.handle.note).to.eql('已聯繫用戶核實'); pm.expect(r.handle.by).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.15 撤销处理",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/{{orderEventId}}/unhandle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "{{orderEventId}}",
+                "unhandle"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.16 撤销不存在的事件 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events/999999999/unhandle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events",
+                "999999999",
+                "unhandle"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.17 重复写回同一订单号 → duplicate=true，不新增",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{orderRuleId}}/alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{orderRuleId}}",
+                "alert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"send\": false,\n  \"orderNo\": \"{{orderNo}}\",\n  \"amount\": 52000.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('duplicate', () => pm.expect(j.data.events[0].duplicate).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.18 告警规则列表：订单规则行 lastTriggerAt",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=ORDER&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "ORDER"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.ruleId) === String(pm.collectionVariables.get('orderRuleId')));",
+                  "pm.test('trigger.amountText / detect / 最近触发', () => { pm.expect(r.trigger.amountText).to.include('單筆提款'); pm.expect(r.detect.text).to.eql('逐筆 · 提交時'); pm.expect(r.lastTriggerAt).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.18b 订单规则测试告警（示例订单；没选群 → 400，凭证未配 → 4802）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/{{orderRuleId}}/test-alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "{{orderRuleId}}",
+                "test-alert"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code ∈ [200, 400, 4802]', () => pm.expect([200, 400, 4802]).to.include(j.code));",
+                  "if (j.code === 200) pm.test('示例订单卡片', () => { pm.expect(j.data.content).to.include('TEST-000001'); pm.expect(j.data.chats).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.18c 订单规则测试：不存在 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/999999999/test-alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "999999999",
+                "test-alert"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.19 删除订单规则（FY-95 R7）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/{{orderRuleId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "{{orderRuleId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.20 已记录的订单告警保留，规则标已删除",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-events?handle=all&ruleId={{orderRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-events"
+              ],
+              "query": [
+                {
+                  "key": "handle",
+                  "value": "all"
+                },
+                {
+                  "key": "ruleId",
+                  "value": "{{orderRuleId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const r = (j.data.rows || []).find(x => String(x.eventId) === String(pm.collectionVariables.get('orderEventId')));",
+                  "pm.test('rule.deleted = true，名称照常', () => { pm.expect(r.rule.deleted).to.eql(true); pm.expect(r.rule.name).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.21 删除后详情 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/{{orderRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "{{orderRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.22 删除后写回告警 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules/{{orderRuleId}}/alert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules",
+                "{{orderRuleId}}",
+                "alert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"send\": false,\n  \"orderNo\": \"PMX{{$timestamp}}\",\n  \"amount\": 60000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.23 告警规则列表不再含该规则",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/rules?ruleType=ORDER&pageSize=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "ruleType",
+                  "value": "ORDER"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "pm.test('不含已删除', () => pm.expect((j.data.rows || []).some(x => String(x.ruleId) === String(pm.collectionVariables.get('orderRuleId')))).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.24 重复删除 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/{{orderRuleId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "{{orderRuleId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.25 用条件规则 ID 调订单规则删除 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/order-rules/{{condRuleId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "order-rules",
+                "{{condRuleId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. 收尾",
+      "item": [
+        {
+          "name": "7.1 删除条件规则",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 删除后详情 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 重复删除 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/cond-rules/{{condRuleId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "monitor",
+                "cond-rules",
+                "{{condRuleId}}",
+                "delete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 404', () => pm.expect(j.code, j.msg).to.eql(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -260,12 +260,16 @@ public class SitePageMetricService
             }
         }
         Map<String, String> errors = new LinkedHashMap<>();
-        errors.put("page", "頁面只能是 OVERVIEW（運營總覽）或 SUMMARY（指標匯總）");
+        errors.put("page", "頁面只能是 OVERVIEW（運營總覽）、SUMMARY（指標匯總）或 RISK（風控概覽）");
         throw new MonitorFieldException(errors);
     }
 
     private static String label(DashboardPage page)
     {
+        if (page == DashboardPage.RISK)
+        {
+            return "風控概覽";
+        }
         return page == DashboardPage.OVERVIEW ? "運營總覽" : "指標匯總";
     }
 }

@@ -57,6 +57,8 @@ import com.fivetech.monitor.mapper.MonitorSiteMapper;
 import com.fivetech.monitor.service.MonitorText;
 import com.fivetech.monitor.service.IMonitorRuleService;
 import com.fivetech.monitor.service.MonitorCacheKeys;
+import com.fivetech.monitor.service.MonitorChats;
+import com.fivetech.monitor.service.MonitorOrderRules;
 import com.fivetech.monitor.service.MonitorRuleValidator;
 
 /**
@@ -140,6 +142,11 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
                 vo.setUnit(listUnit(rule.getValueFormat()));
                 rows.add(vo);
             }
+            if (ruleRows != null)
+            {
+                // 三类规则的公共列：类型、名称、触发条件、检测、最近触发（release_next ㉓）
+                ruleRows.fill(scope, rules, rows);
+            }
         }
         return PageResultVO.of(rows, total, pageNum, pageSize);
     }
@@ -147,7 +154,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     @Override
     public MonitorRuleDetailVO getRule(MonitorScope scope, Long ruleId)
     {
-        MonitorRule rule = requireRule(scope, ruleId);
+        MonitorRule rule = requireMetricRule(scope, ruleId);
         MonitorRuleDetailVO vo = new MonitorRuleDetailVO();
         fillRuleVO(vo, rule);
         MinSampleVO minSample = new MinSampleVO();
@@ -244,16 +251,13 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         // 第 2–10 条
         MonitorRuleValidator.Result checked = validator.validate(body, metric, metric.getJudgeType(), errors);
         // 第 11、12 条
-        MonitorLarkChat chat = checkChat(scope, body.getNotifyChatId(), errors);
+        List<MonitorLarkChat> chats = checkChats(scope, MonitorChats.requested(body.getNotifyChatIds(), body.getNotifyChatId()), errors);
         checkOwner(scope, body.getOwnerUserId(), null, errors);
         if (!errors.isEmpty())
         {
             throw new MonitorFieldException(errors);
         }
-        if (chat.isDead())
-        {
-            throw new MonitorException(MonitorErrorCode.CHAT_DEAD, "通知群已失效");
-        }
+        rejectDeadChats(chats, List.of());
 
         // 取号：锁住本站设置行，规则号从 1 自增，删除后不复用
         siteMapper.ensureSiteSetting(scope);
@@ -274,7 +278,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         rule.setOwnerUserId(body.getOwnerUserId());
         rule.setJudgeType(metric.getJudgeType());
         rule.setMinSampleKey(metric.getMinSampleKey());
-        applyParams(rule, body, checked, chat);
+        applyParams(rule, body, checked, chats);
         rule.setEnabled(enabled);
         rule.setPausedAt(enabled ? null : now);
         rule.setCreateBy(operator);
@@ -306,7 +310,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     @Transactional(rollbackFor = Exception.class)
     public void updateRule(MonitorScope scope, Long ruleId, MonitorRuleBody body, String operator)
     {
-        MonitorRule existing = requireRule(scope, ruleId);
+        MonitorRule existing = requireMetricRule(scope, ruleId);
         Map<String, String> errors = new LinkedHashMap<>();
 
         String metricCode = StringUtils.trim(body.getMetricCode());
@@ -317,23 +321,20 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
 
         // 判定类型用规则里的快照，保证已有规则的阈值含义不变
         MonitorRuleValidator.Result checked = validator.validate(body, metricOf(existing), existing.getJudgeType(), errors);
-        MonitorLarkChat chat = checkChat(scope, body.getNotifyChatId(), errors);
+        List<MonitorLarkChat> chats = checkChats(scope, MonitorChats.requested(body.getNotifyChatIds(), body.getNotifyChatId()), errors);
         checkOwner(scope, body.getOwnerUserId(), existing.getOwnerUserId(), errors);
         if (!errors.isEmpty())
         {
             throw new MonitorFieldException(errors);
         }
         // 原来的群已失效可以保留，只是不能新选
-        if (chat.isDead() && !Objects.equals(chat.getChatId(), existing.getNotifyChatId()))
-        {
-            throw new MonitorException(MonitorErrorCode.CHAT_DEAD, "通知群已失效");
-        }
+        rejectDeadChats(chats, chatIdsOf(existing));
 
         LocalDateTime now = now();
         MonitorRule rule = new MonitorRule();
         rule.setRuleId(existing.getRuleId());
         rule.setOwnerUserId(body.getOwnerUserId());
-        applyParams(rule, body, checked, chat);
+        applyParams(rule, body, checked, chats);
         rule.setUpdateBy(operator);
         rule.setUpdateTime(now);
         ruleMapper.updateRule(scope, rule);
@@ -388,6 +389,31 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         {
             return;
         }
+        if (!isMetric(existing))
+        {
+            // 订单规则不由判定任务处理：不占启用上限、没有运行状态和事件，只改启停并取新版本号
+            LocalDateTime now = now();
+            ruleMapper.updateEnabled(scope, ruleId, enabled, enabled ? null : now, operator, now);
+            if (MonitorOrderRules.TYPE.equals(existing.getRuleType()))
+            {
+                // 启用 → UPSERT，暂停 → DELETE；由发布器按规则此刻的状态决定
+                fireOrderRule(scope, ruleId);
+            }
+            if (com.fivetech.monitor.cond.CondRules.TYPE.equals(existing.getRuleType()))
+            {
+                // 条件规则（不占指标规则的启用上限）：启用后只判定之后的数据；暂停时结束进行中的事件、清掉连续计数
+                if (enabled)
+                {
+                    resetState(scope, ruleId, now);
+                }
+                else
+                {
+                    stopEvents(scope, ruleId, now, STOP_PAUSE);
+                    ruleMapper.deleteRuleState(scope, ruleId);
+                }
+            }
+            return;
+        }
         applyEnabled(scope, ruleId, enabled, operator, now());
         evictAfterCommit(scope.getSiteCode());
     }
@@ -396,15 +422,58 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     @Transactional(rollbackFor = Exception.class)
     public void deleteRule(MonitorScope scope, Long ruleId, String operator)
     {
-        requireRule(scope, ruleId);
+        MonitorRule existing = requireRule(scope, ruleId);
         LocalDateTime now = now();
+        // 逻辑删除（del_flag = '2'、停用、取新版本号）；规则号不复用
         ruleMapper.deleteRuleLogically(scope, ruleId, operator, now);
+        if (MonitorOrderRules.TYPE.equals(existing.getRuleType()))
+        {
+            // 订单规则（FY-95 R7，2026-11-17 产品确认可删）：没有运行状态和 monitor_event；已记录的订单告警保留，
+            // 列表里规则名称、负责人照常显示并标「已刪除」；判定服务按 sinceVersion 增量拉取时会拿到 deleted = true
+            fireOrderRule(scope, ruleId);
+            return;
+        }
         stopEvents(scope, ruleId, now, STOP_DELETE);
         ruleMapper.deleteRuleState(scope, ruleId);
         evictAfterCommit(scope.getSiteCode());
     }
 
     // ------------------------------------------------------------------ 内部
+
+    /** 订单规则变更事件 → MSK；没配 Kafka 时为 null */
+    private com.fivetech.monitor.order.OrderRuleEventPublisher orderRuleEvents;
+
+    /** setter 注入，避免改构造器 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setOrderRuleEvents(com.fivetech.monitor.order.OrderRuleEventPublisher orderRuleEvents)
+    {
+        this.orderRuleEvents = orderRuleEvents;
+    }
+
+    private void fireOrderRule(MonitorScope scope, Long ruleId)
+    {
+        if (orderRuleEvents != null)
+        {
+            orderRuleEvents.publish(scope, ruleId);
+        }
+    }
+
+    /** 指标规则（rule_type 为空的旧数据也算）；订单规则走 /monitor/order-rules */
+    static boolean isMetric(MonitorRule rule)
+    {
+        return rule.getRuleType() == null || MonitorOrderRules.METRIC.equals(rule.getRuleType());
+    }
+
+    /** 详情、修改只认指标规则：订单规则的 ID 传到这里按不存在处理 */
+    private MonitorRule requireMetricRule(MonitorScope scope, Long ruleId)
+    {
+        MonitorRule rule = requireRule(scope, ruleId);
+        if (!isMetric(rule))
+        {
+            throw MonitorException.notFound("規則不存在");
+        }
+        return rule;
+    }
 
     private MonitorRule requireRule(MonitorScope scope, Long ruleId)
     {
@@ -487,23 +556,61 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     }
 
     /**
-     * 第 11 条：通知群必填，且在本站的群列表缓存里（前端从 GET /monitor/lark/chats 选，该接口会刷新缓存）。
-     * 是否失效由调用方判断：修改时原来的群已失效可以保留。
+     * 第 11 条：通知群 1–{@value MonitorChats#MAX} 个，且都在本站的群列表缓存里（前端从 GET /monitor/lark/chats 选，该接口会刷新缓存）。
+     * 是否失效由调用方判断：修改时原来的群已失效可以保留。错误记在 notifyChatIds 上（旧字段 notifyChatId 也记一份）。
      */
-    private MonitorLarkChat checkChat(MonitorScope scope, String chatId, Map<String, String> errors)
+    private List<MonitorLarkChat> checkChats(MonitorScope scope, List<String> ids, Map<String, String> errors)
     {
-        String id = StringUtils.trim(chatId);
-        if (StringUtils.isEmpty(id))
+        List<MonitorLarkChat> out = new ArrayList<>();
+        if (ids.isEmpty())
         {
-            errors.putIfAbsent("notifyChatId", "請選擇通知群");
-            return null;
+            chatError(errors, "請選擇通知群");
+            return out;
         }
-        MonitorLarkChat chat = chatMapper.selectChat(scope, id);
-        if (chat == null)
+        if (ids.size() > MonitorChats.MAX)
         {
-            errors.putIfAbsent("notifyChatId", "通知群不存在，請重新選擇");
+            chatError(errors, "通知群最多 " + MonitorChats.MAX + " 個");
+            return out;
         }
-        return chat;
+        for (String id : ids)
+        {
+            MonitorLarkChat chat = chatMapper.selectChat(scope, id);
+            if (chat == null)
+            {
+                chatError(errors, "通知群不存在，請重新選擇");
+                return out;
+            }
+            out.add(chat);
+        }
+        return out;
+    }
+
+    private static void chatError(Map<String, String> errors, String message)
+    {
+        errors.putIfAbsent("notifyChatIds", message);
+        errors.putIfAbsent("notifyChatId", message);
+    }
+
+    /** 失效的群不能新选；keep 里的（修改前已选的）可以保留 */
+    static void rejectDeadChats(List<MonitorLarkChat> chats, List<String> keep)
+    {
+        for (MonitorLarkChat c : chats)
+        {
+            if (c.isDead() && !keep.contains(c.getChatId()))
+            {
+                throw new MonitorException(MonitorErrorCode.CHAT_DEAD, "通知群「" + c.getName() + "」已失效，請改選其他群");
+            }
+        }
+    }
+
+    static List<String> chatIdsOf(MonitorRule rule)
+    {
+        List<String> ids = new ArrayList<>();
+        for (MonitorChats.Chat c : MonitorChats.parse(rule.getNotifyChats(), rule.getNotifyChatId(), rule.getNotifyChatName(), null))
+        {
+            ids.add(c.chatId());
+        }
+        return ids;
     }
 
     /** 第 12 条：负责人必填且在可选范围内；修改时保留原负责人不报错（失效负责人由其他人改掉） */
@@ -558,7 +665,7 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     }
 
     private void applyParams(MonitorRule rule, MonitorRuleBody body, MonitorRuleValidator.Result checked,
-            MonitorLarkChat chat)
+            List<MonitorLarkChat> chats)
     {
         Threshold warn = checked.getWarn();
         Threshold crit = checked.getCrit();
@@ -571,8 +678,20 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         rule.setEscalateHours(body.getEscalateHours());
         rule.setMuteHours(body.getMuteHours());
         rule.setMinSampleValue(checked.getMinSampleValue());
-        rule.setNotifyChatId(chat.getChatId());
-        rule.setNotifyChatName(chat.getName());
+        setChats(rule, chats);
+    }
+
+    /** 写 notify_chats，notify_chat_id / notify_chat_name 写第一个群（兼容旧查询）；也给订单规则用 */
+    public static void setChats(MonitorRule rule, List<MonitorLarkChat> chats)
+    {
+        List<MonitorChats.Chat> list = new ArrayList<>();
+        for (MonitorLarkChat c : chats)
+        {
+            list.add(new MonitorChats.Chat(c.getChatId(), c.getName(), null));
+        }
+        rule.setNotifyChats(MonitorChats.toJson(list));
+        rule.setNotifyChatId(chats.isEmpty() ? null : chats.get(0).getChatId());
+        rule.setNotifyChatName(chats.isEmpty() ? null : chats.get(0).getName());
     }
 
     private void fillRuleVO(MonitorRuleVO vo, MonitorRule rule)
@@ -597,15 +716,19 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
         owner.setValid(Boolean.TRUE.equals(rule.getOwnerValid()));
         vo.setOwner(owner);
 
-        if (StringUtils.isNotEmpty(rule.getNotifyChatId()))
+        // 缓存里没有这个群（从没拉到过或被清理）时按失效处理，让前端提示重新选
+        List<NotifyChatVO> chats = new ArrayList<>();
+        for (MonitorChats.Chat c : MonitorChats.parse(rule.getNotifyChats(), rule.getNotifyChatId(), rule.getChatName(),
+                rule.getChatStatus()))
         {
             NotifyChatVO chat = new NotifyChatVO();
-            chat.setChatId(rule.getNotifyChatId());
-            chat.setName(rule.getChatName());
-            // 缓存里没有这个群（从没拉到过或被清理）时按失效处理，让前端提示重新选
-            chat.setStatus(rule.getChatStatus() == null ? "dead" : rule.getChatStatus());
-            vo.setNotifyChat(chat);
+            chat.setChatId(c.chatId());
+            chat.setName(StringUtils.isEmpty(c.name()) ? c.chatId() : c.name());
+            chat.setStatus(c.dead() ? "dead" : "ok");
+            chats.add(chat);
         }
+        vo.setNotifyChats(chats);
+        vo.setNotifyChat(chats.isEmpty() ? null : chats.get(0));
         vo.setLastTriggerHour(fmt(rule.getLastTriggerHour()));
         vo.setLastJudgedAt(fmt(rule.getLastJudgedAt()));
         vo.setJudgeError(rule.getJudgeError());
@@ -618,6 +741,15 @@ public class MonitorRuleServiceImpl implements IMonitorRuleService
     private static String emailOr(String email, String fallback)
     {
         return StringUtils.isNotEmpty(email) ? email : fallback;
+    }
+
+    private MonitorRuleRows ruleRows;
+
+    /** setter 注入，避免改构造器（测试直接 new） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRuleRows(MonitorRuleRows ruleRows)
+    {
+        this.ruleRows = ruleRows;
     }
 
     /** 事务提交后清掉本站规则与状态缓存；判定任务 / 总览读不到时从数据库重建 */

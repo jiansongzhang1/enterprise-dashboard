@@ -1,6 +1,7 @@
 package com.fivetech.monitor.domain.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 新增 / 修改规则的请求体（两者共用）。
@@ -31,8 +32,11 @@ public class MonitorRuleBody
     /** 最小样本量；不填按指标默认值，0 = 不限 */
     private BigDecimal minSampleValue;
 
-    /** 通知的 Lark 群 chat_id（从 GET /monitor/lark/chats 选） */
+    /** 通知的 Lark 群 chat_id（从 GET /monitor/lark/chats 选）；旧字段，单个群。传了 notifyChatIds 时忽略 */
     private String notifyChatId;
+
+    /** 通知群，1–5 个（release_next ㉑，原型 2026-11-13 起多选），同一条告警分别发到每个群 */
+    private List<String> notifyChatIds;
 
     private Long ownerUserId;
 
@@ -117,6 +121,16 @@ public class MonitorRuleBody
     public void setMinSampleValue(BigDecimal minSampleValue)
     {
         this.minSampleValue = minSampleValue;
+    }
+
+    public List<String> getNotifyChatIds()
+    {
+        return notifyChatIds;
+    }
+
+    public void setNotifyChatIds(List<String> notifyChatIds)
+    {
+        this.notifyChatIds = notifyChatIds;
     }
 
     public String getNotifyChatId()

@@ -51,6 +51,12 @@ class SubscriptionServiceTest
 
     private final List<Object[]> runs = new ArrayList<>();
 
+    /** 推送批次（insertRun / finishRun） */
+    private final List<DashboardSubscriptionRun> batches = new ArrayList<>();
+
+    /** oc_slow 前两次超时 */
+    private int slowCalls;
+
     private final List<String[]> sent = new ArrayList<>();
 
     private OverviewQuery lastQuery;
@@ -112,7 +118,7 @@ class SubscriptionServiceTest
         b.put("rangeCode", "YESTERDAY");
         b.put("metrics", List.of("dep", "reg"));
         b.put("sendHour", 9);
-        b.put("receivers", List.of(chat("oc_ok", "運營群"), user("7")));
+        b.put("receivers", List.of(chat("oc_ok", "運營群"), chat("oc_two", "風控群")));
         return b;
     }
 
@@ -169,6 +175,19 @@ class SubscriptionServiceTest
                             && r.getName().equalsIgnoreCase((String) a[1]) && !r.getId().equals(a[2])).count();
                     case "markRun": runs.add(a); return 1;
                     case "insertLog": logs.add((DashboardSubscriptionLog) a[0]); return 1;
+                    case "insertRun":
+                        DashboardSubscriptionRun run = (DashboardSubscriptionRun) a[0];
+                        run.setId((long) batches.size() + 100);
+                        if (run.getResult() == null)
+                        {
+                            run.setResult("RUNNING");
+                        }
+                        batches.add(run);
+                        return 1;
+                    case "finishRun": return 1;
+                    case "updateEnabled": rows.get((Long) a[0]).setEnabled((Boolean) a[1]); return 1;
+                    case "softDelete": rows.remove((Long) a[0]); return 1;
+                    case "countRunning": return 0;
                     case "selectList": return new ArrayList<>(rows.values());
                     default: return 0;
                 }
@@ -222,6 +241,14 @@ class SubscriptionServiceTest
                 {
                     return LarkResult.fail(LarkErrorCategory.CREDENTIAL_INVALID, 99991663, "invalid", 400);
                 }
+                if ("oc_slow".equals(id) && ++slowCalls <= 2)
+                {
+                    return LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "timeout", 0);
+                }
+                if ("oc_down".equals(id))
+                {
+                    return LarkResult.fail(LarkErrorCategory.RETRYABLE, null, "bad gateway", 502);
+                }
                 return LarkResult.ok("om_" + sent.size(), 200);
             }
         };
@@ -246,7 +273,9 @@ class SubscriptionServiceTest
         SubscriptionProperties props = new SubscriptionProperties();
         props.setOverviewUrl("https://yata.example/overview");
         sender = new SubscriptionSender(mapper, overview, registry, dashboard, props, mp, lark, users, new ObjectMapper());
+        sender.setRetryBackoffMillis(0);
         service = new SubscriptionService(mapper, sender, registry, dashboard, props, null, null, new ObjectMapper());
+        service.setExecutor(Runnable::run);
     }
 
     // ---------------- 校验 ----------------
@@ -294,9 +323,13 @@ class SubscriptionServiceTest
         List<?> back = (List<?>) v.get("receivers");                   // 读回来能解析
         assertEquals(2, back.size());
         assertEquals("運營群", ((SubscriptionReceiver) back.get(0)).getName());
-        assertEquals("7", ((SubscriptionReceiver) back.get(1)).getName());   // 用户没传 name 时先用 ID
         assertEquals("每日 09:00", v.get("sendTimeText"));
+        assertEquals("DAY", v.get("freqType"));
         assertEquals("昨日", v.get("rangeLabel"));
+        assertEquals("昨日 · 小時 · 對比上一週期", v.get("viewText"));
+        // 截图条件按视图生成；管理后台新增时负责人为空（按建立人）
+        assertEquals("{\"range\":\"yesterday\",\"gran\":\"hour\",\"cmp\":\"previous-period\"}", s.getSnapshotFilters());
+        assertNull(s.getOwnerUserId());
         assertEquals(List.of("reg名", "dep名"), v.get("metricLabels"));
         // 同站同名
         MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.create(body(), "admin"));
@@ -347,9 +380,25 @@ class SubscriptionServiceTest
         assertEquals("JITO 站 · 經營日報", b.getTitle());
 
         s.setRangeCode("LAST_7D");
+        s.setViewGran("DAY");
         sender.prepare(s, LocalDateTime.of(2026, 11, 1, 9, 0), false);
         assertEquals(Granularity.DAY, lastQuery.getGranularity());
-        assertEquals("2026-10-25 00:00", lastQuery.getSlotFrom());
+        assertEquals("2026-10-26 00:00", lastQuery.getSlotFrom());   // 含当天，截至发送整点
+        assertEquals("2026-11-01 09:00", lastQuery.getSlotTo());
+
+        // 固定日期 + 自訂对比
+        s.setRangeCode("CUSTOM");
+        s.setViewFrom(java.time.LocalDate.of(2026, 9, 1));
+        s.setViewTo(java.time.LocalDate.of(2026, 9, 7));
+        s.setViewCmp("CUSTOM");
+        s.setViewCmpFrom(java.time.LocalDate.of(2026, 8, 25));
+        s.setViewCmpTo(java.time.LocalDate.of(2026, 8, 31));
+        sender.prepare(s, LocalDateTime.of(2026, 11, 1, 9, 0), false);
+        assertEquals("2026-09-01 00:00", lastQuery.getSlotFrom());
+        assertEquals("2026-09-08 00:00", lastQuery.getSlotTo());
+        assertEquals(CompareType.CUSTOM, lastQuery.getCompareType());
+        assertEquals("2026-08-25 00:00", lastQuery.getCompareFrom());
+        assertEquals("2026-09-01 00:00", lastQuery.getCompareTo());
     }
 
     @Test
@@ -382,6 +431,18 @@ class SubscriptionServiceTest
             new SubscriptionReceiver("user", "9", "沒郵箱"));
         Map<String, Object> r = sender.deliver(s, b, rs, SubscriptionSender.SCHEDULE, "system", "2026-11-01 09:00");
         assertEquals("PARTIAL", r.get("status"));
+        assertEquals("PART", r.get("result"));
+        // 一个推送批次，逐群记录挂在它下面
+        assertEquals(1, batches.size());
+        assertEquals(batches.get(0).getId(), r.get("runId"));
+        assertEquals(LocalDateTime.of(2026, 11, 1, 9, 0), batches.get(0).getPlanAt());
+        assertEquals("PART", batches.get(0).getResult());
+        assertEquals(2, batches.get(0).getSent());
+        assertEquals(batches.get(0).getId(), logs.get(0).getRunId());
+        assertEquals("OK", logs.get(0).getResult());
+        assertEquals("gone", logs.get(2).getReasonCode());
+        assertEquals("FAIL", logs.get(2).getResult());
+        assertEquals(1, logs.get(2).getAttempts());
         assertEquals(2, r.get("sent"));
         // 群用 chat_id，个人用当前邮箱
         assertEquals("chat_id", sent.get(0)[0]);
@@ -398,7 +459,7 @@ class SubscriptionServiceTest
         Object[] run = runs.get(0);
         assertEquals("2026-11-01 09:00", run[1]);
         assertEquals("PARTIAL", run[3]);
-        assertTrue(((String) run[4]).startsWith("舊群："));
+        assertTrue(((String) run[4]).startsWith("舊群：機器人不在群"));
     }
 
     @Test
@@ -409,10 +470,16 @@ class SubscriptionServiceTest
         SubscriptionBrief b = sender.prepare(s, LocalDateTime.of(2026, 11, 1, 9, 0), false);
         Map<String, Object> r = sender.deliver(s, b, List.of(new SubscriptionReceiver("chat", "oc_cred", "A"),
             new SubscriptionReceiver("chat", "oc_ok", "B")), SubscriptionSender.MANUAL, "admin", null);
-        assertEquals("FAILED", r.get("status"));
+        // 凭证失效：已跳過（不算失败），后面的群不再请求 Lark
+        assertEquals("SKIPPED", r.get("status"));
+        assertEquals("SKIP", r.get("result"));
         assertEquals(1, sent.size());
         assertTrue(logs.get(1).getError().contains("憑證失效"));
+        assertEquals("cred", logs.get(0).getReasonCode());
+        assertEquals("cred", logs.get(1).getReasonCode());
+        assertEquals(0, logs.get(1).getAttempts());
         assertNull(runs.get(0)[1]);                                // 立即发送不改 last_slot
+        assertEquals("SKIPPED", runs.get(0)[3]);
         // 未识别的 4xx 不写成「超时」
         assertTrue(SubscriptionSender.reason(LarkResult.fail(LarkErrorCategory.RETRYABLE, 99992361, "x", 400), false)
             .startsWith("Lark 拒絕發送（確認郵箱"));
@@ -421,16 +488,191 @@ class SubscriptionServiceTest
     }
 
     @Test
-    void testSendGoesToMeOnlyAndDoesNotTouchStatus()
+    void testSendGoesToSelectedChatsWithoutRecords()
     {
         service.create(body(), "admin");
-        Map<String, Object> r = service.test(1L, 7L, "ops@fivetech.co.jp", "admin");
-        // 测试发送：时间按现在的整点取数，卡片标【測試】，只发给自己
+        Map<String, Object> r = service.test(1L, SubscriptionActor.admin(1L, "admin"));
+        // 测试发送：发到订阅的接收群，卡片标【測試】，不写发送历史、不改最近状态
         assertEquals("SUCCESS", r.get("status"));
-        assertEquals(1, sent.size());
-        assertEquals("ops@fivetech.co.jp", sent.get(0)[1]);
-        assertEquals("TEST", logs.get(0).getTriggerType());
+        assertEquals(2, sent.size());
+        assertEquals("oc_ok", sent.get(0)[1]);
+        assertTrue(logs.isEmpty());
+        assertTrue(batches.isEmpty());
         assertTrue(runs.isEmpty());
-        assertThrows(MonitorException.class, () -> service.test(1L, 7L, " ", "admin"));
+        // 表单测试（未保存）：没有群不能发
+        Map<String, Object> b = body();
+        b.put("receivers", List.of());
+        assertThrows(MonitorException.class, () -> service.testForm(b, SubscriptionActor.admin(1L, "admin")));
+    }
+
+    // ---------------- 下一期（V0.4 原型） ----------------
+
+    @Test
+    void receiversAreChatsOnly()
+    {
+        Map<String, Object> b = body();
+        b.put("receivers", List.of(chat("oc_ok", "運營群"), user("7")));
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.create(b, "admin"));
+        assertEquals("只能發到通知群，不發個人", e.getFields().get("receivers"));
+        b.put("receivers", List.of());
+        e = assertThrows(MonitorFieldException.class, () -> service.create(b, "admin"));
+        assertEquals("至少選擇一個通知群", e.getFields().get("receivers"));
+    }
+
+    @Test
+    void weeklyAndHourlyFrequency()
+    {
+        Map<String, Object> b = body();
+        b.put("freqType", "HOURS");
+        b.put("sendHour", 10);
+        b.put("freqEvery", 13);
+        b.put("freqTo", 8);
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.create(b, "admin"));
+        assertEquals("請輸入 1–12 的整數", e.getFields().get("freqEvery"));
+        b.put("freqEvery", 4);
+        b.put("freqTo", 22);
+        Map<String, Object> v = service.create(b, "admin");
+        assertEquals("每 4 小時（10:00–22:00）", v.get("sendTimeText"));
+        Map<String, Object> w = body();
+        w.put("name", "週報");
+        w.put("freqType", "WEEK");
+        w.put("freqDow", 1);
+        w.put("sendHour", 10);
+        assertEquals("每週一 10:00", service.create(w, "admin").get("sendTimeText"));
+        // 旧页面修改时只传 sendHour：频率沿用每 N 小時，不被改成每日
+        Map<String, Object> old = body();
+        old.put("sendHour", 9);
+        old.put("freqTo", 21);
+        assertEquals("每 4 小時（09:00–21:00）", service.update(1L, old, "admin").get("sendTimeText"));
+    }
+
+    @Test
+    void nameAndDescriptionLimits()
+    {
+        Map<String, Object> b = body();
+        b.put("name", "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一");
+        b.put("description", "x".repeat(101));
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.create(b, "admin"));
+        assertTrue(e.getFields().get("name").contains("30"));
+        assertTrue(e.getFields().get("description").contains("100"));
+    }
+
+    @Test
+    void viewIsImmutableAfterCreate()
+    {
+        Map<String, Object> b = body();
+        b.put("rangeCode", "CUSTOM");
+        b.put("viewFrom", "2026-09-01");
+        b.put("viewTo", "2026-09-07");
+        b.put("viewGran", "day");
+        service.create(b, "admin");
+        DashboardSubscription s = rows.get(1L);
+        assertEquals("DAY", s.getViewGran());
+        assertEquals("{\"range\":\"custom\",\"from\":\"2026-09-01\",\"to\":\"2026-09-07\",\"gran\":\"day\",\"cmp\":\"previous-period\"}",
+            s.getSnapshotFilters());
+        Map<String, Object> u = new LinkedHashMap<>(b);
+        u.put("rangeCode", "YESTERDAY");
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update(1L, u, "admin"));
+        assertTrue(e.getFields().get("rangeCode").contains("不能修改"));
+        // 不传视图 = 沿用；频率可以改
+        Map<String, Object> ok = new LinkedHashMap<>(b);
+        ok.remove("rangeCode");
+        ok.remove("viewFrom");
+        ok.remove("viewTo");
+        ok.remove("viewGran");
+        ok.put("freqType", "WEEK");
+        ok.put("freqDow", 1);
+        ok.put("sendHour", 10);
+        assertEquals("每週一 10:00", service.update(1L, ok, "admin").get("sendTimeText"));
+        assertEquals("CUSTOM", rows.get(1L).getRangeCode());
+        assertEquals(java.time.LocalDate.of(2026, 9, 1), rows.get(1L).getViewFrom());
+        // 固定日期缺日期
+        Map<String, Object> bad = body();
+        bad.put("name", "缺日期");
+        bad.put("rangeCode", "CUSTOM");
+        e = assertThrows(MonitorFieldException.class, () -> service.create(bad, "admin"));
+        assertTrue(e.getFields().containsKey("viewFrom"));
+    }
+
+    @Test
+    void onlyOwnerOrAdminCanEdit()
+    {
+        SubscriptionActor owner = new SubscriptionActor(5L, "li", false);
+        SubscriptionActor other = new SubscriptionActor(6L, "wang", false);
+        SubscriptionActor admin = new SubscriptionActor(7L, "boss", true);
+        service.create(body(), owner);
+        assertEquals(5L, rows.get(1L).getOwnerUserId());           // 负责人默认建立人
+        assertThrows(MonitorException.class, () -> service.setEnabled(1L, false, other));
+        assertThrows(MonitorException.class, () -> service.delete(1L, other));
+        assertThrows(MonitorException.class, () -> service.sendNow(1L, other));
+        assertFalse((Boolean) service.setEnabled(1L, false, owner).get("enabled"));
+        // 管理员可以接管
+        Map<String, Object> b = body();
+        b.put("ownerUserId", 7L);
+        service.update(1L, b, admin);
+        assertEquals(7L, rows.get(1L).getOwnerUserId());
+        assertThrows(MonitorException.class, () -> service.setEnabled(1L, true, owner));
+    }
+
+    @Test
+    void retriesTransientFailuresTwice()
+    {
+        service.create(body(), "admin");
+        DashboardSubscription s = rows.get(1L);
+        SubscriptionBrief b = sender.prepare(s, LocalDateTime.of(2026, 11, 1, 9, 0), false);
+        Map<String, Object> r = sender.deliver(s, b, List.of(new SubscriptionReceiver("chat", "oc_slow", "慢群"),
+            new SubscriptionReceiver("chat", "oc_down", "壞群")), SubscriptionSender.MANUAL, "admin", null);
+        assertEquals("PART", r.get("result"));
+        assertEquals(3, logs.get(0).getAttempts());               // 两次超时后第三次成功
+        assertEquals("OK", logs.get(0).getResult());
+        assertEquals(3, logs.get(1).getAttempts());               // 5xx 重试 2 次后仍失败
+        assertEquals("server", logs.get(1).getReasonCode());
+        assertEquals(6, sent.size());
+    }
+
+    @Test
+    void wholeRunFailuresAreRecorded()
+    {
+        service.create(body(), "admin");
+        DashboardSubscription s = rows.get(1L);
+        // 截图失败：所有群都不发，记 shot
+        SubscriptionBrief b = sender.prepare(s, LocalDateTime.of(2026, 11, 1, 9, 0), false);
+        s.setSnapshotEnabled(true);
+        b.applySnapshot(null, null, null, "跳到了登錄頁");
+        Map<String, Object> r = sender.deliverChecked(s, b, sender.receivers(s), SubscriptionSender.SCHEDULE, "system",
+            "2026-11-01 09:00", LocalDateTime.of(2026, 11, 1, 9, 0));
+        assertEquals("FAIL", r.get("result"));
+        assertEquals("shot", r.get("reasonCode"));
+        assertTrue(sent.isEmpty());
+        assertEquals(1, batches.size());
+        assertEquals("shot", batches.get(0).getReasonCode());
+        assertEquals("FAILED", batches.get(0).getSnapshotStatus());
+        assertEquals(2, logs.size());
+        assertEquals("shot", logs.get(1).getReasonCode());
+        assertEquals("2026-11-01 09:00", runs.get(0)[1]);
+        // 立即发送取数失败：异步执行（单测里同步），写 data
+        s.setSnapshotEnabled(false);
+        failQuery = true;
+        Map<String, Object> accepted = service.sendNow(1L, SubscriptionActor.admin(1L, "admin"));
+        assertEquals(true, accepted.get("accepted"));
+        assertEquals(2, batches.size());
+        assertEquals("data", batches.get(1).getReasonCode());
+        assertEquals("MANUAL", batches.get(1).getTriggerType());
+        assertTrue(batches.get(1).getError().contains("UDS 逾時"));
+    }
+
+    @Test
+    void manualSendRecordsRun()
+    {
+        service.create(body(), "admin");
+        service.sendNow(1L, SubscriptionActor.admin(1L, "admin"));
+        assertEquals(1, batches.size());
+        assertEquals("MANUAL", batches.get(0).getTriggerType());
+        assertEquals("admin", batches.get(0).getOperator());
+        assertEquals("OK", batches.get(0).getResult());
+        assertEquals(2, logs.size());
+        // 暂停后不能立即发送
+        service.setEnabled(1L, false, "admin");
+        assertThrows(MonitorException.class, () -> service.sendNow(1L, SubscriptionActor.admin(1L, "admin")));
     }
 }

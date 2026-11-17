@@ -1,5 +1,7 @@
 package com.fivetech.web.controller.monitoring;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,28 +59,83 @@ public class MonitorRuleController extends BaseController
     }
 
     /**
-     * 规则列表：按 ruleNo 升序分页（pageSize 20 / 30 / 50 / 100）。
-     * ownerId / owner=me 只是筛选，不是数据范围：有页面权限的人看得到本站全部规则。
+     * 告警规则列表：指标规则、条件规则、订单规则同一张表（release_next ㉓），按最近修改从新到旧（启停不算修改），相同时按编号从大到小；
+     * pageSize 20 / 30 / 50 / 100。ruleType、owner（用户 ID 或 me）、enabled、chatId 可多选（重复参数或逗号分隔）。
+     * 负责人只是筛选，不是数据范围：有页面权限的人看得到本站全部规则。
      */
     @PreAuthorize("@ss.hasPermi('monitor:rule:list')")
+    @Log(title = "告警规则查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @GetMapping("/rules")
-    public AjaxResult list(@RequestParam(required = false) Boolean enabled,
-            @RequestParam(required = false) String chatId,
+    public AjaxResult list(@RequestParam(required = false) List<String> enabled,
+            @RequestParam(required = false) List<String> chatId,
             @RequestParam(required = false) String metricCode,
             @RequestParam(required = false) Long ownerId,
-            @RequestParam(required = false) String owner,
+            @RequestParam(required = false) List<String> owner,
+            @RequestParam(required = false) List<String> ruleType,
             @RequestParam(required = false) Integer pageNum,
             @RequestParam(required = false) Integer pageSize)
     {
         MonitorScope scope = scopeResolver.resolve();
         MonitorRuleQuery query = new MonitorRuleQuery();
-        query.setEnabled(enabled);
-        query.setChatId(chatId);
         query.setMetricCode(metricCode);
-        query.setOwnerId("me".equalsIgnoreCase(owner) ? scope.getUserId() : ownerId);
+        query.setOwnerId(ownerId);
+        List<Boolean> enableds = new ArrayList<>();
+        for (String v : split(enabled))
+        {
+            if ("true".equalsIgnoreCase(v) || "false".equalsIgnoreCase(v))
+            {
+                enableds.add(Boolean.valueOf(v.toLowerCase()));
+            }
+        }
+        query.setEnableds(enableds);
+        query.setChatIds(split(chatId));
+        List<Long> owners = new ArrayList<>();
+        for (String v : split(owner))
+        {
+            if ("me".equalsIgnoreCase(v))
+            {
+                owners.add(scope.getUserId());
+            }
+            else if (v.matches("\\d{1,18}"))
+            {
+                owners.add(Long.valueOf(v));
+            }
+        }
+        query.setOwnerIds(owners);
+        List<String> types = new ArrayList<>();
+        for (String v : split(ruleType))
+        {
+            String u = v.toUpperCase();
+            if (List.of("METRIC", "COND", "ORDER").contains(u) && !types.contains(u))
+            {
+                types.add(u);
+            }
+        }
+        query.setRuleTypes(types);
         query.setPageNum(pageNum);
         query.setPageSize(pageSize);
         return success(ruleService.listRules(scope, query));
+    }
+
+    /** 多选参数：重复参数或逗号分隔 */
+    private static List<String> split(List<String> in)
+    {
+        List<String> out = new ArrayList<>();
+        if (in != null)
+        {
+            for (String v : in)
+            {
+                for (String part : v == null ? new String[0] : v.split(","))
+                {
+                    String t = part.trim();
+                    if (!t.isEmpty() && !out.contains(t))
+                    {
+                        out.add(t);
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /** 可新建的指标：本站全部可监控指标，并标出是否已有规则（不返回别人的阈值） */
@@ -93,6 +150,7 @@ public class MonitorRuleController extends BaseController
      * 平时水平与触发预览：请求体同新增规则，去掉 notifyChatId、ownerUserId、enabled；阈值可以没填完。不写库。
      */
     @PreAuthorize("@ss.hasPermi('monitor:rule:query')")
+    @Log(title = "告警规则预览", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/rules/preview")
     public AjaxResult preview(@RequestBody MonitorRuleBody body)
     {
@@ -101,6 +159,7 @@ public class MonitorRuleController extends BaseController
 
     /** 规则详情；不在数据范围内或已删除 → 404 */
     @PreAuthorize("@ss.hasPermi('monitor:rule:query')")
+    @Log(title = "告警规则详情", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @GetMapping("/rules/{ruleId}")
     public AjaxResult detail(@PathVariable Long ruleId)
     {

@@ -31,6 +31,7 @@ import com.fivetech.monitor.exception.MonitorFieldException;
 import com.fivetech.monitor.mapper.MonitorEventMapper;
 import com.fivetech.monitor.mapper.MonitorOverviewMapper;
 import com.fivetech.monitor.service.IMonitorEventService;
+import com.fivetech.monitor.service.MonitorChats;
 import com.fivetech.monitor.service.MonitorSnapshot;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
@@ -79,11 +80,43 @@ public class MonitorEventServiceImpl implements IMonitorEventService
             Long ownerId, Integer pageNum, Integer pageSize)
     {
         MonitorEventQuery q = new MonitorEventQuery();
-        q.setHandle(handleFilter(handle));
-        q.setStatus(statusFilter(status));
-        q.setMetricCode(StringUtils.trim(metricCode));
+        q.setHandle(handle);
+        q.setStatus(status);
+        q.setMetricCode(metricCode);
         q.setOwnerId(ownerId);
-        applyRange(q, range, LocalDate.now(zone));
+        return listEvents(scope, q, range, null, null, pageNum, pageSize);
+    }
+
+    @Override
+    public MonitorEventPageVO listEvents(MonitorScope scope, MonitorEventQuery in, String range, String from, String to,
+            Integer pageNum, Integer pageSize)
+    {
+        MonitorEventQuery q = new MonitorEventQuery();
+        q.setHandle(handleFilter(in.getHandle()));
+        q.setStatus(statusFilter(in.getStatus()));
+        q.setMetricCode(StringUtils.trim(in.getMetricCode()));
+        q.setOwnerId(in.getOwnerId());
+        q.setRuleTypes(upperList(in.getRuleTypes(), Set.of("METRIC", "COND")));
+        q.setMetricCodes(trimList(in.getMetricCodes()));
+        List<String> statuses = new ArrayList<>();
+        for (String st : trimList(in.getStatuses()))
+        {
+            String v = statusFilter(st);
+            if (v != null && !statuses.contains(v))
+            {
+                statuses.add(v);
+            }
+        }
+        q.setStatuses(statuses);
+        q.setOwnerIds(in.getOwnerIds() == null ? List.of() : in.getOwnerIds().stream().filter(java.util.Objects::nonNull).distinct().toList());
+        if ("custom".equalsIgnoreCase(StringUtils.trim(range)))
+        {
+            applyCustomRange(q, from, to);
+        }
+        else
+        {
+            applyRange(q, range, LocalDate.now(zone));
+        }
 
         int num = pageNum == null || pageNum < 1 ? 1 : pageNum;
         int size = pageSize != null && PAGE_SIZES.contains(pageSize) ? pageSize : 20;
@@ -102,7 +135,7 @@ public class MonitorEventServiceImpl implements IMonitorEventService
             vo.setTotal(page.getTotal());
             for (MonitorEventRow row : rows)
             {
-                vo.getRows().add(toVO(row, asOf));
+                vo.getRows().add(withCond(toVO(row, asOf), row, scope));
             }
         }
         return vo;
@@ -121,8 +154,8 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         {
             for (MonitorEventRow row : eventMapper.selectEventList(scope, q))
             {
-                MonitorEventVO vo = toVO(row, asOf);
-                vo.setCurrentText(row.getCurrentValue() == null ? null
+                MonitorEventVO vo = withCond(toVO(row, asOf), row, scope);
+                vo.setCurrentText(vo.getCond() != null ? vo.getCurrentText() : row.getCurrentValue() == null ? null
                     : MonitorMessageBuilder.display(row.getValueFormat(), row.getCurrentValue()));
                 out.add(vo);
             }
@@ -261,6 +294,7 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         {
             notify.setMuted(new MonitorEventVO.MutedVO(fmt(e.getMuteSentAt()), e.getMuteHours()));
         }
+        applyChats(notify, e.getNotifyBatch(), snapshotChats(e.getRuleSnapshot()));
         vo.setNotify(notify);
 
         MonitorEventVO.HandleVO handle = new MonitorEventVO.HandleVO();
@@ -271,6 +305,27 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         handle.setReset(e.isHandleReset());
         vo.setHandle(handle);
         return vo;
+    }
+
+    /** 条件规则的行：规则名、满足 n/m、判定基准、判定说明（release_next ㉓） */
+    private MonitorEventVO withCond(MonitorEventVO vo, MonitorEventRow e, MonitorScope scope)
+    {
+        if (com.fivetech.monitor.cond.CondRules.TYPE.equals(e.getRuleType()))
+        {
+            com.fivetech.monitor.cond.CondEventView.applyListRow(vo, e.getRuleName(), e.getRuleSnapshot(), e.getDetail(),
+                condSupport == null ? java.util.Map.of() : condSupport.catalog().fields(),
+                condSupport == null ? null : condSupport.symbol(scope.getSiteCode()));
+        }
+        return vo;
+    }
+
+    private com.fivetech.monitor.cond.CondSupport condSupport;
+
+    /** 条件规则的字段目录（名称、格式）；setter 注入，避免改构造器 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCondSupport(com.fivetech.monitor.cond.CondSupport condSupport)
+    {
+        this.condSupport = condSupport;
     }
 
     // ------------------------------------------------------------------ 筛选
@@ -301,6 +356,72 @@ public class MonitorEventServiceImpl implements IMonitorEventService
         return "MONEY".equalsIgnoreCase(valueFormat) ? "money" : MonitorRuleServiceImpl.unit(valueFormat);
     }
 
+    /** 自定义区间：from、to 为 yyyy-MM-dd，含两端，最多 90 天 */
+    static void applyCustomRange(MonitorEventQuery q, String from, String to)
+    {
+        LocalDate f;
+        LocalDate t;
+        try
+        {
+            f = LocalDate.parse(StringUtils.trim(from));
+            t = LocalDate.parse(StringUtils.trim(to));
+        }
+        catch (RuntimeException e)
+        {
+            throw MonitorFieldException.of("from", "自訂範圍請選擇開始與結束日期（yyyy-MM-dd）");
+        }
+        if (f.isAfter(t))
+        {
+            throw MonitorFieldException.of("to", "結束日期不能早於開始日期");
+        }
+        if (ChronoUnit.DAYS.between(f, t) + 1 > CUSTOM_MAX_DAYS)
+        {
+            throw MonitorFieldException.of("to", "自訂範圍最多 " + CUSTOM_MAX_DAYS + " 天");
+        }
+        q.setRangeFrom(f.atStartOfDay());
+        q.setRangeTo(t.plusDays(1).atStartOfDay());
+    }
+
+    static final int CUSTOM_MAX_DAYS = 90;
+
+    private static List<String> trimList(List<String> in)
+    {
+        List<String> out = new ArrayList<>();
+        if (in != null)
+        {
+            for (String v : in)
+            {
+                if (v == null)
+                {
+                    continue;
+                }
+                for (String part : v.split(","))
+                {
+                    String t = part.trim();
+                    if (!t.isEmpty() && !out.contains(t))
+                    {
+                        out.add(t);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static List<String> upperList(List<String> in, Set<String> allowed)
+    {
+        List<String> out = new ArrayList<>();
+        for (String v : trimList(in))
+        {
+            String u = v.toUpperCase(Locale.ROOT);
+            if (allowed.contains(u) && !out.contains(u))
+            {
+                out.add(u);
+            }
+        }
+        return out;
+    }
+
     /** range → trigger_hour 区间（IST 自然日）；all / 未知值 = 不限 */
     static void applyRange(MonitorEventQuery q, String range, LocalDate today)
     {
@@ -329,6 +450,129 @@ public class MonitorEventServiceImpl implements IMonitorEventService
     private LocalDateTime now()
     {
         return LocalDateTime.now(zone).truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    /** 触发时规则快照里的通知群（release_next ㉑ 之后的事件才有 notifyChats） */
+    private List<MonitorChats.Chat> snapshotChats(String snapshot)
+    {
+        if (StringUtils.isEmpty(snapshot))
+        {
+            return List.of();
+        }
+        try
+        {
+            tools.jackson.databind.JsonNode n = json.readTree(snapshot);
+            tools.jackson.databind.JsonNode chats = n == null ? null : n.get("notifyChats");
+            return chats == null ? List.of() : MonitorChats.parse(chats.toString());
+        }
+        catch (RuntimeException ex)
+        {
+            return List.of();
+        }
+    }
+
+    /**
+     * 「通知送達」按群汇总（规则可选多个群，release_next ㉑）：batch 是最近一次发送里每个群一条的结果
+     * [{chatId, name, chatStatus, status: pending/sent/failed, sentAt, error}]。
+     * 事件已进入发送（pending / sent / failed）时按 batch 汇总：还有待发 → pending；全部送达 → sent；全部失败 → failed；其余 partial。
+     * 静默、未配置、暂停、注意只记录等状态不变，群列表取触发时的快照。旧字段 chatId / chatName / error 取第一个失败的群（没有失败取第一个群）。
+     */
+    static void applyChats(MonitorEventVO.NotifyVO notify, String batch, List<MonitorChats.Chat> snapshot)
+    {
+        List<MonitorEventVO.ChatResultVO> rows = new ArrayList<>();
+        java.util.Map<String, String> names = new java.util.HashMap<>();
+        for (MonitorChats.Chat c : snapshot)
+        {
+            names.put(c.chatId(), c.name());
+        }
+        if (StringUtils.isNotEmpty(batch))
+        {
+            try
+            {
+                for (tools.jackson.databind.JsonNode n : JSON.readTree(batch))
+                {
+                    MonitorEventVO.ChatResultVO r = new MonitorEventVO.ChatResultVO();
+                    r.setChatId(text(n, "chatId"));
+                    String name = text(n, "name");
+                    r.setName(StringUtils.isNotEmpty(name) ? name : names.getOrDefault(r.getChatId(), r.getChatId()));
+                    r.setChatStatus(text(n, "chatStatus") == null ? "dead" : text(n, "chatStatus"));
+                    r.setStatus(text(n, "status"));
+                    String at = text(n, "sentAt");
+                    r.setSentAt(at == null ? null : fmt(LocalDateTime.parse(at)));
+                    r.setError("failed".equals(r.getStatus()) ? (StringUtils.isEmpty(text(n, "error")) ? "發送失敗" : text(n, "error")) : null);
+                    rows.add(r);
+                }
+            }
+            catch (RuntimeException ex)
+            {
+                rows.clear();
+            }
+        }
+        String status = notify.getStatus();
+        boolean sending = "pending".equals(status) || "sent".equals(status) || "failed".equals(status);
+        if (rows.isEmpty() || !sending)
+        {
+            rows.clear();
+            for (MonitorChats.Chat c : snapshot)
+            {
+                MonitorEventVO.ChatResultVO r = new MonitorEventVO.ChatResultVO();
+                r.setChatId(c.chatId());
+                r.setName(StringUtils.isEmpty(c.name()) ? c.chatId() : c.name());
+                rows.add(r);
+            }
+            if (rows.isEmpty() && StringUtils.isNotEmpty(notify.getChatId()))
+            {
+                MonitorEventVO.ChatResultVO r = new MonitorEventVO.ChatResultVO();
+                r.setChatId(notify.getChatId());
+                r.setName(notify.getChatName());
+                r.setChatStatus(notify.getChatStatus());
+                r.setStatus(sending ? status : null);
+                r.setError(notify.getError());
+                rows.add(r);
+            }
+            notify.setChats(rows);
+            notify.setTotal(rows.size());
+            notify.setSentCount("sent".equals(status) ? rows.size() : 0);
+            return;
+        }
+        int sent = 0;
+        int failed = 0;
+        int pending = 0;
+        MonitorEventVO.ChatResultVO firstFailed = null;
+        for (MonitorEventVO.ChatResultVO r : rows)
+        {
+            if ("sent".equals(r.getStatus()))
+            {
+                sent++;
+            }
+            else if ("failed".equals(r.getStatus()))
+            {
+                failed++;
+                firstFailed = firstFailed == null ? r : firstFailed;
+            }
+            else
+            {
+                pending++;
+            }
+        }
+        String agg = pending > 0 ? "pending" : failed == 0 ? "sent" : sent == 0 ? "failed" : "partial";
+        notify.setStatus(agg);
+        notify.setChats(rows);
+        notify.setTotal(rows.size());
+        notify.setSentCount(sent);
+        MonitorEventVO.ChatResultVO head = firstFailed != null ? firstFailed : rows.get(0);
+        notify.setChatId(head.getChatId());
+        notify.setChatName(head.getName());
+        notify.setChatStatus(head.getChatStatus());
+        notify.setError(firstFailed == null ? null : firstFailed.getError());
+    }
+
+    private static final tools.jackson.databind.ObjectMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+
+    private static String text(tools.jackson.databind.JsonNode n, String field)
+    {
+        tools.jackson.databind.JsonNode v = n == null ? null : n.get(field);
+        return v == null || v.isNull() ? null : v.asString();
     }
 
     private static String fmt(LocalDateTime t)

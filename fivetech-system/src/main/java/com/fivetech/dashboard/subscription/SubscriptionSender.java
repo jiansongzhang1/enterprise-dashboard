@@ -277,12 +277,24 @@ public class SubscriptionSender
         {
             throw new PrepareException("勾選的指標都已在本站隱藏或下線，請重新勾選");
         }
-        LocalDateTime[] w = range.window(sendAt.toLocalDate(), sendAt.getHour());
+        if (range == SubscriptionRange.CUSTOM && (s.getViewFrom() == null || s.getViewTo() == null))
+        {
+            throw new PrepareException("固定日期缺少起止日期");
+        }
+        LocalDateTime[] w = range == SubscriptionRange.CUSTOM ? SubscriptionRange.window(s.getViewFrom(), s.getViewTo())
+            : range.window(sendAt.toLocalDate(), sendAt.getHour());
         OverviewQuery q = new OverviewQuery();
-        q.setGranularity(range.getGranularity());
+        q.setGranularity(granularity(s, range));
         q.setSlotFrom(w[0].format(SLOT));
         q.setSlotTo(w[1].format(SLOT));
         q.setCompareType(CompareType.PREV_PERIOD);
+        if (s.isCustomCompare())
+        {
+            q.setCompareType(CompareType.CUSTOM);
+            q.setCompareFrom(s.getViewCmpFrom().atStartOfDay().format(SLOT));
+            q.setCompareTo(s.getViewCmpTo().plusDays(1).atStartOfDay().format(SLOT));
+            q.setCmpLock(false);
+        }
         q.setBlocks(List.of("METRICS"));
         q.setMetrics(codes);
         q.setIncludeSeries(false);
@@ -307,9 +319,27 @@ public class SubscriptionSender
         ctx.currencySymbol = dashboard.siteCurrencySymbol(site);
         ctx.timezone = dashboard.siteTimezone(site);
         ctx.sendHour = s.getSendHour();
+        ctx.frequency = SubscriptionSchedule.text(s);
         ctx.overviewUrl = properties.getOverviewUrl();
         ctx.test = test;
         return SubscriptionBrief.build(vo, codes, ctx);
+    }
+
+    /** 取数粒度：订阅视图的粒度（发起时页面的选择），没有就用统计范围的默认粒度 */
+    static com.fivetech.dashboard.enums.Granularity granularity(DashboardSubscription s, SubscriptionRange range)
+    {
+        if (s.getViewGran() != null)
+        {
+            try
+            {
+                return com.fivetech.dashboard.enums.Granularity.valueOf(s.getViewGran().trim().toUpperCase(java.util.Locale.ROOT));
+            }
+            catch (IllegalArgumentException e)
+            {
+                // 不认识的粒度按统计范围
+            }
+        }
+        return range.getGranularity();
     }
 
     /** 勾选的指标按站点运营总览的顺序排好；站点隐藏或下线的去掉 */
@@ -352,20 +382,49 @@ public class SubscriptionSender
         }
     }
 
+    /** 本站群状态（发送失败「机器人不在群」时把群置为失效）；单测里为 null */
+    private com.fivetech.monitor.service.IMonitorLarkChatService chatService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setChatService(com.fivetech.monitor.service.IMonitorLarkChatService chatService)
+    {
+        this.chatService = chatService;
+    }
+
+    /** 自动重试之间的等待（毫秒，第 n 次重试等 n 倍）；单测设为 0 */
+    private long retryBackoffMillis = 2000;
+
+    void setRetryBackoffMillis(long retryBackoffMillis)
+    {
+        this.retryBackoffMillis = retryBackoffMillis;
+    }
+
+    /** 超时、限流、5xx 的自动重试次数（原型：已自动重试 2 次） */
+    static final int RETRY_TIMES = 2;
+
     /**
-     * 发给接收者并记录。
+     * 发给接收者并记录（定时、立即发送写推送批次与逐群结果；测试发送不记录）。
      *
-     * @param receivers 接收者；测试发送时只有操作人自己
+     * <ul>
+     *   <li>超时、限流、5xx 自动重试 {@value #RETRY_TIMES} 次；其他失败不重试；</li>
+     *   <li>机器人凭证失效或没有配置：不再请求 Lark，各群记「已跳過 · 機器人憑證失效」（恢复后不补发）；</li>
+     *   <li>一次发送的结果：各群结果相同就是该结果，否则为部分失敗；写回订阅的 last_status（测试发送不写）。</li>
+     * </ul>
+     *
+     * @param receivers 接收者
      * @param slot      定时发送的发送时刻（写入 last_slot）；立即发送、测试为 null
-     * @return { status, period, sent, failed, results: [{ type, id, name, success, error, messageId }] }
+     * @return { status, result, runId, period, sent, failed, results: [{ type, id, name, success, result, reasonCode, reasonText, error, messageId }] }
      */
     public Map<String, Object> deliver(DashboardSubscription s, SubscriptionBrief brief, List<SubscriptionReceiver> receivers,
             String trigger, String operator, String slot)
     {
+        boolean record = !TEST.equals(trigger);
+        DashboardSubscriptionRun run = record ? startRun(s, brief, trigger, operator, slot) : null;
         MonitorProperties.Lark lark = monitorProperties.getLark();
         boolean noBot = isBlank(lark.getAppId()) || isBlank(lark.getAppSecret());
         String credentialError = noBot ? "未配置 Lark 機器人（MONITOR_LARK_APP_ID / MONITOR_LARK_APP_SECRET）" : null;
         List<Map<String, Object>> results = new ArrayList<>();
+        List<String> outcomes = new ArrayList<>();
         int ok = 0;
         String firstError = null;
         for (SubscriptionReceiver r : receivers)
@@ -373,9 +432,12 @@ public class SubscriptionSender
             String error = null;
             String messageId = null;
             String name = r.getName();
+            SubscriptionReason reason = null;
+            int attempts = 0;
             if (credentialError != null)
             {
                 error = credentialError;
+                reason = SubscriptionReason.CRED;
             }
             else
             {
@@ -398,11 +460,22 @@ public class SubscriptionSender
                 if (isBlank(target))
                 {
                     error = r.isChat() ? "群 ID 為空" : "用戶不存在、已停用或沒有郵箱";
+                    reason = r.isChat() ? SubscriptionReason.GONE : SubscriptionReason.REJECTED;
                 }
                 else
                 {
-                    LarkResult<String> res = larkClient.sendCard(lark.getAppId(), lark.getAppSecret(), idType, target,
-                            brief.getCard());
+                    LarkResult<String> res = null;
+                    while (true)
+                    {
+                        attempts++;
+                        res = larkClient.sendCard(lark.getAppId(), lark.getAppSecret(), idType, target, brief.getCard());
+                        reason = SubscriptionReason.of(res);
+                        if (reason == null || !reason.retryable() || attempts > RETRY_TIMES)
+                        {
+                            break;
+                        }
+                        pause(attempts);
+                    }
                     if (res.isSuccess())
                     {
                         messageId = res.getData();
@@ -410,50 +483,277 @@ public class SubscriptionSender
                     else
                     {
                         error = reason(res, r.isChat());
-                        if (res.getCategory() == LarkErrorCategory.CREDENTIAL_INVALID)
+                        if (reason == SubscriptionReason.CRED)
                         {
                             credentialError = error;
                         }
-                        log.warn("[subscription] 发送失败 id={} site={} {}={} {}", s.getId(), s.getSiteCode(), idType,
-                                r.isChat() ? target : r.getId(), res);
+                        if (r.isChat() && res.isChatGone())
+                        {
+                            markChatGone(s, target, res);
+                        }
+                        log.warn("[subscription] 发送失败 id={} site={} {}={} attempts={} {}", s.getId(), s.getSiteCode(), idType,
+                                r.isChat() ? target : r.getId(), attempts, res);
                     }
                 }
             }
             boolean success = error == null;
+            String outcome = success ? SubscriptionReason.OK : reason.getResult();
+            outcomes.add(outcome);
             if (success)
             {
                 ok++;
             }
-            else if (firstError == null)
+            else if (firstError == null && !SubscriptionReason.SKIP.equals(outcome))
             {
-                firstError = (name == null ? r.getId() : name) + "：" + error;
+                firstError = (name == null ? r.getId() : name) + "：" + reason.getText();
             }
-            writeLog(s, trigger, brief.getPeriod(), r, name, error, messageId, operator);
+            if (record)
+            {
+                writeLog(s, trigger, brief.getPeriod(), r, name, error, messageId, operator, run, outcome,
+                    reason == null ? null : reason.getCode(), attempts);
+            }
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("type", r.getType());
             m.put("id", r.getId());
             m.put("name", name);
             m.put("success", success);
+            m.put("result", outcome);
+            m.put("reasonCode", reason == null ? null : reason.getCode());
+            m.put("reasonText", reason == null ? null : reason.getText());
             m.put("error", error);
             m.put("messageId", messageId);
             results.add(m);
         }
-        String status = ok == receivers.size() ? "SUCCESS" : ok == 0 ? "FAILED" : "PARTIAL";
-        // 测试发送只发给操作人自己，不算订阅的发送结果
-        if (!TEST.equals(trigger))
+        String result = SubscriptionReason.aggregate(outcomes);
+        String status = SubscriptionReason.lastStatus(result);
+        if (firstError == null && !SubscriptionReason.OK.equals(result) && credentialError != null)
         {
-            mapper.markRun(s.getId(), slot, LocalDateTime.now(zone(s.getSiteCode())).truncatedTo(ChronoUnit.SECONDS),
-                    status, firstError == null ? null : cut(firstError, 500));
+            firstError = SubscriptionReason.CRED.getText();
         }
-        log.info("[subscription] {} id={} site={} period={} 成功 {}/{}", trigger, s.getId(), s.getSiteCode(),
-                brief.getPeriod(), ok, receivers.size());
+        if (record)
+        {
+            run.setResult(result);
+            run.setReceiverTotal(receivers.size());
+            run.setSent(ok);
+            run.setFailed(receivers.size() - ok);
+            run.setSentAt(SubscriptionReason.SKIP.equals(result) ? run.getPlanAt() : nowSecond(s.getSiteCode()));
+            run.setError(firstError == null ? null : cut(firstError, 500));
+            finishRun(s, run);
+            mapper.markRun(s.getId(), slot, nowSecond(s.getSiteCode()), status, firstError == null ? null : cut(firstError, 500));
+        }
+        log.info("[subscription] {} id={} site={} period={} result={} 成功 {}/{}", trigger, s.getId(), s.getSiteCode(),
+                brief.getPeriod(), result, ok, receivers.size());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", status);
+        out.put("result", result);
+        out.put("runId", run == null ? null : run.getId());
         out.put("period", brief.getPeriod());
         out.put("sent", ok);
         out.put("failed", receivers.size() - ok);
         out.put("results", results);
         return out;
+    }
+
+    /**
+     * 发送前的整次失败（取数失败 data、截图失败 shot）：本次所有群都未发送，写一个 FAIL 批次和逐群 FAIL 记录。
+     * 测试发送不记录。
+     *
+     * @param brief 取数失败时为 null
+     */
+    public Map<String, Object> failWhole(DashboardSubscription s, SubscriptionBrief brief, List<SubscriptionReceiver> receivers,
+            String trigger, String operator, String slot, LocalDateTime planAt, SubscriptionReason reason, String detail)
+    {
+        String period = brief == null ? null : brief.getPeriod();
+        if (!TEST.equals(trigger))
+        {
+            DashboardSubscriptionRun run = new DashboardSubscriptionRun();
+            run.setSubscriptionId(s.getId());
+            run.setSiteCode(s.getSiteCode());
+            run.setTriggerType(trigger);
+            run.setPlanAt(planAt);
+            run.setSentAt(nowSecond(s.getSiteCode()));
+            run.setPeriod(cut(period, 64));
+            run.setComparePeriod(brief == null ? null : cut(brief.getCompare(), 64));
+            run.setResult(SubscriptionReason.FAIL);
+            run.setReasonCode(reason.getCode());
+            run.setError(cut(detail, 500));
+            run.setReceiverTotal(receivers.size());
+            run.setSent(0);
+            run.setFailed(receivers.size());
+            fillExtras(s, brief, run);
+            run.setOperator(cut(operator, 64));
+            insertRun(run);
+            for (SubscriptionReceiver r : receivers)
+            {
+                writeLog(s, trigger, period, r, r.getName(), detail, null, operator, run, SubscriptionReason.FAIL, reason.getCode(), 0);
+            }
+            mapper.markRun(s.getId(), slot, nowSecond(s.getSiteCode()), "FAILED", cut(reason.getText() + "：" + nvl(detail), 500));
+        }
+        log.warn("[subscription] {} id={} site={} 整次未發送（{}）：{}", trigger, s.getId(), s.getSiteCode(), reason.getCode(), detail);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "FAILED");
+        out.put("result", SubscriptionReason.FAIL);
+        out.put("reasonCode", reason.getCode());
+        out.put("reasonText", reason.getText());
+        out.put("error", detail);
+        out.put("period", period);
+        out.put("sent", 0);
+        out.put("failed", receivers.size());
+        out.put("results", new ArrayList<>());
+        return out;
+    }
+
+    /**
+     * 订阅开了截图却没拿到截图（截图或上传失败）：按 2026-11-13 的决定整次不发，返回失败原因；否则返回 null。
+     */
+    public String snapshotFailure(DashboardSubscription s, SubscriptionBrief brief)
+    {
+        if (!s.isSnapshotOn() || brief == null)
+        {
+            return null;
+        }
+        return brief.getSnapshotKey() == null ? (brief.getSnapshotError() == null ? "截圖生成失敗" : brief.getSnapshotError()) : null;
+    }
+
+    /**
+     * 截图正常就发送，否则整次失败（shot）。定时、立即发送都走这里。
+     */
+    public Map<String, Object> deliverChecked(DashboardSubscription s, SubscriptionBrief brief, List<SubscriptionReceiver> receivers,
+            String trigger, String operator, String slot, LocalDateTime planAt)
+    {
+        String shot = snapshotFailure(s, brief);
+        if (shot != null)
+        {
+            return failWhole(s, brief, receivers, trigger, operator, slot, planAt, SubscriptionReason.SHOT, shot);
+        }
+        return deliver(s, brief, receivers, trigger, operator, slot, planAt);
+    }
+
+    /** 同 {@link #deliver(DashboardSubscription, SubscriptionBrief, List, String, String, String)}，指定排程时刻 */
+    public Map<String, Object> deliver(DashboardSubscription s, SubscriptionBrief brief, List<SubscriptionReceiver> receivers,
+            String trigger, String operator, String slot, LocalDateTime planAt)
+    {
+        planAtHint.set(planAt);
+        try
+        {
+            return deliver(s, brief, receivers, trigger, operator, slot);
+        }
+        finally
+        {
+            planAtHint.remove();
+        }
+    }
+
+    private final ThreadLocal<LocalDateTime> planAtHint = new ThreadLocal<>();
+
+    private DashboardSubscriptionRun startRun(DashboardSubscription s, SubscriptionBrief brief, String trigger, String operator, String slot)
+    {
+        DashboardSubscriptionRun run = new DashboardSubscriptionRun();
+        run.setSubscriptionId(s.getId());
+        run.setSiteCode(s.getSiteCode());
+        run.setTriggerType(trigger);
+        LocalDateTime plan = planAtHint.get();
+        if (plan == null && slot != null)
+        {
+            plan = LocalDateTime.parse(slot, SLOT);
+        }
+        run.setPlanAt(plan == null ? nowHour(s.getSiteCode()) : plan);
+        run.setPeriod(cut(brief.getPeriod(), 64));
+        run.setComparePeriod(cut(brief.getCompare(), 64));
+        run.setOperator(cut(operator, 64));
+        fillExtras(s, brief, run);
+        insertRun(run);
+        return run;
+    }
+
+    /** AI 摘要、截图的状态写进批次 */
+    private static void fillExtras(DashboardSubscription s, SubscriptionBrief brief, DashboardSubscriptionRun run)
+    {
+        run.setAiStatus(!s.isAiOn() ? "OFF" : brief != null && brief.getAiSummary() != null ? "OK" : "FAILED");
+        if (!s.isSnapshotOn())
+        {
+            run.setSnapshotStatus("OFF");
+        }
+        else if (brief != null && brief.getSnapshotKey() != null)
+        {
+            run.setSnapshotStatus("OK");
+        }
+        else
+        {
+            run.setSnapshotStatus("FAILED");
+            run.setSnapshotError(brief == null ? null : cut(brief.getSnapshotError(), 500));
+        }
+    }
+
+    private void insertRun(DashboardSubscriptionRun run)
+    {
+        try
+        {
+            mapper.insertRun(run);
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[subscription] 写推送批次失败 id={}：{}", run.getSubscriptionId(), e.getMessage());
+        }
+    }
+
+    private void finishRun(DashboardSubscription s, DashboardSubscriptionRun run)
+    {
+        if (run.getId() == null)
+        {
+            return;
+        }
+        try
+        {
+            mapper.finishRun(run);
+        }
+        catch (RuntimeException e)
+        {
+            log.error("[subscription] 结束推送批次失败 id={} run={}：{}", s.getId(), run.getId(), e.getMessage());
+        }
+    }
+
+    private void markChatGone(DashboardSubscription s, String chatId, LarkResult<?> res)
+    {
+        if (chatService == null)
+        {
+            return;
+        }
+        try
+        {
+            chatService.markDeadIfChatGone(new com.fivetech.monitor.domain.MonitorScope(dashboard.canonical(s.getSiteCode()), null),
+                chatId, res);
+        }
+        catch (RuntimeException e)
+        {
+            log.warn("[subscription] 群置为失效失败 chat={}：{}", chatId, e.getMessage());
+        }
+    }
+
+    private void pause(int attempt)
+    {
+        if (retryBackoffMillis <= 0)
+        {
+            return;
+        }
+        try
+        {
+            Thread.sleep(retryBackoffMillis * attempt);
+        }
+        catch (InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    LocalDateTime nowSecond(String siteCode)
+    {
+        return LocalDateTime.now(zone(siteCode)).truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    private static String nvl(String s)
+    {
+        return s == null ? "" : s;
     }
 
     /** 取数失败也记一笔最近状态（不写 last_slot，定时任务在补发期内会再试） */
@@ -464,7 +764,8 @@ public class SubscriptionSender
     }
 
     private void writeLog(DashboardSubscription s, String trigger, String period, SubscriptionReceiver r, String name,
-            String error, String messageId, String operator)
+            String error, String messageId, String operator, DashboardSubscriptionRun run, String result, String reasonCode,
+            int attempts)
     {
         try
         {
@@ -480,6 +781,10 @@ public class SubscriptionSender
             row.setError(cut(error, 500));
             row.setMessageId(cut(messageId, 64));
             row.setOperator(cut(operator, 64));
+            row.setRunId(run == null ? null : run.getId());
+            row.setResult(result);
+            row.setReasonCode(reasonCode);
+            row.setAttempts(attempts);
             mapper.insertLog(row);
         }
         catch (RuntimeException e)

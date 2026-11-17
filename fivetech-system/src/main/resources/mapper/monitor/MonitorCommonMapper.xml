@@ -19,4 +19,16 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		and ${alias}.site_code = #{scope.siteCode}
 	</sql>
 
+	<!--
+	  规则的通知群（release_next ㉑）：notify_chats 按选择顺序，带上群列表缓存里的最新群名与状态（缓存里没有时 status 为 null，按失效处理）。
+	  notify_chats 为空的旧数据由 Java 退回 notify_chat_id（MonitorChats.parse）。${alias} 是 monitor_rule 的别名。
+	-->
+	<sql id="ruleChatsJson">
+		(select coalesce(jsonb_agg(jsonb_build_object('chatId', x.c->>'chatId',
+		                                              'name', coalesce(lc.name, x.c->>'name'),
+		                                              'status', lc.status) order by x.ord), '[]'::jsonb)::text
+		   from jsonb_array_elements(coalesce(${alias}.notify_chats, '[]'::jsonb)) with ordinality x(c, ord)
+		   left join monitor_lark_chat lc on lc.site_code = ${alias}.site_code and lc.chat_id = x.c->>'chatId')
+	</sql>
+
 </mapper>

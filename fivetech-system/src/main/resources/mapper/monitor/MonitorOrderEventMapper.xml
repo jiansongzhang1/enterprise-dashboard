@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  订单告警事件（monitor_order_event，release_next ⑳）：外部判定服务调 POST /monitor/rules/{ruleId}/alert
+  带订单号、金额、当日累计笔数时写入。订单审核状态、用户信息不存，展示时实时查 UDS。
+-->
+<mapper namespace="com.fivetech.monitor.mapper.MonitorOrderEventMapper">
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorOrderEvent" id="OrderEventResult">
+		<id     property="eventId"         column="event_id"          />
+		<result property="siteCode"        column="site_code"         />
+		<result property="ruleId"          column="rule_id"           />
+		<result property="orderNo"         column="order_no"          />
+		<result property="amount"          column="amount"            />
+		<result property="cumCount"        column="cum_count"         />
+		<result property="cumAmount"       column="cum_amount"        />
+		<result property="triggerTime"     column="trigger_time"      />
+		<result property="level"           column="level"             />
+		<result property="triggerPoint"    column="trigger_point"     />
+		<result property="amountMode"      column="amount_mode"       />
+		<result property="currency"        column="currency"          />
+		<result property="notifyStatus"    column="notify_status"     />
+		<result property="notifyReason"    column="notify_reason"     />
+		<result property="notifyChats"     column="notify_chats"      />
+		<result property="notifiedAt"      column="notified_at"       />
+		<result property="handleStatus"    column="handle_status"     />
+		<result property="handleNote"      column="handle_note"       />
+		<result property="handleBy"        column="handle_by"         />
+		<result property="handleTime"      column="handle_time"       />
+		<result property="reportBy"        column="report_by"         />
+		<result property="createTime"      column="create_time"       />
+	</resultMap>
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorOrderEventRow" id="OrderEventRowResult" extends="OrderEventResult">
+		<result property="ruleNo"          column="rule_no"           />
+		<result property="ruleName"        column="rule_name"         />
+		<result property="ruleDescription" column="rule_description"  />
+		<result property="ruleConfig"      column="rule_config"       />
+		<result property="ruleEnabled"     column="rule_enabled"      />
+		<result property="ownerUserId"     column="owner_user_id"     />
+		<result property="ownerName"       column="owner_name"        />
+		<result property="ruleDeleted"     column="rule_deleted"      />
+		<result property="handleByName"    column="handle_by_name"    />
+	</resultMap>
+
+	<select id="selectByOrderNos" resultMap="OrderEventResult">
+		select e.event_id, e.site_code, e.rule_id, e.order_no, e.amount, e.cum_count, e.cum_amount, e.trigger_time,
+		       e.level, e.trigger_point, e.amount_mode, e.currency, e.notify_status, e.notify_reason,
+		       e.notify_chats::text as notify_chats, e.notified_at,
+		       e.handle_status, e.report_by, e.create_time
+		  from monitor_order_event e
+		 where e.rule_id = #{ruleId}
+		   and e.order_no in <foreach collection="orderNos" item="v" open="(" separator="," close=")">#{v}</foreach>
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+	</select>
+
+	<!--
+	  「訂單告警」列表（GET /monitor/order-events）。规则名称、说明、条件、负责人取规则当前值（订单规则只能暂停不能删除，总能关联到）。
+	  订单状态在 UDS，不在这里筛；按订单状态筛选时 Service 先取最多 filter-max 条再过滤。
+	-->
+	<select id="selectOrderEventList" resultMap="OrderEventRowResult">
+		select e.event_id, e.site_code, e.rule_id, e.order_no, e.amount, e.cum_count, e.cum_amount, e.trigger_time,
+		       e.level, e.trigger_point, e.amount_mode, e.currency, e.notify_status, e.notify_reason,
+		       e.notify_chats::text as notify_chats, e.notified_at,
+		       e.handle_status, e.handle_note, e.handle_by, e.handle_time, e.report_by, e.create_time,
+		       r.rule_no, r.rule_name, r.description as rule_description, r.config::text as rule_config, r.enabled as rule_enabled,
+		       r.owner_user_id, ou.nick_name as owner_name, coalesce(r.del_flag = '2', false) as rule_deleted,
+		       coalesce(nullif(hu.email, ''), hu.user_name, e.handle_by) as handle_by_name
+		  from monitor_order_event e
+		  left join monitor_rule r on r.rule_id = e.rule_id and r.site_code = e.site_code
+		  left join sys_user ou    on ou.user_id = r.owner_user_id
+		  left join sys_user hu    on hu.user_id::text = e.handle_by
+		 where 1 = 1
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+		<if test="q.handle != null and q.handle != ''">
+		   and e.handle_status = #{q.handle}
+		</if>
+		<if test="q.rangeFrom != null">
+		   and e.trigger_time &gt;= #{q.rangeFrom}
+		</if>
+		<if test="q.rangeTo != null">
+		   and e.trigger_time &lt; #{q.rangeTo}
+		</if>
+		<if test="q.ruleIds != null and q.ruleIds.size() > 0">
+		   and e.rule_id in <foreach collection="q.ruleIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="q.ownerIds != null and q.ownerIds.size() > 0">
+		   and r.owner_user_id in <foreach collection="q.ownerIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		 order by e.trigger_time desc, e.event_id desc
+	</select>
+
+	<select id="countPending" resultType="java.lang.Integer">
+		select count(*)
+		  from monitor_order_event e
+		 where e.handle_status = 'pending'
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+	</select>
+
+	<select id="countByIds" resultType="java.lang.Integer">
+		select count(*)
+		  from monitor_order_event e
+		 where e.event_id in <foreach collection="ids" item="v" open="(" separator="," close=")">#{v}</foreach>
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+	</select>
+
+	<update id="markHandled">
+		update monitor_order_event
+		   set handle_status = 'done',
+		       handle_note   = #{note},
+		       handle_by     = #{by},
+		       handle_time   = #{now}
+		 where site_code = #{scope.siteCode}
+		   and event_id in <foreach collection="ids" item="v" open="(" separator="," close=")">#{v}</foreach>
+	</update>
+
+	<update id="unhandle">
+		update monitor_order_event
+		   set handle_status = 'pending',
+		       handle_note   = null,
+		       handle_by     = null,
+		       handle_time   = null
+		 where site_code = #{scope.siteCode}
+		   and event_id = #{eventId}
+	</update>
+
+	<select id="selectLastTriggers" resultType="java.util.LinkedHashMap">
+		select e.rule_id as "ruleId", max(e.trigger_time) as "lastAt"
+		  from monitor_order_event e
+		 where e.rule_id in <foreach collection="ruleIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+		 group by e.rule_id
+	</select>
+
+	<insert id="insertEvent" parameterType="com.fivetech.monitor.domain.MonitorOrderEvent"
+	        useGeneratedKeys="true" keyProperty="eventId" keyColumn="event_id">
+		insert into monitor_order_event (
+		    site_code, rule_id, order_no, amount, cum_count, cum_amount, trigger_time,
+		    level, trigger_point, amount_mode, currency, notify_status, notify_reason,
+		    notify_chats, handle_status, report_by, create_time
+		) values (
+		    #{siteCode}, #{ruleId}, #{orderNo}, #{amount}, #{cumCount,jdbcType=INTEGER}, #{cumAmount,jdbcType=NUMERIC}, #{triggerTime},
+		    #{level}, #{triggerPoint,jdbcType=VARCHAR}, #{amountMode,jdbcType=VARCHAR}, #{currency,jdbcType=VARCHAR},
+		    #{notifyStatus}, #{notifyReason,jdbcType=VARCHAR},
+		    coalesce(#{notifyChats,jdbcType=VARCHAR}, '[]')::jsonb, 'pending', #{reportBy,jdbcType=VARCHAR}, #{createTime}
+		)
+		on conflict (site_code, rule_id, order_no) do nothing
+	</insert>
+
+	<update id="updateNotify">
+		update monitor_order_event
+		   set notify_status = #{status},
+		       notify_reason = null,
+		       notify_chats  = #{chats}::jsonb
+		       <if test="at != null">, notified_at = #{at}</if>
+		 where site_code = #{scope.siteCode}
+		   and event_id = #{eventId}
+	</update>
+
+</mapper>

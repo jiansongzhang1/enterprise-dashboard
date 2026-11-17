@@ -52,6 +52,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       agg_type, weight_field, monitorable, judge_type, min_sample_key,
 		       min_sample_default, allow_negative, gauge_min, gauge_max, status, remark
 		  from dashboard_metric_card
+		 <!-- 页面目录（风控排行榜列、游戏分析列、条件规则字段）不进运营总览的注册表，由各自页面按范围读取 -->
+		 where page_scope is null or page_scope not in ('RISK_RANK', 'RISK_GAME', 'MONITOR_COND')
 		 order by sort_no, metric_code
 	</select>
 

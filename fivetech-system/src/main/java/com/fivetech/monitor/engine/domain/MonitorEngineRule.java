@@ -55,6 +55,9 @@ public class MonitorEngineRule
 
     private String notifyChatName;
 
+    /** 通知群（最多 5 个），JSON；notify_chat_id 为第一个 */
+    private String notifyChats;
+
     private LocalDateTime lastNotifiedAt;
 
     /** 运行状态行存在时等于 ruleId */
@@ -292,6 +295,17 @@ public class MonitorEngineRule
     public void setNotifyChatName(String notifyChatName)
     {
         this.notifyChatName = notifyChatName;
+    }
+
+    /** 通知群（release_next ㉑）：[{chatId, name, status?}] 的 JSON，读写都经 {@link com.fivetech.monitor.service.MonitorChats} */
+    public String getNotifyChats()
+    {
+        return notifyChats;
+    }
+
+    public void setNotifyChats(String notifyChats)
+    {
+        this.notifyChats = notifyChats;
     }
 
     public LocalDateTime getLastNotifiedAt()

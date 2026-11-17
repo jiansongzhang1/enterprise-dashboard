@@ -60,6 +60,28 @@ user:
 
 # Spring配置
 spring:
+  # 订单规则变更事件 → MSK（判定服务订阅后更新自己缓存的规则）。
+  # bootstrap-servers 为空时发布器不装配，本地开发不用配。
+  # 服务器上不要配 AK/SK：aws-msk-iam-auth 走 EC2 实例角色取临时凭证，
+  # 需要运维给实例角色加 MSK 的 IAM 策略（ft_dev_* 主题读写），并把后端安全组加进 MSK 入站 9098
+  kafka:
+    bootstrap-servers: ${MSK_BOOTSTRAP_SERVERS:b-1.dmoosakamsk.q62dij.c3.kafka.ap-southeast-1.amazonaws.com:9098,b-2.dmoosakamsk.q62dij.c3.kafka.ap-southeast-1.amazonaws.com:9098,b-3.dmoosakamsk.q62dij.c3.kafka.ap-southeast-1.amazonaws.com:9098}
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: AWS_MSK_IAM
+      sasl.jaas.config: software.amazon.msk.auth.iam.IAMLoginModule required;
+      sasl.client.callback.handler.class: software.amazon.msk.auth.iam.IAMClientCallbackHandler
+    producer:
+      # 全副本确认 + 幂等，重试不会产生重复消息
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        request.timeout.ms: 30000
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
   # 资源信息
   messages:
     # 国际化资源文件路径
@@ -194,6 +216,11 @@ dashboard:
       capture-selector: ${DASHBOARD_SNAPSHOT_CAPTURE_SELECTOR:}
       ready-selector: ${DASHBOARD_SNAPSHOT_READY_SELECTOR:}
       hide-selector: ${DASHBOARD_SNAPSHOT_HIDE_SELECTOR:}
+      # 内部滚动容器：后台布局常把内容区做成 height:100vh + overflow:auto，不放开的话整页高度只有一屏，
+      # 截出来就是「只有当前页面」。填内容区的选择器，如 .app-main, .el-main, .layout-content
+      expand-selector: ${DASHBOARD_SNAPSHOT_EXPAND_SELECTOR:}
+      # 兜底用的额外 CSS（整段原样注入）
+      extra-css: ${DASHBOARD_SNAPSHOT_EXTRA_CSS:}
       timeout-seconds: 45
       queue-seconds: 120
       restart-after: 50
@@ -816,6 +843,12 @@ alert:
 
 # 监控管理（告警规则 / 判定引擎）
 monitor:
+  # 订单规则变更事件 → MSK（判定服务订阅后更新自己缓存的规则）；spring.kafka.bootstrap-servers 为空时不发
+  order-rule:
+    kafka:
+      # 配了 bootstrap-servers 后还能临时关掉
+      enabled: ${MSK_ORDER_RULE_ENABLED:true}
+      topic: ${MSK_ORDER_RULE_TOPIC:ft_dev_order_rule_msg_test}
   # 每个站点同时启用的规则上限（一期 40）。一个指标只能有一条规则由唯一索引保证；0 = 不限
   max-enabled-rules-per-site: ${MONITOR_MAX_ENABLED_RULES:40}
   # 监控告警用的 Lark 自建应用（一期一个应用服务所有站点）。凭证只放 /etc/fivetech.env，不进代码和 git；
@@ -828,6 +861,67 @@ monitor:
     chats-cache-seconds: ${MONITOR_LARK_CHATS_CACHE_SECONDS:30}
     # 管理后台「手动触发测试告警」固定发到的 Lark 群 chat_id（oc_ 开头，机器人须在群里）；不配则该功能返回「未配置測試群」
     test-chat-id: ${MONITOR_TEST_CHAT_ID:oc_e7fd7c5dc5ddb74cca008409d32ecfae}
+  # 「訂單告警」列表实时查 UDS 的订单状态、用户账号与注册时间（设计文档 5.5）。数据集为空 = 未接入：列表照常返回，udsOk = false。
+  # 字段名等 UDS 给出后改这里或对应环境变量；status-map 把 UDS 的状态值映射成 PENDING / PAID / REJECTED（没配的按原值大写）
+  order-lookup:
+    order-dataset: ${MONITOR_UDS_ORDER_DATASET:}
+    user-dataset: ${MONITOR_UDS_USER_DATASET:}
+    order-time-field: ${MONITOR_UDS_ORDER_TIME_FIELD:submit_time}
+    site-field: ${MONITOR_UDS_SITE_FIELD:site_code}
+    count-metric: ${MONITOR_UDS_COUNT_METRIC:record_count}
+    order-no-field: ${MONITOR_UDS_ORDER_NO_FIELD:order_no}
+    order-status-field: ${MONITOR_UDS_ORDER_STATUS_FIELD:status}
+    order-user-field: ${MONITOR_UDS_ORDER_USER_FIELD:user_id}
+    user-id-field: ${MONITOR_UDS_USER_ID_FIELD:user_id}
+    account-field: ${MONITOR_UDS_ACCOUNT_FIELD:account}
+    reg-time-field: ${MONITOR_UDS_REG_TIME_FIELD:register_time}
+    status-map:
+      "[PENDING]": PENDING
+      "[PAID]": PAID
+      "[REJECTED]": REJECTED
+    batch-size: ${MONITOR_UDS_ORDER_BATCH:100}
+    final-cache-seconds: ${MONITOR_UDS_ORDER_FINAL_CACHE_SECONDS:600}
+    pending-cache-seconds: ${MONITOR_UDS_ORDER_PENDING_CACHE_SECONDS:30}
+    # 按订单状态筛选时最多先取多少条事件（超过时提示缩小范围）
+    filter-max: ${MONITOR_ORDER_FILTER_MAX:2000}
+  # 条件规则（设计文档第 4 节）：字段目录在「指标管理」（所属范围 MONITOR_COND）维护，维度选项在配置中心（PROMO_CHANNELS / RISK_GAME_DICT /
+  # 推广终端字典 / MONITOR_COND_PAY_CHANNELS）；这里只放接哪个 UDS 小时数据集、维度字段叫什么、各种上限。检测挂在 engine 的判定任务上（engine.enabled）。
+  cond:
+    enabled: ${MONITOR_COND_ENABLED:true}
+    # 小时数据集为空 = 未接入：可以建规则，预览提示「數據未接入」，不检测
+    hour-dataset: ${MONITOR_COND_HOUR_DATASET:}
+    time-field: ${MONITOR_COND_TIME_FIELD:stat_hour}
+    count-metric: ${MONITOR_COND_COUNT_METRIC:record_count}
+    # 整点后多少分钟开始检测刚结束的时段
+    ready-minute: ${MONITOR_COND_READY_MINUTE:5}
+    # 维度 → UDS 字段；为空的维度在字段目录里不出现
+    dim-fields:
+      "[chPromoter]": ${MONITOR_COND_FIELD_PROMOTER:agent_id}
+      "[chChannel]": ${MONITOR_COND_FIELD_CHANNEL:channel_id}
+      "[pay]": ${MONITOR_COND_FIELD_PAY:pay_channel}
+      "[pf]": ${MONITOR_COND_FIELD_PLATFORM:platform}
+      "[gty]": ${MONITOR_COND_FIELD_GAME_TYPE:game_type}
+      "[game]": ${MONITOR_COND_FIELD_GAME:game_id}
+      "[term]": ${MONITOR_COND_FIELD_TERMINAL:terminal}
+    # 各窗口的连续次数上限
+    duration-max:
+      "[1h]": ${MONITOR_COND_DURATION_MAX_1H:4}
+      "[4h]": ${MONITOR_COND_DURATION_MAX_4H:3}
+      "[6h]": ${MONITOR_COND_DURATION_MAX_6H:3}
+      "[12h]": ${MONITOR_COND_DURATION_MAX_12H:2}
+      "[24h]": ${MONITOR_COND_DURATION_MAX_24H:2}
+      "[TODAY]": ${MONITOR_COND_DURATION_MAX_TODAY:4}
+    mute-hours: [1, 2, 4, 12]
+    default-mute-hours: 2
+    max-conditions: ${MONITOR_COND_MAX_CONDITIONS:5}
+    max-chats: 5
+    # 较基准：近几周同星期同时段平均
+    base-weeks: ${MONITOR_COND_BASE_WEEKS:4}
+    preview-days: ${MONITOR_COND_PREVIEW_DAYS:30}
+    preview-cache-seconds: ${MONITOR_COND_PREVIEW_CACHE_SECONDS:300}
+    catalog-cache-seconds: ${MONITOR_COND_CATALOG_CACHE_SECONDS:60}
+    series-before: 24
+    batch-size: 50
   engine:
     # 判定引擎总开关，关闭时不注册定时任务。UDS 跌幅基准字段与水位确认前保持关闭
     enabled: ${MONITOR_ENGINE_ENABLED:false}
@@ -867,9 +961,86 @@ monitor:
       bonus: bonus_baseline                # 发放赠金总额
       ngr: ngr_baseline                    # NGR（= GGR − 赠金，UDS 按每小时 NGR 取中位数）
 
+# 风控分析（设计文档第 2 节）。这里只放部署相关的值：接哪个 UDS 数据集、维度字段叫什么、上限多少，都可用环境变量覆盖。
+# 排行榜的列、名单条件字段、游戏分析的列及其 UDS 指标字段在「指标管理」（所属范围 RISK_RANK / RISK_GAME）维护；
+# 榜单条件、榜单设置、游戏字典在「配置中心」（RISK_RANK_THRESHOLDS / RISK_RANK_BOARDS / RISK_GAME_DICT）维护。
+# 数据集名为空 = 还没接入：对应接口照常返回结构，dataPending = true。
+risk:
+  enabled: ${RISK_ENABLED:true}
+  user-day-dataset: ${RISK_UDS_USER_DAY_DATASET:}
+  user-game-day-dataset: ${RISK_UDS_USER_GAME_DAY_DATASET:}
+  withdraw-order-dataset: ${RISK_UDS_WITHDRAW_ORDER_DATASET:}
+  game-dataset: ${RISK_UDS_GAME_DATASET:}
+  player-snapshot-dataset: ${RISK_UDS_PLAYER_SNAPSHOT_DATASET:}
+  # 用户详情抽屉 / 全部用户搜索（FY-75）：用户资料、存款订单、优惠发放的数据集。TODO：数据集名待 UDS 给出；为空时对应部分返回 dataPending
+  user-dataset: ${RISK_UDS_USER_DATASET:}
+  deposit-order-dataset: ${RISK_UDS_DEPOSIT_ORDER_DATASET:}
+  bonus-dataset: ${RISK_UDS_BONUS_DATASET:}
+  # 资料起始日（yyyy-MM-dd）：注册早于它的用户不能按注册日期看抽屉；为空 = 不限。TODO：以 UDS 实际起始日为准
+  data-start-date: ${RISK_DATA_START_DATE:}
+  # 抽屉各部分用哪些列（排行榜列的接口编码）
+  user-overview-cols: ${RISK_USER_OVERVIEW_COLS:dep,wd,net,bet,winLoss,rtp,turnX,wdN,bonusR}
+  user-history-cols: ${RISK_USER_HISTORY_COLS:firstDepTime,firstDepAmt,histDep,histWd,histNet,histWinLoss}
+  user-trend-cols: ${RISK_USER_TREND_COLS:dep,wd,bet,winLoss}
+  user-game-cols: ${RISK_USER_GAME_COLS:bet,pay,winLoss,rtp}
+  user-bet-count-col: ${RISK_USER_BET_COUNT_COL:betN}
+  # 订单状态：页面状态 → UDS 原始值（逗号分隔）。TODO：原始值以 UDS 为准
+  statuses:
+    "[deposit.SUCCESS]": ${RISK_UDS_DEPOSIT_SUCCESS:SUCCESS}
+    "[deposit.FAILED]": ${RISK_UDS_DEPOSIT_FAILED:FAILED}
+    "[deposit.PENDING]": ${RISK_UDS_DEPOSIT_PENDING:PENDING}
+    "[withdraw.PAID]": ${RISK_UDS_WITHDRAW_PAID:PAID}
+    "[withdraw.PENDING]": ${RISK_UDS_WITHDRAW_PENDING:PENDING,REVIEW}
+    "[withdraw.REJECTED]": ${RISK_UDS_WITHDRAW_REJECTED:REJECTED}
+  # true：用户 × 日按日取，后端按指标管理里的汇总方式合并；false：UDS 按区间直接汇总（维度里不带日期）
+  user-day-by-date: ${RISK_UDS_USER_DAY_BY_DATE:false}
+  paid-status: ${RISK_UDS_PAID_STATUS:PAID}
+  page-size: ${RISK_UDS_PAGE_SIZE:1000}
+  max-users: ${RISK_MAX_USERS:300000}
+  max-rows: ${RISK_MAX_ROWS:2000000}
+  max-export-rows: ${RISK_MAX_EXPORT_ROWS:1000000}
+  max-span-days: ${RISK_MAX_SPAN_DAYS:93}
+  cache-seconds: ${RISK_CACHE_SECONDS:300}
+  catalog-cache-seconds: ${RISK_CATALOG_CACHE_SECONDS:60}
+  new-user-days: ${RISK_NEW_USER_DAYS:7}
+  # 游戏抽屉「盈利最多的用户（常玩此游戏）」：判断常玩游戏的列、排序列、显示列（排行榜列的接口编码）；近 7 日显示的列（游戏分析列的接口编码）
+  drawer-top-game-column: ${RISK_DRAWER_TOP_GAME_COLUMN:topGame}
+  drawer-top-users-rank-col: ${RISK_DRAWER_TOP_USERS_RANK_COL:winLoss}
+  drawer-top-users-cols: ${RISK_DRAWER_TOP_USERS_COLS:bet,winLoss,rtp}
+  drawer-day-cols: ${RISK_DRAWER_DAY_COLS:bet,ggr,rtp}
+  game-default-path: ${RISK_GAME_DEFAULT_PATH:platform,brand,game}
+  # UDS 维度字段名（逻辑名 → 数据集字段），UDS 给出字段名后改这里或对应环境变量
+  fields:
+    date: ${RISK_UDS_FIELD_DATE:uds_dt}
+    userId: ${RISK_UDS_FIELD_USER_ID:user_id}
+    account: ${RISK_UDS_FIELD_ACCOUNT:account}
+    regTime: ${RISK_UDS_FIELD_REG_TIME:register_time}
+    agentId: ${RISK_UDS_FIELD_AGENT_ID:promoter_id}
+    channelId: ${RISK_UDS_FIELD_CHANNEL_ID:channel_id}
+    parent: ${RISK_UDS_FIELD_PARENT:parent_account}
+    platform: ${RISK_UDS_FIELD_PLATFORM:platform_code}
+    brand: ${RISK_UDS_FIELD_BRAND:brand_code}
+    gameType: ${RISK_UDS_FIELD_GAME_TYPE:game_type}
+    game: ${RISK_UDS_FIELD_GAME:game_code}
+    gameName: ${RISK_UDS_FIELD_GAME_NAME:game_name}
+    orderNo: ${RISK_UDS_FIELD_ORDER_NO:order_no}
+    orderAmount: ${RISK_UDS_FIELD_ORDER_AMOUNT:amount}
+    orderStatus: ${RISK_UDS_FIELD_ORDER_STATUS:status}
+    submitTime: ${RISK_UDS_FIELD_SUBMIT_TIME:submit_time}
+    paidTime: ${RISK_UDS_FIELD_PAID_TIME:paid_time}
+    settleTime: ${RISK_UDS_FIELD_SETTLE_TIME:settle_time}
+    rowCount: ${RISK_UDS_FIELD_ROW_COUNT:record_count}
+    # 用户详情抽屉（TODO：字段名待 UDS 确认；hour 为空时按小时趋势不取）
+    parentId: ${RISK_UDS_FIELD_PARENT_ID:parent_id}
+    payMethod: ${RISK_UDS_FIELD_PAY_METHOD:pay_method}
+    bonusType: ${RISK_UDS_FIELD_BONUS_TYPE:bonus_type}
+    hour: ${RISK_UDS_FIELD_HOUR:}
+
 # token配置
 # Yata Copilot（AI 能力）：目前用于订阅简报的「AI 摘要」。
 # API Key 只从环境变量 ANTHROPIC_API_KEY 读；为空时不调用模型，订阅照常发送（不带摘要）。
+
+
 copilot:
   enabled: ${COPILOT_ENABLED:true}
   # 页面不选模型时用这个
@@ -913,7 +1084,25 @@ copilot:
     max-chars: 2000
     # 站点数据缓存秒数
     context-cache-seconds: 300
+    # 助手查审计日志（受限工具：模型只填筛选条件，SQL 由后端拼，不是任意 SQL）。
+    # 权限跟随页面：操作日志要 monitor:operlog:list，登录日志要 monitor:logininfor:list，没权限的工具不会给模型
+    data-query:
+      enabled: ${COPILOT_DATA_QUERY_ENABLED:true}
+      # 单次最多返回几条
+      max-rows: 50
+      # 模型没指定条数时返回几条
+      default-rows: 20
+      # 模型没指定时间范围时往前查几天
+      default-days: 7
+      # 时间跨度上限（天），超过截断
+      max-days: 90
+      # 一次提问最多执行几轮工具
+      max-rounds: 3
 
+# 订单规则变更事件 → MSK（判定服务订阅后更新自己缓存的规则）。
+# bootstrap-servers 为空时整个发布器不装配，本地开发不用配。
+# 服务器上不要配 AK/SK：aws-msk-iam-auth 走 EC2 实例角色取临时凭证，
+# 需要运维给实例角色加 MSK 的 IAM 策略（ft_dev_* 主题读写），并把后端安全组加进 MSK 入站 9098
 token:
   # 令牌自定义标识return userId != null && 1L == userId;
   header: Authorization
@@ -976,8 +1165,10 @@ security:
   # 系统对接用的 API Key（请求头 X-Api-Key，在「系统管理 › API Key」/system/api-keys 新建）：只有这里列出的接口认 Key，
   # 其他接口带了 Key 也照常要登录 token。每个 Key 再在这个范围内限定接口、来源 IP、到期时间，并绑定一个后台账号（按它的权限放行）。
   # 注意：开启了内部管理接口 IP 白名单时，调用方 IP 也要在白名单里（或把接口加进 exclude-paths）
+  # 路径支持 Ant 风格（* 只匹配一段，** 匹配多段）。2026-11-13 起去掉 /notification/lark/send：外部系统改用按规则发告警 /monitor/rules/{ruleId}/alert
+  # 2026-11-16 加订单规则查询 /open/monitor/order-rules 与 /open/monitor/order-rules/{ruleId}（** 两个都匹配）
   api-key:
-    paths: /notification/lark/send
+    paths: /monitor/rules/*/alert,/open/monitor/order-rules/**
   admin-ip-whitelist:
     enabled: ${ADMIN_IP_WHITELIST_ENABLED:false}
     # 逗号分隔，支持单个 IP 与 CIDR，如 1.2.3.4,203.0.113.0/24

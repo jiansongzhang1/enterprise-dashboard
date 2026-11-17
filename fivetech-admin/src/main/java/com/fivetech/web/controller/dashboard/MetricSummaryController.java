@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.fivetech.common.enums.BusinessType;
+import com.fivetech.common.annotation.Log;
 import com.fivetech.common.core.controller.BaseController;
 import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.dashboard.domain.query.MetricSummaryQuery;
@@ -47,6 +49,7 @@ public class MetricSummaryController extends BaseController
      * 查询指标汇总表；export_csv=true 时下载 XLSX
      */
     @PreAuthorize("@ss.hasPermi('dashboard:metric:summary')")
+    @Log(title = "指标汇总查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/summary")
     public ResponseEntity<?> summary(@Validated @RequestBody MetricSummaryQuery query)
     {

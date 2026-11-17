@@ -8,6 +8,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     - 所有行：只改 remark、source_table / source_field、uds_*_field（这些列没有取数代码读）
     - 仅登记（status = '1'）的行：还能改名称、分组、格式、方向、更新频率，能删除
     - 所有行：可歸因开关（attributable，推广分析概览的变化归因）
+    - 所有行：所属范围（page_scope：OVERVIEW / PROMO / RISK，为空 = 所有页面）
 -->
 <mapper namespace="com.fivetech.dashboard.mapper.MetricDictMapper">
 
@@ -43,6 +44,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="minSampleDefault" column="min_sample_default" />
 		<result property="allowNegative"    column="allow_negative"     />
 		<result property="attributable"     column="attributable"       />
+		<result property="pageScope"        column="page_scope"         />
+		<result property="extJson"          column="ext_json"           />
 		<result property="gaugeMin"         column="gauge_min"          />
 		<result property="gaugeMax"         column="gauge_max"          />
 		<result property="status"           column="status"             />
@@ -58,7 +61,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       c.update_frequency, c.single_day_only, c.chart_type, c.value_format, c.value_decimals, c.direction,
 		       c.show_as_card, c.sort_no, c.calc_type, c.left_code, c.right_code, c.agg_type, c.weight_field,
 		       c.monitorable, c.judge_type, c.min_sample_key, c.min_sample_default, c.allow_negative, c.attributable,
-		       c.gauge_min, c.gauge_max, c.status, c.create_by, c.create_time, c.update_by, c.update_time
+		       c.page_scope, c.ext::text as ext_json, c.gauge_min, c.gauge_max, c.status, c.create_by, c.create_time, c.update_by, c.update_time
 		  from dashboard_metric_card c
 		  left join dashboard_metric_group g on g.group_code = c.group_code
 	</sql>
@@ -93,6 +96,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		select metric_code as "metricCode", count(*) as "cnt"
 		  from monitor_rule
 		 where del_flag = '0'
+		   and rule_type = 'METRIC'
 		 group by metric_code
 	</select>
 
@@ -163,6 +167,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       update_time  = current_timestamp
 		 where metric_code = #{metricCode}
 	</update>
+
+	<update id="updatePageScope">
+		update dashboard_metric_card
+		   set page_scope  = #{pageScope},
+		       update_by   = #{updateBy},
+		       update_time = current_timestamp
+		 where metric_code = #{metricCode}
+	</update>
+
+	<update id="updateExt">
+		update dashboard_metric_card
+		   set ext         = cast(#{ext} as jsonb),
+		       update_by   = #{updateBy},
+		       update_time = current_timestamp
+		 where metric_code = #{metricCode}
+	</update>
+
+	<!-- 页面目录：某个范围的全部指标（含仅登记），按排序号 -->
+	<select id="selectByPageScope" resultMap="MetricDictResult">
+		<include refid="selectDictVo"/>
+		 where c.page_scope = #{pageScope}
+		 order by c.sort_no, c.metric_code
+	</select>
 
 	<select id="countRules" resultType="int">
 		select count(*) from monitor_rule where metric_code = #{metricCode} and del_flag = '0'

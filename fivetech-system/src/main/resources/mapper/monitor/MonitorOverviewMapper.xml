@@ -25,6 +25,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  from monitor_rule r
 		 where r.del_flag = '0'
 		   and r.enabled = true
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>
@@ -41,6 +42,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  left join monitor_rule_state s on s.rule_id = e.rule_id and s.site_code = e.site_code
 		 where e.event_type = 'alert'
 		   and e.status = 'open'
+		   -- 总览按指标标异常：只看指标规则的事件（条件规则的事件没有单一指标，release_next ㉓）
+		   and e.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="e"/>
 		</include>
@@ -105,6 +108,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  left join monitor_event e on e.rule_id = r.rule_id and e.site_code = r.site_code
 		                           and e.event_type = 'alert' and e.status = 'open'
 		 where r.del_flag = '0'
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>

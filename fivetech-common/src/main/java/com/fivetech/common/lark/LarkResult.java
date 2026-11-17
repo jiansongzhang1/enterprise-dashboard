@@ -98,6 +98,12 @@ public final class LarkResult<T>
         return !success && LarkErrorCodes.isChatGone(larkCode);
     }
 
+    /** 被 Lark 限流：HTTP 429 或限流错误码 */
+    public boolean isRateLimited()
+    {
+        return !success && (httpStatus == 429 || (larkCode != null && LarkErrorCodes.RATE_LIMIT.contains(larkCode)));
+    }
+
     public T getData()
     {
         return data;

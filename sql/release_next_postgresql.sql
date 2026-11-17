@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 下一次上线 · 增量 SQL（dashboard_db）· PostgreSQL · 可重复执行
 --
--- 基线：2026-11-02 线上库已包含此前全部表结构与数据（监控一期、多站点、订阅简报、菜单权限等），
+-- 基线：①–⑬（2026-11-02 ~ 2026-11-12）已全部上线，已从本文件移除（见 git 历史）；
 --       之后所有数据库改动只追加到本文件末尾，按段编号；上线后在「上线记录」里登记日期。
 --
 -- 写法约定：
@@ -13,898 +13,1899 @@
 --   psql -X -v ON_ERROR_STOP=1 -d dashboard_db -f sql/release_next_postgresql.sql
 --
 -- 段落目录：
---   ① 2026-11-02  Yata Copilot · 订阅简报 AI 摘要    dashboard_subscription.ai_enabled / ai_model，新表 copilot_usage_log
---   ② 2026-11-04  站点指标配置 · 两套默认展示指标集    dashboard_page_metric_site.display_type（DEFAULT / REPORT），唯一键加 display_type
---   ③ 2026-11-04  推广分析 · 预算与消耗（FY-56）菜单     目录「推广分析」+ 页面「预算与消耗」promo:budget:view + 按钮 promo:budget:import（无新表）
---   ④ 2026-11-04  系统管理 · 配置中心                     新表 config_center（唯一键 配置编码 + 站点）+ 菜单 system:configCenter:list/add/edit/remove
---   ⑤ 2026-11-05  推广分析 · 概览指标与可歸因开关        dashboard_metric_card.attributable；推广分析分组 inv / flow 与 16 个指标（仅登记）；
---                                                       页面 PROMO（dashboard_page_metric 的 CHECK 放开）；菜单「推广分析」dashboard:promo:view
---   ⑥ 2026-11-05  管理后台 · AI 助手                      按钮权限 copilot:chat:use（系统管理下，无新表；对话不落库，次数记在 copilot_usage_log）
---   ⑦ 2026-11-09  个人自定义指标集（个人视图）一期        新表 dashboard_view_slot / _slot_item / _preset / dashboard_user_view；
---                                                       推广分析 3 个配置位（核心指标卡、渠道表现表格列、行维度）的可选项、默认与预置组合
---   ⑧ 2026-11-10  推广分析 · 概览指标补 UDS 取数对照        16 个 promo 指标的 source_table / source_field 与 remark 里的对照状态（无结构变化）
---   ⑨ 2026-11-10  系统管理 · API Key（系统对接）          新表 sys_api_key + 按钮 system:apikey:list/add/edit；数据平台用 X-Api-Key 调 /notification/lark/send
---   ⑩ 2026-11-10  个人视图 · 行维度去掉顺序限制            promo.channel.rows 的 rules 清空（推廣渠道不再要求排在推廣商之下）
---   ⑪ 2026-11-10  站点管理 · 实时站点                      monitor_site_setting.realtime（站点管理可编辑；getInfo sites[]、运营总览 realtime 返回）
---   ⑫ 2026-11-11  站点管理 · 数据起始日                    monitor_site_setting.data_start_date（站点管理可编辑；getInfo sites[].dataStartDate 返回）
---   ⑬ 2026-11-12  推广分析 · 去掉行维度「推廣關係」、淨充值改为存提差   promo.channel.rows 删 relation；promoNet 的取数对照与说明（无结构变化）
+--   ⑭ 2026-11-13  订阅管理 · 下一期（V0.4 原型）            dashboard_subscription 加频率 / 视图 / 负责人；新表 dashboard_subscription_run；
+--                                                       log 加 run_id / result / reason_code / attempts；旧订阅备份后删除；菜单 dashboard:subscription:*
+--   ⑮ 2026-11-13  监控 · 按规则发告警                      按钮 monitor:rule:alert；已有 API Key 的接口范围换成 /monitor/rules/*/alert
+--   ⑯ 2026-11-13  指标管理 · 所属范围                      dashboard_metric_card.page_scope（OVERVIEW / PROMO / RISK，空 = 所有页面）
+--   ⑰ 2026-11-13  菜单分组：站点板块 / 游戏板块             sys_menu.group_code（site / game）
+--   ⑱ 2026-11-16  监控 · 订单规则                          monitor_rule 加 rule_type / rule_name / level / config / version 等；序列 monitor_rule_version_seq
+--   ⑲ 2026-11-16  操作日志 · 记录查询操作                  字典 sys_oper_type 加「查询」（dict_value = 10，对应 BusinessType.QUERY）
+--   ⑳ 2026-11-16  监控 · 订单告警事件                      新表 monitor_order_event：/monitor/rules/{ruleId}/alert 带订单号、金额、当日累计笔数时写入
+--   ㉑ 2026-11-16  监控 · 规则可选多个通知群                monitor_rule 加 notify_chats（jsonb，最多 5 个群），按 notify_chat_id 回填
+--   ㉒ 2026-11-16  风控分析                                指标管理加 ext 与页面目录范围（RISK_RANK / RISK_GAME / MONITOR_COND）；风控概览页 RISK 与新指标 wdr / rtp；
+--                                                       排行榜 31 列、游戏分析 20 列；新表 risk_my_board；配置中心 RISK_*；个人视图配置位；菜单 dashboard:risk:*
+--   ㉓ 2026-11-16  监控 · 条件规则                          新表 monitor_rule_condition；monitor_event 加 rule_type / detail（metric_code 可空）；
+--                                                       monitor_rule 加 edit_time / edit_by；monitor_rule_state 加 detail；条件规则字段目录 27 项（MONITOR_COND）
 --
 -- 上线记录：
---   （尚未上线）
+--   ①–⑬ 已上线
+--   ⑭–㉔ 尚未上线
 -- ============================================================================
 
 
 -- ----------------------------------------------------------------------------
--- ① 2026-11-02 · Yata Copilot · 订阅简报 AI 摘要（新 JAR 启动前执行）
---   1. dashboard_subscription 加 ai_enabled（卡片带 AI 摘要，默认关）、ai_model（模型 id，为空用 copilot.default-model）
---   2. copilot_usage_log：每次调用模型记一行（功能、站点、模型、结果、token 用量、耗时），用于对账和每日次数上限
---   回滚：ALTER TABLE dashboard_subscription DROP COLUMN IF EXISTS ai_model, DROP COLUMN IF EXISTS ai_enabled;
---         DROP TABLE IF EXISTS copilot_usage_log;
+-- ⑭ 2026-11-13 · 订阅管理 · 下一期（V0.4 原型「訂閱規則｜發送歷史」，设计文档《订阅简报 · 设计文档》）
+--   新 JAR 启动前执行（列表、定时任务会读新列）。
+--   1. dashboard_subscription：
+--      - 发送频率 freq_type（DAY / WEEK / HOURS）、freq_dow（週几 1–7）、freq_every（N 1–12）、freq_to（「到」整点）；
+--        send_hour 仍是每日、每週的发送整点，以及每 N 小時的「從」；
+--      - 视图（发起时营运总览的选择，建立后不可改）：view_gran、view_cmp（PREV / CUSTOM）、view_from / view_to（固定日期）、
+--        view_cmp_from / view_cmp_to（自訂对比）；range_code 增加 CUSTOM（固定日期）；
+--      - 负责人 owner_user_id、来源页面 source_page；last_status 增加 SKIPPED（已跳過）。
+--   2. 新表 dashboard_subscription_run：一次定时 / 立即发送一行（测试发送不记录），逐群结果在 log（run_id）。
+--   3. dashboard_subscription_log 加 run_id、result（OK / PART / FAIL / SKIP）、reason_code（原因代码）、attempts（含自动重试的次数）。
+--   4. 旧订阅不迁移（2026-11-16 确认）：先整表备份到 dashboard_subscription_bak_20261116 / dashboard_subscription_log_bak_20261116，
+--      再删掉全部订阅与发送记录，上线后在营运总览重新建立。只在第一次执行时删（备份表已存在就跳过），重复执行不会删掉新建的订阅。
+--      执行前先看下面「删除前清单」。
+--   5. 菜单：订阅管理 dashboard:subscription:list，按钮 add / edit / remove / admin（管理员：可修改任何人的订阅、接管），授给 role 1。
+--   回滚：
+--     DELETE FROM dashboard_subscription_log; DELETE FROM dashboard_subscription;   -- 先删上线后新建的
+--     INSERT INTO dashboard_subscription     SELECT * FROM dashboard_subscription_bak_20261116;       -- 新列在末尾，取默认值
+--     INSERT INTO dashboard_subscription_log SELECT * FROM dashboard_subscription_log_bak_20261116;
+--     DROP TABLE IF EXISTS dashboard_subscription_run;
+--     （新加的列不影响旧 JAR，可以保留；range_code = 'CUSTOM' 的订阅在旧 JAR 下会取数失败，回滚前先暂停）
 -- ----------------------------------------------------------------------------
+
+-- ⑭ 删除前清单：现有订阅（id、站点、名称、建立人、是否启用）与发送记录数
+SELECT id, site_code, name, create_by, enabled FROM dashboard_subscription WHERE del_flag = '0' ORDER BY site_code, id;
+SELECT count(*) AS log_rows FROM dashboard_subscription_log;
+
 BEGIN;
 
-ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS ai_model   VARCHAR(64);
-COMMENT ON COLUMN dashboard_subscription.ai_enabled IS '卡片带 AI 摘要（Yata Copilot）；生成失败时照常发送、不带摘要';
-COMMENT ON COLUMN dashboard_subscription.ai_model   IS 'AI 模型 id（如 claude-haiku-5-5）；为空用 copilot.default-model';
+-- 旧订阅：整表备份后删除（备份表已存在 = 已经删过，跳过）
+DO $$
+BEGIN
+    IF to_regclass('dashboard_subscription_bak_20261116') IS NULL THEN
+        CREATE TABLE dashboard_subscription_bak_20261116     AS SELECT * FROM dashboard_subscription;
+        CREATE TABLE dashboard_subscription_log_bak_20261116 AS SELECT * FROM dashboard_subscription_log;
+        DELETE FROM dashboard_subscription_log;
+        DELETE FROM dashboard_subscription;
+    END IF;
+END $$;
 
-CREATE TABLE IF NOT EXISTS copilot_usage_log (
-    id              BIGSERIAL       PRIMARY KEY,
-    feature         VARCHAR(32)     NOT NULL,
-    site_code       VARCHAR(32),
-    ref_id          VARCHAR(64),
-    model           VARCHAR(64)     NOT NULL,
-    status          VARCHAR(16)     NOT NULL,
-    input_tokens    INTEGER,
-    output_tokens   INTEGER,
-    latency_ms      INTEGER,
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS freq_type     VARCHAR(8)  NOT NULL DEFAULT 'DAY';
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS freq_dow      SMALLINT;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS freq_every    SMALLINT;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS freq_to       SMALLINT;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_gran     VARCHAR(8);
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_cmp      VARCHAR(8)  NOT NULL DEFAULT 'PREV';
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_from     DATE;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_to       DATE;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_cmp_from DATE;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS view_cmp_to   DATE;
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS source_page   VARCHAR(16) NOT NULL DEFAULT 'ov';
+ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS owner_user_id BIGINT;
+
+ALTER TABLE dashboard_subscription DROP CONSTRAINT IF EXISTS ck_dashboard_subscription_range;
+ALTER TABLE dashboard_subscription ADD CONSTRAINT ck_dashboard_subscription_range
+    CHECK (range_code IN ('TODAY', 'YESTERDAY', 'LAST_7D', 'LAST_30D', 'CUSTOM'));
+ALTER TABLE dashboard_subscription DROP CONSTRAINT IF EXISTS ck_dashboard_subscription_status;
+ALTER TABLE dashboard_subscription ADD CONSTRAINT ck_dashboard_subscription_status
+    CHECK (last_status IS NULL OR last_status IN ('SUCCESS', 'PARTIAL', 'FAILED', 'SKIPPED'));
+ALTER TABLE dashboard_subscription DROP CONSTRAINT IF EXISTS ck_dashboard_subscription_freq;
+ALTER TABLE dashboard_subscription ADD CONSTRAINT ck_dashboard_subscription_freq CHECK (
+    freq_type IN ('DAY', 'WEEK', 'HOURS')
+    AND (freq_dow IS NULL OR freq_dow BETWEEN 1 AND 7)
+    AND (freq_every IS NULL OR freq_every BETWEEN 1 AND 12)
+    AND (freq_to IS NULL OR freq_to BETWEEN 0 AND 23));
+
+COMMENT ON COLUMN dashboard_subscription.freq_type     IS '发送频率：DAY 每日 / WEEK 每週 / HOURS 每 N 小時；send_hour 为每日、每週的整点，每 N 小時的「從」';
+COMMENT ON COLUMN dashboard_subscription.freq_dow      IS '每週：週几（1=週一 … 7=週日）';
+COMMENT ON COLUMN dashboard_subscription.freq_every    IS '每 N 小時：N（1–12）';
+COMMENT ON COLUMN dashboard_subscription.freq_to       IS '每 N 小時：「到」的整点（含）';
+COMMENT ON COLUMN dashboard_subscription.view_gran     IS '视图粒度 HOUR / DAY / WEEK（发起时营运总览的选择，建立后不可改）；为空按统计范围';
+COMMENT ON COLUMN dashboard_subscription.view_cmp      IS '视图对比：PREV 上一週期 / CUSTOM 自訂（view_cmp_from – view_cmp_to）';
+COMMENT ON COLUMN dashboard_subscription.view_from     IS '固定日期（range_code = CUSTOM）的开始日';
+COMMENT ON COLUMN dashboard_subscription.view_to       IS '固定日期的结束日（含）';
+COMMENT ON COLUMN dashboard_subscription.source_page   IS '来源页面，本期只有 ov（营运总览）';
+COMMENT ON COLUMN dashboard_subscription.owner_user_id IS '负责人（sys_user.user_id）：默认建立人，可转交；只有负责人和管理员能修改';
+
+-- 推送批次
+CREATE TABLE IF NOT EXISTS dashboard_subscription_run (
+    id              BIGSERIAL     PRIMARY KEY,
+    subscription_id BIGINT        NOT NULL,
+    site_code       VARCHAR(32)   NOT NULL,
+    trigger_type    VARCHAR(16)   NOT NULL,
+    plan_at         TIMESTAMP,
+    sent_at         TIMESTAMP,
+    period          VARCHAR(64),
+    compare_period  VARCHAR(64),
+    result          VARCHAR(8)    NOT NULL DEFAULT 'RUNNING',
+    reason_code     VARCHAR(16),
     error           VARCHAR(500),
+    receiver_total  INT           NOT NULL DEFAULT 0,
+    sent            INT           NOT NULL DEFAULT 0,
+    failed          INT           NOT NULL DEFAULT 0,
+    ai_status       VARCHAR(8),
+    ai_error        VARCHAR(200),
+    snapshot_status VARCHAR(8),
+    snapshot_error  VARCHAR(500),
     operator        VARCHAR(64),
-    create_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
-    CONSTRAINT ck_copilot_usage_status CHECK (status IN ('SUCCESS', 'FAILED', 'REJECTED'))
+    started_at      TIMESTAMP     DEFAULT localtimestamp,
+    finished_at     TIMESTAMP,
+    CONSTRAINT ck_dashboard_subscription_run_trigger CHECK (trigger_type IN ('SCHEDULE', 'MANUAL')),
+    CONSTRAINT ck_dashboard_subscription_run_result CHECK (result IN ('RUNNING', 'OK', 'PART', 'FAIL', 'SKIP'))
 );
-CREATE INDEX IF NOT EXISTS idx_copilot_usage_feature_time ON copilot_usage_log (feature, create_time);
+CREATE INDEX IF NOT EXISTS idx_dashboard_subscription_run_sub  ON dashboard_subscription_run (subscription_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_dashboard_subscription_run_site ON dashboard_subscription_run (site_code, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dashboard_subscription_run_running ON dashboard_subscription_run (started_at) WHERE result = 'RUNNING';
 
-COMMENT ON TABLE  copilot_usage_log           IS 'AI 调用记录：一次调用模型一行（对账、每日次数上限）';
-COMMENT ON COLUMN copilot_usage_log.feature   IS 'BRIEF 订阅简报摘要（以后 IMPORT Excel 导入等）';
-COMMENT ON COLUMN copilot_usage_log.ref_id    IS '业务 ID：订阅 ID；预览为 preview';
-COMMENT ON COLUMN copilot_usage_log.status    IS 'SUCCESS 采用 / FAILED 调用失败 / REJECTED 返回了但未通过后端校验（如出现数据里没有的数字）';
+COMMENT ON TABLE  dashboard_subscription_run                 IS '订阅推送批次：一次定时 / 立即发送一行（测试发送不记录），逐群结果在 dashboard_subscription_log.run_id；不限保留期';
+COMMENT ON COLUMN dashboard_subscription_run.plan_at         IS '排程时刻（站点时区）；立即发送为点击时的整点';
+COMMENT ON COLUMN dashboard_subscription_run.sent_at         IS '实际发送时间（站点时区）；已跳過写排程时刻';
+COMMENT ON COLUMN dashboard_subscription_run.result          IS 'RUNNING 发送中 / OK 成功 / PART 部分失敗 / FAIL 失敗 / SKIP 已跳過；各群结果相同即该结果，否则 PART';
+COMMENT ON COLUMN dashboard_subscription_run.reason_code     IS '整次失败的原因代码：data 取数失败 / shot 截图失败（本次所有群都未发送）';
+COMMENT ON COLUMN dashboard_subscription_run.started_at      IS '开始时间（服务器时间）；超过 10 分钟仍是 RUNNING 由定时任务记为失败（發送中斷）';
 
-COMMIT;
+ALTER TABLE dashboard_subscription_log ADD COLUMN IF NOT EXISTS run_id      BIGINT;
+ALTER TABLE dashboard_subscription_log ADD COLUMN IF NOT EXISTS result      VARCHAR(8);
+ALTER TABLE dashboard_subscription_log ADD COLUMN IF NOT EXISTS reason_code VARCHAR(16);
+ALTER TABLE dashboard_subscription_log ADD COLUMN IF NOT EXISTS attempts    SMALLINT;
+CREATE INDEX IF NOT EXISTS idx_dashboard_subscription_log_run ON dashboard_subscription_log (run_id);
+CREATE INDEX IF NOT EXISTS idx_dashboard_subscription_log_receiver ON dashboard_subscription_log (receiver_id) WHERE run_id IS NOT NULL;
+COMMENT ON COLUMN dashboard_subscription_log.run_id      IS '推送批次（dashboard_subscription_run.id）；2026-11-13 之前的记录为空，不进发送历史';
+COMMENT ON COLUMN dashboard_subscription_log.result      IS 'OK 成功 / PART 部分失敗 / FAIL 失敗 / SKIP 已跳過';
+COMMENT ON COLUMN dashboard_subscription_log.reason_code IS '原因代码：gone / moved / timeout / limit / server / rejected / data / shot / img / card / cred / off';
+COMMENT ON COLUMN dashboard_subscription_log.attempts    IS '调用 Lark 的次数（超时、限流、5xx 自动重试 2 次）';
 
--- ① 自检：应返回 ai_enabled、ai_model 两行，usage_table 不为空
-SELECT column_name FROM information_schema.columns
- WHERE table_name = 'dashboard_subscription' AND column_name IN ('ai_enabled', 'ai_model') ORDER BY 1;
-SELECT to_regclass('copilot_usage_log') AS usage_table;
--- ① 对账（按需手动执行）：本月按模型汇总 token
--- SELECT model, count(*) AS calls, sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
---   FROM copilot_usage_log WHERE create_time >= date_trunc('month', current_date) GROUP BY model;
-
-
--- ----------------------------------------------------------------------------
--- ② 2026-11-04 · 站点管理 › 指標配置 · 两套默认展示指标集（新 JAR 启动前执行）
---   dashboard_page_metric_site 加 display_type：同一站点同一页面最多两套指标顺序与显示
---     DEFAULT 默认指标集（运营总览 / 指标汇总取数用这一套；已有数据全部归为 DEFAULT，行为不变）
---     REPORT  报表指标集（目前只做配置，不影响取数）
---   唯一键 uk_page_metric_site 由 (site_code, page_code, metric_code) 改为 (site_code, page_code, display_type, metric_code)
---   回滚（先删 REPORT 行，否则唯一键建不回去）：
---     DELETE FROM dashboard_page_metric_site WHERE display_type <> 'DEFAULT';
---     ALTER TABLE dashboard_page_metric_site DROP CONSTRAINT IF EXISTS ck_page_metric_site_display,
---       DROP CONSTRAINT IF EXISTS uk_page_metric_site, ADD CONSTRAINT uk_page_metric_site UNIQUE (site_code, page_code, metric_code),
---       DROP COLUMN IF EXISTS display_type;
--- ----------------------------------------------------------------------------
-BEGIN;
-
-ALTER TABLE dashboard_page_metric_site ADD COLUMN IF NOT EXISTS display_type VARCHAR(16) NOT NULL DEFAULT 'DEFAULT';
-
-ALTER TABLE dashboard_page_metric_site DROP CONSTRAINT IF EXISTS ck_page_metric_site_display;
-ALTER TABLE dashboard_page_metric_site ADD CONSTRAINT ck_page_metric_site_display CHECK (display_type IN ('DEFAULT', 'REPORT'));
-
-ALTER TABLE dashboard_page_metric_site DROP CONSTRAINT IF EXISTS uk_page_metric_site;
-ALTER TABLE dashboard_page_metric_site ADD CONSTRAINT uk_page_metric_site UNIQUE (site_code, page_code, display_type, metric_code);
-
-COMMENT ON COLUMN dashboard_page_metric_site.display_type IS '指标集：DEFAULT 默认（页面取数用）/ REPORT 报表（暂只做配置）；同一站点同一页面每套各自一份顺序与显示';
-
-COMMIT;
-
--- ② 自检：display_type 列存在；唯一键含 display_type；已有行都是 DEFAULT
-SELECT column_name, data_type, column_default FROM information_schema.columns
- WHERE table_name = 'dashboard_page_metric_site' AND column_name = 'display_type';
-SELECT pg_get_constraintdef(oid) AS uk FROM pg_constraint WHERE conname = 'uk_page_metric_site';
-SELECT display_type, count(*) FROM dashboard_page_metric_site GROUP BY display_type;
-
-
--- ----------------------------------------------------------------------------
--- ③ 2026-11-04 · 推广分析 · 预算与消耗（FY-56）菜单与权限（新 JAR 上线后执行即可，顺序不限）
---   目录「推广分析」（path promo）› 页面「预算与消耗」（component promo/budget/index，权限 promo:budget:view：查看、下载模板）
---   按钮「导入」promo:budget:import（上传校验；数据存 UDS，写入暂未接入，本系统不建表、不存文件）
---   授给超级管理员角色（role_id = 1）；其他角色在「角色管理」里勾选。
---   回滚：DELETE FROM sys_role_menu WHERE menu_id IN (SELECT menu_id FROM sys_menu WHERE perms LIKE 'promo:budget:%' OR (path = 'promo' AND parent_id = 0 AND menu_type = 'M'));
---         DELETE FROM sys_menu_i18n WHERE menu_id IN (同上);  DELETE FROM sys_menu WHERE menu_id IN (同上);（先删按钮、页面，再删目录）
--- ----------------------------------------------------------------------------
-BEGIN;
-
+-- 菜单：订阅管理（站点页面）+ 按钮
 INSERT INTO sys_menu (
     menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
     is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
     create_time, update_by, update_time, remark
 )
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '推广分析', 0, 9, 'promo', NULL, '', '',
-       1, 0, 'M', '0', '0', '', 'chart', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '推广分析（FY-46）'
-WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE path = 'promo' AND parent_id = 0 AND menu_type = 'M');
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '订阅管理', 0, 60, 'subscription', 'dashboard/subscription/index', '', '',
+       1, 0, 'C', '0', '0', 'dashboard:subscription:list', 'email', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, '订阅规则与发送历史；在营运总览点「订阅」新增'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:subscription:list');
 
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '预算与消耗', d.menu_id, 1, 'budget', 'promo/budget/index', '', '',
-       1, 0, 'C', '0', '0', 'promo:budget:view', 'money', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '按日 × 推广渠道的消耗与预算；只能通过文件导入（FY-56）'
-FROM sys_menu d
-WHERE d.path = 'promo' AND d.parent_id = 0 AND d.menu_type = 'M'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'promo:budget:view');
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '导入', p.menu_id, 1, '', '', '', '',
-       1, 0, 'F', '0', '0', 'promo:budget:import', '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '导入消耗 / 预算（.xlsx、.csv）'
-FROM sys_menu p
-WHERE p.perms = 'promo:budget:view'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'promo:budget:import');
+-- 一条 INSERT 里 MAX(menu_id) + 1 只算一次，所以按钮分开插
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '新增订阅', p.menu_id, 1, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:subscription:add', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '在营运总览点「订阅」新增'
+FROM sys_menu p WHERE p.perms = 'dashboard:subscription:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:subscription:add');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '修改订阅', p.menu_id, 2, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:subscription:edit', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '修改、启停、立即发送、测试发送（仅负责人与管理员）'
+FROM sys_menu p WHERE p.perms = 'dashboard:subscription:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:subscription:edit');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '删除订阅', p.menu_id, 3, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:subscription:remove', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '删除后不再发送，发送历史保留'
+FROM sys_menu p WHERE p.perms = 'dashboard:subscription:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:subscription:remove');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '订阅管理员', p.menu_id, 4, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:subscription:admin', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '可修改任何人的订阅、接管负责人'
+FROM sys_menu p WHERE p.perms = 'dashboard:subscription:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:subscription:admin');
 
 INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
 SELECT m.menu_id, v.locale, v.menu_name, v.remark
 FROM sys_menu m
 JOIN (VALUES
-    ('promo:budget:view',   'zh-CN', '预算与消耗', '按日 × 推广渠道的消耗与预算'),
-    ('promo:budget:view',   'zh-TW', '預算與消耗', '按日 × 推廣渠道的消耗與預算'),
-    ('promo:budget:view',   'en-US', 'Budget & Spend', 'Daily spend and budget by channel'),
-    ('promo:budget:import', 'zh-CN', '导入', '导入消耗 / 预算'),
-    ('promo:budget:import', 'zh-TW', '匯入', '匯入消耗 / 預算'),
-    ('promo:budget:import', 'en-US', 'Import', 'Import spend / budget')
+    ('dashboard:subscription:list',   'zh-CN', '订阅管理',   '订阅规则与发送历史'),
+    ('dashboard:subscription:list',   'zh-TW', '訂閱管理',   '訂閱規則與發送歷史'),
+    ('dashboard:subscription:list',   'en-US', 'Subscriptions', 'Subscription rules and send history'),
+    ('dashboard:subscription:add',    'zh-CN', '新增订阅',   '在营运总览点「订阅」新增'),
+    ('dashboard:subscription:add',    'zh-TW', '新增訂閱',   '在營運總覽點「訂閱」新增'),
+    ('dashboard:subscription:add',    'en-US', 'Add Subscription', 'Subscribe from the overview page'),
+    ('dashboard:subscription:edit',   'zh-CN', '修改订阅',   '修改、启停、立即发送、测试发送'),
+    ('dashboard:subscription:edit',   'zh-TW', '修改訂閱',   '修改、啟停、立即發送、測試發送'),
+    ('dashboard:subscription:edit',   'en-US', 'Edit Subscription', 'Edit, pause, send now, test send'),
+    ('dashboard:subscription:remove', 'zh-CN', '删除订阅',   '删除后不再发送'),
+    ('dashboard:subscription:remove', 'zh-TW', '刪除訂閱',   '刪除後不再發送'),
+    ('dashboard:subscription:remove', 'en-US', 'Delete Subscription', 'Stop sending; history is kept'),
+    ('dashboard:subscription:admin',  'zh-CN', '订阅管理员', '可修改任何人的订阅、接管负责人'),
+    ('dashboard:subscription:admin',  'zh-TW', '訂閱管理員', '可修改任何人的訂閱、接管負責人'),
+    ('dashboard:subscription:admin',  'en-US', 'Subscription Admin', 'Edit any subscription, take over ownership')
 ) AS v(perms, locale, menu_name, remark) ON v.perms = m.perms
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
 
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 1, m.menu_id FROM sys_menu m
+WHERE m.perms LIKE 'dashboard:subscription:%'
+  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+
+COMMIT;
+
+-- ⑭ 自检：订阅表新列 12 个；批次表已建；log 新列 4 个；备份表已建；订阅已清空（上线后新建的除外）；菜单 5 行
+SELECT count(*) AS new_columns FROM information_schema.columns
+ WHERE table_name = 'dashboard_subscription'
+   AND column_name IN ('freq_type', 'freq_dow', 'freq_every', 'freq_to', 'view_gran', 'view_cmp', 'view_from', 'view_to',
+                       'view_cmp_from', 'view_cmp_to', 'source_page', 'owner_user_id');
+SELECT to_regclass('dashboard_subscription_run') AS run_table;
+SELECT count(*) AS log_columns FROM information_schema.columns
+ WHERE table_name = 'dashboard_subscription_log' AND column_name IN ('run_id', 'result', 'reason_code', 'attempts');
+SELECT (SELECT count(*) FROM dashboard_subscription_bak_20261116) AS backup_subs,
+       (SELECT count(*) FROM dashboard_subscription_log_bak_20261116) AS backup_logs,
+       (SELECT count(*) FROM dashboard_subscription) AS subs_now;
+SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms LIKE 'dashboard:subscription:%' ORDER BY menu_id;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑮ 2026-11-13 · 监控 · 按规则发告警（外部判定服务用；新 JAR 启动前后执行都可以）
+--   接口：POST /monitor/rules/{ruleId}/alert，body { "message": "…" }；把消息发到规则配置的 Lark 群（开头自动加「【站点名】」）。
+--   认证：请求头 X-Api-Key（security.api-key.paths 改为 /monitor/rules/*/alert）或登录 token；站点取请求头 X-Site-Code。
+--   1. 告警规则菜单下加按钮「按规则发告警」monitor:rule:alert，授给 role 1；
+--   2. 已有 API Key 的接口范围由 /notification/lark/send 换成 /monitor/rules/*/alert（/notification/lark/send 不再认 API Key，登录后仍可用）。
+--      Key 绑定的账号还要有 monitor:rule:alert，并且在要发的站点有角色：在「角色管理」里给它所在的角色勾上（本段不改其他角色）。
+--   回滚：UPDATE sys_api_key SET allowed_paths = '/notification/lark/send' WHERE allowed_paths = '/monitor/rules/*/alert';
+--         DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms = 'monitor:rule:alert' 对应的 menu_id
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO sys_menu (
+    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
+    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
+    create_time, update_by, update_time, remark
+)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '按规则发告警', p.parent_id, 9, '', '', '', '',
+       1, 0, 'F', '0', '0', 'monitor:rule:alert', '#', 'admin',
+       CURRENT_TIMESTAMP, '', NULL, 'POST /monitor/rules/{ruleId}/alert：把消息发到规则配置的 Lark 群（外部判定服务用，支持 API Key）'
+FROM sys_menu p
+WHERE p.perms = 'monitor:rule:list'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'monitor:rule:alert');
+
 INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
 SELECT m.menu_id, v.locale, v.menu_name, v.remark
 FROM sys_menu m
-JOIN (VALUES
-    ('zh-CN', '推广分析', '推广分析'),
-    ('zh-TW', '推廣分析', '推廣分析'),
-    ('en-US', 'Promotion', 'Promotion analytics')
+         JOIN (VALUES
+                   ('zh-CN', '按规则发告警', '把消息发到规则配置的 Lark 群'),
+                   ('zh-TW', '按規則發告警', '把訊息發到規則配置的 Lark 群'),
+                   ('en-US', 'Send Rule Alert', 'Send a message to the rule''s Lark chat')
 ) AS v(locale, menu_name, remark) ON TRUE
-WHERE m.path = 'promo' AND m.parent_id = 0 AND m.menu_type = 'M'
+WHERE m.perms = 'monitor:rule:alert'
   AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
 
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT 1, m.menu_id
 FROM sys_menu m
-WHERE (m.perms IN ('promo:budget:view', 'promo:budget:import') OR (m.path = 'promo' AND m.parent_id = 0 AND m.menu_type = 'M'))
+WHERE m.perms = 'monitor:rule:alert'
   AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
   AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
 
+UPDATE sys_api_key
+SET allowed_paths = '/monitor/rules/*/alert', update_time = CURRENT_TIMESTAMP
+WHERE allowed_paths = '/notification/lark/send';
+
 COMMIT;
 
--- ③ 自检：应有 3 行（目录、页面、按钮）；重新登录后台后出现「推广分析 › 预算与消耗」
-SELECT menu_id, menu_name, parent_id, menu_type, path, component, perms FROM sys_menu
- WHERE perms LIKE 'promo:budget:%' OR (path = 'promo' AND parent_id = 0 AND menu_type = 'M') ORDER BY menu_id;
+-- ⑮ 自检：按钮 1 行；没有 Key 还停在 /notification/lark/send
+SELECT menu_id, menu_name, parent_id, perms FROM sys_menu WHERE perms = 'monitor:rule:alert';
+SELECT count(*) AS still_lark_send FROM sys_api_key WHERE allowed_paths LIKE '%/notification/lark/send%';
 
 
 -- ----------------------------------------------------------------------------
--- ④ 2026-11-04 · 系统管理 · 配置中心（新 JAR 启动前执行）
---   config_center：按「配置编码 + 站点」存业务配置，配置值为 JSON；站点为空串 = 全站通用（站点没有自己的配置时用它）。
---   第一个用到的编码：PROMO_CHANNELS（推广分析 · 预算与消耗的推广商 / 推广渠道字典，原 application.yml 的 promo.channels 不再使用）。
---   站点改编码时随其他带 site_code 的表一起级联更新（按 information_schema 自动找到本表；全站通用的空串不受影响）。
---   菜单：系统管理 › 配置中心（system/configCenter/index），按钮 新增 / 修改 / 删除；授给超级管理员角色（role_id = 1）。
---   回滚：DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu 中 perms LIKE 'system:configCenter:%' 的行（先按钮后页面）；
---         DROP TABLE IF EXISTS config_center;
+-- ⑯ 2026-11-13 · 指标管理 · 所属范围（新 JAR 启动前执行：指标管理列表会读这一列）
+--   dashboard_metric_card.page_scope：指标用在哪个页面——OVERVIEW 运营总览 / PROMO 推广分析 / RISK 风控分析；
+--   为空（NULL）= 适用于所有页面。在「系统管理 · 指标管理」里编辑。已有的 promo 前缀指标（推广分析概览，见 ⑤）填 PROMO，其余留空。
+--   回滚：ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_metric_card_page_scope;
+--         ALTER TABLE dashboard_metric_card DROP COLUMN IF EXISTS page_scope;
 -- ----------------------------------------------------------------------------
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS config_center (
-    id              BIGSERIAL       PRIMARY KEY,
-    config_code     VARCHAR(64)     NOT NULL,
-    site_code       VARCHAR(32)     NOT NULL DEFAULT '',
-    page_name       VARCHAR(64)     NOT NULL,
-    description     VARCHAR(500)    NOT NULL,
-    config_value    TEXT            NOT NULL,
-    create_by       VARCHAR(64)     DEFAULT '',
-    create_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
-    update_by       VARCHAR(64)     DEFAULT '',
-    update_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
-    CONSTRAINT uk_config_center UNIQUE (config_code, site_code),
-    CONSTRAINT ck_config_center_code CHECK (config_code ~ '^[A-Z][A-Z0-9_]{1,63}$')
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS page_scope VARCHAR(16);
+COMMENT ON COLUMN dashboard_metric_card.page_scope IS '所属范围：OVERVIEW 运营总览 / PROMO 推广分析 / RISK 风控分析；为空 = 适用于所有页面';
+
+ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_metric_card_page_scope;
+-- 取值同 ㉒（三个页面目录 RISK_RANK / RISK_GAME / MONITOR_COND 由 ㉒ 使用；写在这里是为了整份文件重复执行时不被 ⑯ 卡住）
+ALTER TABLE dashboard_metric_card ADD CONSTRAINT ck_metric_card_page_scope
+    CHECK (page_scope IS NULL OR page_scope IN ('OVERVIEW', 'PROMO', 'RISK', 'RISK_RANK', 'RISK_GAME', 'MONITOR_COND'));
+
+UPDATE dashboard_metric_card
+SET page_scope = 'PROMO', update_time = CURRENT_TIMESTAMP
+WHERE metric_code LIKE 'promo%' AND page_scope IS NULL;
+
+COMMIT;
+
+-- ⑯ 自检：各范围的指标数（空 = 所有页面）
+SELECT COALESCE(page_scope, '（所有页面）') AS page_scope, count(*) FROM dashboard_metric_card GROUP BY page_scope ORDER BY 1;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑰ 2026-11-13 · 菜单分组：站点板块 / 游戏板块（新 JAR 启动前执行：菜单查询会读这一列）
+--   sys_menu.group_code：site 站点板块（默认，现有全部菜单）/ game 游戏板块（老板视角）。
+--   /getRouters 的每个路由节点输出 group_code（与 component 平级），前端按它把菜单分到两个视角的侧栏。
+--   游戏板块的菜单建好后把 group_code 改为 game：在「系统管理 · 菜单管理」里选「遊戲」，或
+--     UPDATE sys_menu SET group_code = 'game', update_time = CURRENT_TIMESTAMP WHERE menu_id IN (…游戏板块的目录、页面与按钮…);
+--   回滚：ALTER TABLE sys_menu DROP CONSTRAINT IF EXISTS ck_sys_menu_group_code;
+--         ALTER TABLE sys_menu DROP COLUMN IF EXISTS group_code;
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE sys_menu ADD COLUMN IF NOT EXISTS group_code VARCHAR(16) NOT NULL DEFAULT 'site';
+COMMENT ON COLUMN sys_menu.group_code IS '菜单分组（视角）：site 站点板块（默认）/ game 游戏板块；/getRouters 输出 group_code';
+
+ALTER TABLE sys_menu DROP CONSTRAINT IF EXISTS ck_sys_menu_group_code;
+ALTER TABLE sys_menu ADD CONSTRAINT ck_sys_menu_group_code CHECK (group_code IN ('site', 'game'));
+
+COMMIT;
+
+-- ⑰ 自检：现有菜单都是 site
+SELECT group_code, count(*) FROM sys_menu GROUP BY group_code ORDER BY 1;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑱ 2026-11-16 · 监控 · 订单规则（新建 / 编辑，对外查询接口 /open/monitor/order-rules）
+--   新 JAR 启动前执行：规则查询会读这些列。设计文档《新一期需求分析与后端设计》5.1、5.3、第 6 节。
+--   三类规则共用 monitor_rule，用 rule_type 区分：METRIC 指标规则（已有数据）/ COND 条件规则（下一步）/ ORDER 订单规则。
+--   订单规则的时点、金额口径、门槛、渠道范围、每日上限存在 config（jsonb）；metric_code、judge_type、min_sample_key 为空。
+--   version 取自序列 monitor_rule_version_seq：每次新建、修改、启停、删除都取新值，只增不减（事务回滚也不复用），
+--   供 /open/monitor/order-rules 的 sinceVersion 增量同步（以后 Kafka 事件也用它）。
+--   指标规则原有的 CHECK（判定方式、严重线）改为只对 METRIC 生效；判定任务、运营总览、指标规则列表只读 METRIC。
+--   回滚（会删掉订单规则）：
+--     DELETE FROM monitor_rule WHERE rule_type <> 'METRIC';
+--     ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_type;
+--     ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_metric_cols;
+--     ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_order;
+--     （ck_monitor_rule_judge / ck_monitor_rule_crit 按 sql/monitor_schema_postgresql.sql 原样重建，再把三列改回 NOT NULL）
+--     DROP INDEX IF EXISTS idx_monitor_rule_version;
+--     ALTER TABLE monitor_rule DROP COLUMN IF EXISTS version, DROP COLUMN IF EXISTS config, DROP COLUMN IF EXISTS currency,
+--       DROP COLUMN IF EXISTS notify_enabled, DROP COLUMN IF EXISTS level, DROP COLUMN IF EXISTS description,
+--       DROP COLUMN IF EXISTS rule_name, DROP COLUMN IF EXISTS rule_type;
+--     DROP SEQUENCE IF EXISTS monitor_rule_version_seq;
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS rule_type      VARCHAR(16) NOT NULL DEFAULT 'METRIC';
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS rule_name      VARCHAR(60);
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS description    VARCHAR(400);
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS level          VARCHAR(8);
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS notify_enabled BOOLEAN;
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS currency       VARCHAR(8);
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS config         JSONB;
+
+CREATE SEQUENCE IF NOT EXISTS monitor_rule_version_seq;
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS version BIGINT;
+UPDATE monitor_rule SET version = nextval('monitor_rule_version_seq') WHERE version IS NULL;
+ALTER TABLE monitor_rule ALTER COLUMN version SET DEFAULT nextval('monitor_rule_version_seq');
+ALTER TABLE monitor_rule ALTER COLUMN version SET NOT NULL;
+ALTER SEQUENCE monitor_rule_version_seq OWNED BY monitor_rule.version;
+
+-- 订单 / 条件规则没有这三列
+ALTER TABLE monitor_rule ALTER COLUMN metric_code    DROP NOT NULL;
+ALTER TABLE monitor_rule ALTER COLUMN judge_type     DROP NOT NULL;
+ALTER TABLE monitor_rule ALTER COLUMN min_sample_key DROP NOT NULL;
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_type;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_type CHECK (rule_type IN ('METRIC', 'COND', 'ORDER'));
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_judge;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_judge
+    CHECK (rule_type <> 'METRIC' OR judge_type IN ('lo', 'hi', 'band', 'drop'));
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_crit;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_crit CHECK (
+    rule_type <> 'METRIC'
+        OR (judge_type IN ('lo', 'drop') AND crit_low  IS NOT NULL)
+        OR (judge_type = 'hi'            AND crit_high IS NOT NULL)
+        OR (judge_type = 'band'          AND crit_low  IS NOT NULL AND crit_high IS NOT NULL)
+    );
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_metric_cols;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_metric_cols
+    CHECK (rule_type <> 'METRIC' OR (metric_code IS NOT NULL AND judge_type IS NOT NULL AND min_sample_key IS NOT NULL));
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_order;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_order CHECK (
+    rule_type <> 'ORDER'
+        OR (rule_name IS NOT NULL AND level IN ('CRIT', 'WARN') AND notify_enabled IS NOT NULL
+        AND currency IS NOT NULL AND config IS NOT NULL)
+    );
+
+CREATE INDEX IF NOT EXISTS idx_monitor_rule_version ON monitor_rule (site_code, rule_type, version);
+
+COMMENT ON COLUMN monitor_rule.rule_type      IS '规则类型：METRIC 指标规则 / COND 条件规则 / ORDER 订单规则；编号 rule_no 三类共用';
+COMMENT ON COLUMN monitor_rule.rule_name      IS '规则名称（条件规则、订单规则），最多 30 字；指标规则为空，显示指标名';
+COMMENT ON COLUMN monitor_rule.description    IS '规则说明，最多 200 字';
+COMMENT ON COLUMN monitor_rule.level          IS '等级（条件规则、订单规则）：CRIT 严重 / WARN 注意';
+COMMENT ON COLUMN monitor_rule.notify_enabled IS '是否发送通知（条件规则、订单规则）；开启时 notify_chat_id 必填';
+COMMENT ON COLUMN monitor_rule.currency       IS '保存时的站点币种；站点币种变了时详情提示复核门槛';
+COMMENT ON COLUMN monitor_rule.config         IS '订单规则：{orderType, triggerAt, amountMode, amountThreshold, channelScope, dailyCap}';
+COMMENT ON COLUMN monitor_rule.version        IS '版本号，取自 monitor_rule_version_seq，每次新建、修改、启停、删除取新值；对外查询 sinceVersion 增量同步用';
+
+COMMIT;
+
+-- ⑱ 可选：已有的 API Key 也能拉订单规则（发告警和拉规则用同一个 Key 时执行；绑定账号还要有 monitor:rule:query 和站点角色）
+-- UPDATE sys_api_key
+--    SET allowed_paths = allowed_paths || ',/open/monitor/order-rules/**', update_time = CURRENT_TIMESTAMP
+--  WHERE allowed_paths LIKE '%/monitor/rules/*/alert%' AND allowed_paths NOT LIKE '%/open/monitor/order-rules%';
+
+-- ⑱ 自检：按类型的规则数；version 都有值；新约束 5 个
+SELECT rule_type, count(*), min(version), max(version) FROM monitor_rule GROUP BY rule_type ORDER BY 1;
+SELECT count(*) AS no_version FROM monitor_rule WHERE version IS NULL;
+SELECT conname FROM pg_constraint
+WHERE conrelid = 'monitor_rule'::regclass
+  AND conname IN ('ck_monitor_rule_type', 'ck_monitor_rule_judge', 'ck_monitor_rule_crit', 'ck_monitor_rule_metric_cols', 'ck_monitor_rule_order')
+ORDER BY 1;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑲ 2026-11-16 · 操作日志 · 记录查询操作（新 JAR 启动前后执行都可以）
+--   数据查询接口（运营总览、指标汇总、推广分析、明细查询、监控事件与规则等）带 @Log(businessType = QUERY, isSaveResponseData = false)，
+--   只记请求参数、不记返回内容。sys_oper_log.business_type 存的是 BusinessType 的序号，QUERY = 10，
+--   字典 sys_oper_type 补 dict_value = 10「查询」，操作日志页才显示得出类型、能按它筛选。
+--   字典有缓存：执行后在「系统管理 · 字典管理」点「刷新缓存」，或重启后生效。
+--   回滚：DELETE FROM sys_dict_data WHERE dict_type = 'sys_oper_type' AND dict_value = '10';
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO sys_dict_data (dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status,
+                           create_by, create_time, update_by, update_time, remark)
+SELECT 10, '查询', '10', 'sys_oper_type', '', 'info', 'N', '0',
+       'admin', CURRENT_TIMESTAMP, '', NULL, '查询操作（只记请求参数，不记返回内容）'
+WHERE NOT EXISTS (SELECT 1 FROM sys_dict_data WHERE dict_type = 'sys_oper_type' AND dict_value = '10');
+
+COMMIT;
+
+-- ⑲ 自检：sys_oper_type 有 0–10 共 11 项，10 = 查询
+SELECT dict_value, dict_label FROM sys_dict_data WHERE dict_type = 'sys_oper_type' ORDER BY dict_value::int;
+
+
+-- ----------------------------------------------------------------------------
+-- ⑳ 2026-11-16 · 监控 · 订单告警事件（新 JAR 启动前执行：订单规则调 /monitor/rules/{ruleId}/alert 时会写这张表）
+--   外部判定服务判定一笔提款订单命中订单规则后，调 POST /monitor/rules/{ruleId}/alert，body 里带
+--   orderNo（订单号）、amount（本笔金额）、cumCount（当日累计笔数，当日累计规则必填）、cumAmount（当日累计金额，选填）；
+--   多笔合并用 orders[]。Yata 一笔订单存一行，再发到规则配置的每个群，每个群的结果记在 notify_chats 里。
+--   订单审核状态、用户信息不存，「訂單告警」列表展示时实时查 UDS。
+--   (site_code, rule_id, order_no) 唯一：同一笔订单重复上报不新增、不重复发送。
+--   回滚：DROP TABLE IF EXISTS monitor_order_event;（会丢掉已记录的订单告警）
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS monitor_order_event (
+    event_id            BIGSERIAL       PRIMARY KEY,
+    site_code           VARCHAR(32)     NOT NULL,
+    rule_id             BIGINT          NOT NULL,
+    order_no            VARCHAR(64)     NOT NULL,
+    amount              NUMERIC(18,2)   NOT NULL,
+    cum_count           INTEGER,
+    cum_amount          NUMERIC(18,2),
+    trigger_time        TIMESTAMP       NOT NULL,
+    level               VARCHAR(8)      NOT NULL,
+    trigger_point       VARCHAR(16),
+    amount_mode         VARCHAR(16),
+    currency            VARCHAR(8),
+    notify_status       VARCHAR(16)     NOT NULL,
+    notify_reason       VARCHAR(16),
+    notify_chats        JSONB           NOT NULL DEFAULT '[]'::jsonb,
+    notified_at         TIMESTAMP,
+    handle_status       VARCHAR(10)     NOT NULL DEFAULT 'pending',
+    handle_note         VARCHAR(500),
+    handle_by           VARCHAR(64),
+    handle_time         TIMESTAMP,
+    report_by           VARCHAR(64),
+    create_time         TIMESTAMP       NOT NULL,
+    CONSTRAINT uk_monitor_order_event UNIQUE (site_code, rule_id, order_no),
+    CONSTRAINT ck_monitor_order_event_amount CHECK (amount > 0 AND (cum_amount IS NULL OR cum_amount >= amount)),
+    CONSTRAINT ck_monitor_order_event_cum CHECK (cum_count IS NULL OR cum_count >= 1),
+    CONSTRAINT ck_monitor_order_event_notify CHECK (notify_status IN ('PENDING', 'SENT', 'PARTIAL', 'FAILED', 'LOG_ONLY')
+        AND (notify_reason IS NULL OR notify_reason IN ('CAPPED', 'NOTIFY_OFF'))),
+    CONSTRAINT ck_monitor_order_event_handle CHECK (handle_status IN ('pending', 'done'))
 );
 
-COMMENT ON TABLE  config_center              IS '配置中心：按配置编码 + 站点存业务配置（JSON），后台「系统管理 › 配置中心」维护';
-COMMENT ON COLUMN config_center.config_code  IS '配置编码（大写字母、数字、下划线），如 PROMO_CHANNELS';
-COMMENT ON COLUMN config_center.site_code    IS '站点编码（monitor_site_setting.site_code）；空串 = 全站通用';
-COMMENT ON COLUMN config_center.page_name    IS '所属页面，如「推廣分析 · 預算與消耗」';
-COMMENT ON COLUMN config_center.description  IS '含义';
-COMMENT ON COLUMN config_center.config_value IS '配置值（JSON）；代码里登记的编码保存时另按结构校验';
+CREATE INDEX IF NOT EXISTS idx_monitor_order_event_time   ON monitor_order_event (site_code, trigger_time DESC);
+CREATE INDEX IF NOT EXISTS idx_monitor_order_event_handle ON monitor_order_event (site_code, handle_status, trigger_time DESC);
+CREATE INDEX IF NOT EXISTS idx_monitor_order_event_rule   ON monitor_order_event (site_code, rule_id, trigger_time DESC);
 
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '配置中心', 1, 13, 'configCenter', 'system/configCenter/index', '', '',
-       1, 0, 'C', '0', '0', 'system:configCenter:list', 'edit', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '按配置编码 + 站点维护业务配置（config_center）'
-WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:configCenter:list');
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) FROM sys_menu) + v.order_num, v.menu_name, p.menu_id, v.order_num, '', '', '', '',
-       1, 0, 'F', '0', '0', v.perms, '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, v.remark
-FROM sys_menu p
-CROSS JOIN (VALUES
-    (1, '新增配置', 'system:configCenter:add',    '新增配置'),
-    (2, '修改配置', 'system:configCenter:edit',   '修改配置'),
-    (3, '删除配置', 'system:configCenter:remove', '删除配置')
-) AS v(order_num, menu_name, perms, remark)
-WHERE p.perms = 'system:configCenter:list'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu m WHERE m.perms = v.perms);
-
-INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
-SELECT m.menu_id, v.locale, v.menu_name, v.remark
-FROM sys_menu m
-JOIN (VALUES
-    ('system:configCenter:list',   'zh-CN', '配置中心', '按配置编码 + 站点维护业务配置'),
-    ('system:configCenter:list',   'zh-TW', '配置中心', '按配置編碼 + 站點維護業務配置'),
-    ('system:configCenter:list',   'en-US', 'Config Center', 'Business configs by code and site'),
-    ('system:configCenter:add',    'zh-CN', '新增配置', '新增配置'),
-    ('system:configCenter:add',    'zh-TW', '新增配置', '新增配置'),
-    ('system:configCenter:add',    'en-US', 'Add Config', 'Add config'),
-    ('system:configCenter:edit',   'zh-CN', '修改配置', '修改配置'),
-    ('system:configCenter:edit',   'zh-TW', '修改配置', '修改配置'),
-    ('system:configCenter:edit',   'en-US', 'Edit Config', 'Edit config'),
-    ('system:configCenter:remove', 'zh-CN', '删除配置', '删除配置'),
-    ('system:configCenter:remove', 'zh-TW', '刪除配置', '刪除配置'),
-    ('system:configCenter:remove', 'en-US', 'Delete Config', 'Delete config')
-) AS v(perms, locale, menu_name, remark) ON v.perms = m.perms
-WHERE NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
-
-INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 1, m.menu_id
-FROM sys_menu m
-WHERE m.perms IN ('system:configCenter:list', 'system:configCenter:add', 'system:configCenter:edit', 'system:configCenter:remove')
-  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
+COMMENT ON TABLE  monitor_order_event                 IS '订单告警事件：订单规则命中的提款订单，一笔一行（外部判定服务经 /monitor/rules/{ruleId}/alert 上报）';
+COMMENT ON COLUMN monitor_order_event.order_no        IS '提款订单号；(site_code, rule_id, order_no) 唯一，重复上报不新增';
+COMMENT ON COLUMN monitor_order_event.amount          IS '本笔金额（规则币种）';
+COMMENT ON COLUMN monitor_order_event.cum_count       IS '账号当日累计笔数（含本笔）；只有当日累计规则有';
+COMMENT ON COLUMN monitor_order_event.cum_amount      IS '账号当日累计金额（含本笔）；只有当日累计规则有，选填';
+COMMENT ON COLUMN monitor_order_event.trigger_time    IS '触发时间 = 收到上报的时间，按统计时区存';
+COMMENT ON COLUMN monitor_order_event.level           IS '命中时规则的等级快照 CRIT / WARN；trigger_point、amount_mode、currency 同为快照';
+COMMENT ON COLUMN monitor_order_event.notify_status   IS 'PENDING 发送中 / SENT 全部群已发送 / PARTIAL 部分群发送失败 / FAILED 全部失败 / LOG_ONLY 只记录';
+COMMENT ON COLUMN monitor_order_event.notify_reason   IS '只记录的原因：CAPPED 判定服务按每日上限不发（send=false）/ NOTIFY_OFF 规则关闭了通知';
+COMMENT ON COLUMN monitor_order_event.notify_chats    IS '每个群的发送结果 [{chatId, name, status: SENT/FAILED, messageId, error}]；同一次上报合并发送的多笔共用消息';
+COMMENT ON COLUMN monitor_order_event.handle_status   IS '处理状态 pending 未处理 / done 已处理（「訂單告警」页签标记）';
+COMMENT ON COLUMN monitor_order_event.report_by       IS '上报的账号（API Key 绑定的账号或登录账号）';
 
 COMMIT;
 
--- ④ 自检：表已建好；菜单 4 行（1 个页面 + 3 个按钮）
-SELECT to_regclass('config_center') AS config_center_table;
-SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms LIKE 'system:configCenter:%' ORDER BY menu_id;
+-- ⑳ 自检：约束（主键、唯一、4 个检查）与 3 个索引
+SELECT conname FROM pg_constraint WHERE conrelid = 'monitor_order_event'::regclass ORDER BY 1;
+SELECT indexname FROM pg_indexes WHERE tablename = 'monitor_order_event' ORDER BY 1;
 
 
 -- ----------------------------------------------------------------------------
--- ⑤ 2026-11-05 · 推广分析（FY-46）· 概览指标登记 + 指标管理「可歸因」开关 + 页面权限（新 JAR 启动前执行）
---   1. dashboard_metric_card 加 attributable（可歸因：概览选中该卡并带 attribution 时返回变化归因，默认关；指标管理里开关）
---   2. 分组 inv 投放 / flow 流量轉化（Q6）；16 个推广分析概览指标，编码加 promo 前缀（与运营总览的 reg / ftd / net 等区分，
---      接口里仍用 spend / reg / ftd …，后端换算）；status = '1' 仅登记（UDS 未接入，不进运营总览注册表、不能建告警规则）
---   3. 页面 PROMO：dashboard_page_metric 的页面 CHECK 加 PROMO；推广分析页 is_default = 默认显示的卡（暂不支持按站点调整顺序）
---   4. 菜单：目录「推广分析」下加页面「推广分析」（promo/analysis/index，权限 dashboard:promo:view：看页面、取数、导出），授给 role 1
---   回滚：DELETE FROM dashboard_page_metric WHERE page_code = 'PROMO';
---         DELETE FROM dashboard_metric_card WHERE metric_code LIKE 'promo%' AND status = '1'; DELETE FROM dashboard_metric_group WHERE group_code IN ('inv','flow');
---         ALTER TABLE dashboard_metric_card DROP COLUMN IF EXISTS attributable;（CHECK 改回见各自原脚本）；
---         DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms = 'dashboard:promo:view' 对应的 menu_id
+-- ㉑ 2026-11-16 · 监控 · 规则可选多个通知群（新 JAR 启动前执行：保存规则、判定发送都会读写 notify_chats）
+--   原型 2026-11-13 第五版：指标规则、条件规则、订单规则的通知群都改为多选，最多 5 个；同一条告警以相同内容分别发到每个群。
+--   monitor_rule 加 notify_chats：[{"chatId":"oc_x","name":"保存时的群名"}, …]，按选择顺序；
+--   notify_chat_id / notify_chat_name 继续写第一个群，旧的查询与回滚不受影响。已有规则按 notify_chat_id 回填一个群。
+--   发送记录 monitor_notify_log 本来就是「一次发送 × 一个群」一行，不用改；异常事件「通知送達」按群汇总。
+--   回滚：ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_chats; ALTER TABLE monitor_rule DROP COLUMN IF EXISTS notify_chats;
+--         （回滚后每条规则只发第一个群）
 -- ----------------------------------------------------------------------------
 BEGIN;
 
-ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS attributable BOOLEAN NOT NULL DEFAULT FALSE;
-COMMENT ON COLUMN dashboard_metric_card.attributable IS '可歸因：推广分析概览选中该卡并请求 attribution 时返回按推广商 / 推广渠道 / 终端的变化归因';
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS notify_chats JSONB NOT NULL DEFAULT '[]'::jsonb;
 
--- 页面 CHECK 放开 PROMO（先删后加，可重复执行）
+UPDATE monitor_rule
+   SET notify_chats = jsonb_build_array(jsonb_build_object('chatId', notify_chat_id, 'name', notify_chat_name))
+ WHERE notify_chat_id IS NOT NULL AND notify_chat_id <> ''
+   AND notify_chats = '[]'::jsonb;
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_chats;
+ALTER TABLE monitor_rule ADD  CONSTRAINT ck_monitor_rule_chats
+    CHECK (jsonb_typeof(notify_chats) = 'array' AND jsonb_array_length(notify_chats) <= 5);
+
+COMMENT ON COLUMN monitor_rule.notify_chats IS '通知群（最多 5 个）[{chatId, name}]，按选择顺序；notify_chat_id / notify_chat_name 同步写第一个群';
+
+COMMIT;
+
+-- ㉑ 自检：有群的规则都已回填；第一个群与 notify_chat_id 一致
+SELECT count(*) AS not_backfilled FROM monitor_rule
+ WHERE notify_chat_id IS NOT NULL AND notify_chat_id <> '' AND notify_chats = '[]'::jsonb;
+SELECT count(*) AS first_mismatch FROM monitor_rule
+ WHERE jsonb_array_length(notify_chats) > 0 AND notify_chats->0->>'chatId' IS DISTINCT FROM notify_chat_id;
+
+-- ----------------------------------------------------------------------------
+-- ㉒ 2026-11-16 · 风控分析（概览、排行榜、我的榜单、游戏分析）（新 JAR 启动前执行：指标管理、注册表会读 ext 与新范围）
+--   1. 指标管理：dashboard_metric_card 加 ext（jsonb，页面专属属性）；所属范围加三个「页面目录」：
+--      RISK_RANK 风控排行榜的列与名单条件 / RISK_GAME 游戏分析的列 / MONITOR_COND 条件规则的字段目录（不进运营总览注册表）。
+--      列的名称、格式、UDS 字段、分组、聚合方式、计算公式、能否排行 / 做条件都在「指标管理」里改，代码不写死。
+--   2. 风控概览（scene = RISK）：页面 RISK（dashboard_page_metric / _site 的 CHECK 放开）；新指标 提存比 wdr、RTP rtp
+--      （指标管理里配公式 DIVIDE，后端按公式算，不改 yml）；15 个页面指标，CORE = 默认核心 10 个。
+--      待审核笔数 / 等待时长（wPendN / wPendT）先登记（仅登记），UDS 给出字段后接入并挂到 RISK 页。
+--   3. 排行榜 31 列（28 个可选列 + 3 个辅助列）、游戏分析 20 列，登记为已接入；UDS 字段名为占位（remark 标「待 UDS 确认」），
+--      数据集名用环境变量 RISK_UDS_*_DATASET 配置，为空时接口返回 dataPending。
+--   4. 新表 risk_my_board（我的榜单）；配置中心 RISK_RANK_THRESHOLDS / RISK_RANK_BOARDS / RISK_GAME_DICT（全站通用默认值）；
+--      个人视图配置位 risk.overview.cards / risk.rank.cards / risk.rank.cols.{榜单} / risk.game.path / risk.game.cols；
+--      菜单「风控分析」dashboard:risk:view + 按钮 dashboard:risk:export / dashboard:risk:cond:edit，授给 role 1。
+--   回滚：DROP TABLE IF EXISTS risk_my_board;
+--         DELETE FROM dashboard_view_slot_item WHERE slot_code LIKE 'risk.%'; DELETE FROM dashboard_view_slot WHERE slot_code LIKE 'risk.%';
+--         DELETE FROM dashboard_page_metric WHERE page_code = 'RISK'; DELETE FROM dashboard_page_metric_site WHERE page_code = 'RISK';
+--         DELETE FROM dashboard_metric_card WHERE page_scope IN ('RISK_RANK', 'RISK_GAME') OR metric_code IN ('wdr', 'rtp', 'wPendN', 'wPendT');
+--         DELETE FROM config_center WHERE config_code IN ('RISK_RANK_THRESHOLDS', 'RISK_RANK_BOARDS', 'RISK_GAME_DICT');
+--         DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms LIKE 'dashboard:risk:%'（及目录 path = 'risk'）
+--         （ext 列与 CHECK 可以保留，不影响旧 JAR）
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+-- 1. 指标管理：页面专属属性 + 所属范围
+ALTER TABLE dashboard_metric_card ADD COLUMN IF NOT EXISTS ext JSONB;
+COMMENT ON COLUMN dashboard_metric_card.ext IS '页面专属属性（RISK_RANK / RISK_GAME / MONITOR_COND）：接口编码、分组、聚合方式、计算公式、能否排行 / 做条件、支持的维度等；指标管理里编辑';
+ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_metric_card_page_scope;
+ALTER TABLE dashboard_metric_card ADD CONSTRAINT ck_metric_card_page_scope
+    CHECK (page_scope IS NULL OR page_scope IN ('OVERVIEW', 'PROMO', 'RISK', 'RISK_RANK', 'RISK_GAME', 'MONITOR_COND'));
+ALTER TABLE dashboard_metric_card DROP CONSTRAINT IF EXISTS ck_metric_card_ext;
+ALTER TABLE dashboard_metric_card ADD CONSTRAINT ck_metric_card_ext
+    CHECK (ext IS NULL OR (jsonb_typeof(ext) = 'object' AND coalesce(page_scope, '') IN ('RISK_RANK', 'RISK_GAME', 'MONITOR_COND')));
+COMMENT ON COLUMN dashboard_metric_card.page_scope IS '所属范围：OVERVIEW 运营总览 / PROMO 推广分析 / RISK 风控分析；页面目录 RISK_RANK 风控排行榜 / RISK_GAME 游戏分析 / MONITOR_COND 条件规则；为空 = 适用于所有页面';
+
+-- 2. 页面 RISK
 ALTER TABLE dashboard_page_metric DROP CONSTRAINT IF EXISTS ck_page_code;
-ALTER TABLE dashboard_page_metric ADD CONSTRAINT ck_page_code CHECK (page_code IN ('OVERVIEW','SUMMARY','PROMO'));
+ALTER TABLE dashboard_page_metric ADD CONSTRAINT ck_page_code CHECK (page_code IN ('OVERVIEW','SUMMARY','PROMO','RISK'));
 ALTER TABLE dashboard_page_metric DROP CONSTRAINT IF EXISTS ck_page_attrs;
 ALTER TABLE dashboard_page_metric ADD CONSTRAINT ck_page_attrs CHECK (
     (page_code = 'OVERVIEW' AND is_default = TRUE)
     OR (page_code = 'SUMMARY' AND emphasis = 'NORMAL')
-    OR page_code = 'PROMO'
+    OR page_code IN ('PROMO', 'RISK')
 );
-COMMENT ON COLUMN dashboard_page_metric.page_code IS 'OVERVIEW 运营总览指标墙 / SUMMARY 指标汇总表 / PROMO 推广分析概览';
+COMMENT ON COLUMN dashboard_page_metric.page_code IS 'OVERVIEW 运营总览指标墙 / SUMMARY 指标汇总表 / PROMO 推广分析概览 / RISK 风控分析概览（emphasis = CORE 为默认核心指标）';
+DO $$
+BEGIN
+    IF to_regclass('dashboard_page_metric_site') IS NOT NULL THEN
+        ALTER TABLE dashboard_page_metric_site DROP CONSTRAINT IF EXISTS ck_page_metric_site_page;
+        ALTER TABLE dashboard_page_metric_site ADD CONSTRAINT ck_page_metric_site_page CHECK (page_code IN ('OVERVIEW', 'SUMMARY', 'RISK'));
+    END IF;
+END $$;
 
 INSERT INTO dashboard_metric_group (group_code, group_name, group_name_en, sort_no, remark) VALUES
-('inv', '投放',     'Spend',              110, '推广分析概览'),
-('flow', '流量轉化', 'Traffic & conversion', 120, '推广分析概览')
+('risk',     '風控排行榜', 'Risk ranking',  210, '风控分析 · 排行榜的列与名单条件（page_scope = RISK_RANK）'),
+('riskGame', '遊戲分析',   'Game analysis', 220, '风控分析 · 游戏分析的列（page_scope = RISK_GAME）'),
+('cond',     '條件規則',   'Rule fields',   230, '监控 · 条件规则的字段目录（page_scope = MONITOR_COND）')
 ON CONFLICT (group_code) DO NOTHING;
 
+-- 风控概览的新指标：提存比、RTP 用公式（后端按 calc_type 计算，不改 yml）；待审核两项先登记
 INSERT INTO dashboard_metric_card (
     metric_code, metric_name, metric_name_en, group_code, update_frequency, single_day_only, chart_type,
-    value_format, value_decimals, direction, show_as_card, sort_no, calc_type, agg_type,
-    monitorable, allow_negative, attributable, status, create_by, create_time, remark
-) VALUES
-('promoSpend',   '消耗',       'Spend',               'inv', 'day',  FALSE, 'LINE', 'MONEY', NULL, 'flat', TRUE, 1010, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 spend：运营导入的消耗合计（全部数据），按日'),
-('promoBudget',  '預算',       'Budget',              'inv', 'day',  FALSE, 'LINE', 'MONEY', NULL, 'flat', TRUE, 1020, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 budget：运营导入的预算合计，按日'),
-('promoCpa',     'CPA',        'CPA',                 'inv', 'day',  FALSE, 'LINE', 'MONEY', 2,    'down', TRUE, 1030, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 cpa：有效格子的消耗 ÷ 有效格子的注册人数'),
-('promoFtdCost', '首存成本',   'FTD cost',            'inv', 'day',  FALSE, 'LINE', 'MONEY', 2,    'down', TRUE, 1040, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 ftdCost：有效格子的消耗 ÷ 有效格子的首存人数'),
-('promoNet',     '淨充值',     'Net deposit',         'inv', 'hour', FALSE, 'LINE', 'MONEY', NULL, 'up',   TRUE, 1050, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 net：＝存款總額 deposit_amount（2026-11-09 已确认；与运营总览的存提差 net 不同）'),
-('promoRoi',     'D0 ROI',     'D0 ROI',              'inv', 'day',  FALSE, 'LINE', 'PCT',   NULL, 'up',   TRUE, 1060, 'NONE', 'FORMULA', FALSE, TRUE,  FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 roi：有效格子的淨充值 ÷ 有效格子的消耗 − 1'),
-('promoLpUV',    'UV-落地頁',  'Landing page UV',     'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1110, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 lpUV：落地页去重访问人数'),
-('promoHUV',     'UV-主頁',    'Home page UV',        'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1120, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 hUV：主页去重访问人数（含 Web 与 APP 内打开）'),
-('promoDl',      '下載點擊',   'Download clicks',     'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1130, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 dl：点击下载 APK 的次数'),
-('promoAct',     '激活',       'Activations',         'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1140, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 act：Android 安装后首次启动的人数'),
-('promoReg',     '註冊人數',   'Registrations',       'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1150, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 reg：按注册时的推广渠道与终端归属'),
-('promoRegR',    '註冊轉化率', 'Registration rate',   'flow', 'hour', FALSE, 'LINE', 'PCT',   NULL, 'up',   TRUE, 1160, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 regR：注册人数 ÷ 入口 UV（按渠道入口类型取 UV-落地頁或 UV-主頁）'),
-('promoFtd',     '首存人數',   'FTD users',           'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1170, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 ftd'),
-('promoFtdR',    '首存轉化率', 'FTD rate',            'flow', 'hour', FALSE, 'LINE', 'PCT',   NULL, 'up',   TRUE, 1180, 'NONE', 'FORMULA', FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 ftdR：首存人数 ÷ 注册人数'),
-('promoFtdAmt',  '首存金額',   'FTD amount',          'flow', 'hour', FALSE, 'LINE', 'MONEY', NULL, 'up',   TRUE, 1190, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 ftdAmt'),
-('promoRd',      '復存人數',   'Repeat depositors',   'flow', 'hour', FALSE, 'LINE', 'INT',   NULL, 'up',   TRUE, 1200, 'NONE', 'SUM',     FALSE, FALSE, FALSE, '1', 'admin', CURRENT_TIMESTAMP, '推广分析 rd：首存后再次存款；多天按日累加')
+    value_format, value_decimals, direction, show_as_card, sort_no, calc_type, left_code, right_code, agg_type,
+    monitorable, allow_negative, attributable, page_scope, status, create_by, create_time, remark
+)
+SELECT v.* FROM (VALUES
+('wdr',    '提存比',             'Withdraw / deposit', 'eg2', 'hour', FALSE, 'LINE', 'PCT', NULL::smallint, 'down', TRUE, 2210, 'DIVIDE', 'wd',  'dep', 'FORMULA',
+ FALSE, FALSE, FALSE, 'RISK', '0', 'admin', CURRENT_TIMESTAMP, '提款 ÷ 存款；比率，变化归因只写说明，去处：排行榜 · 提款榜'),
+('rtp',    'RTP',                'RTP',                'eg4', 'hour', FALSE, 'LINE', 'PCT', NULL::smallint, 'down', TRUE, 2410, 'DIVIDE', 'pay', 'bet', 'FORMULA',
+ FALSE, FALSE, FALSE, 'RISK', '0', 'admin', CURRENT_TIMESTAMP, '派彩 ÷ 有效投注；比率，变化归因只写说明，去处：游戏分析'),
+('wPendN', '待審核筆數',         'Pending withdrawals', 'eg3', 'hour', FALSE, 'LINE', 'INT', NULL::smallint, 'down', TRUE, 2310, 'NONE', NULL, NULL, 'SUM',
+ FALSE, FALSE, FALSE, 'RISK', '1', 'admin', CURRENT_TIMESTAMP, '快照：时间范围结束时仍在审核中、当天提交的提款；待 UDS 提供字段后接入'),
+('wPendT', '待審核平均等待時長', 'Pending wait time',   'eg3', 'hour', FALSE, 'LINE', 'MIN', NULL::smallint, 'down', TRUE, 2320, 'NONE', NULL, NULL, 'SUM',
+ FALSE, FALSE, FALSE, 'RISK', '1', 'admin', CURRENT_TIMESTAMP, '快照：同上的平均等待时长；待 UDS 提供字段后接入')
+) AS v(metric_code, metric_name, metric_name_en, group_code, update_frequency, single_day_only, chart_type,
+       value_format, value_decimals, direction, show_as_card, sort_no, calc_type, left_code, right_code, agg_type,
+       monitorable, allow_negative, attributable, page_scope, status, create_by, create_time, remark)
+WHERE EXISTS (SELECT 1 FROM dashboard_metric_group g WHERE g.group_code = v.group_code)
 ON CONFLICT (metric_code) DO NOTHING;
 
--- 推广分析概览：16 个可选，is_default = 打开页面默认显示的 10 个（Q7 默认做法：消耗、预算、CPA、首存成本、淨充值、D0 ROI、注册人数、注册转化率、首存人数、首存转化率；不分大小卡）
-INSERT INTO dashboard_page_metric (page_code, metric_code, sort_no, is_default, emphasis, create_by, remark) VALUES
-('PROMO', 'promoSpend',   10,  TRUE,  'NORMAL', 'admin', '消耗'),
-('PROMO', 'promoBudget',  20,  TRUE,  'NORMAL', 'admin', '預算'),
-('PROMO', 'promoCpa',     30,  TRUE,  'NORMAL', 'admin', 'CPA'),
-('PROMO', 'promoFtdCost', 40,  TRUE,  'NORMAL', 'admin', '首存成本'),
-('PROMO', 'promoNet',     50,  TRUE,  'NORMAL', 'admin', '淨充值'),
-('PROMO', 'promoRoi',     60,  TRUE,  'NORMAL', 'admin', 'D0 ROI'),
-('PROMO', 'promoLpUV',    70,  FALSE, 'NORMAL', 'admin', 'UV-落地頁'),
-('PROMO', 'promoHUV',     80,  FALSE, 'NORMAL', 'admin', 'UV-主頁'),
-('PROMO', 'promoDl',      90,  FALSE, 'NORMAL', 'admin', '下載點擊'),
-('PROMO', 'promoAct',     100, FALSE, 'NORMAL', 'admin', '激活'),
-('PROMO', 'promoReg',     110, TRUE,  'NORMAL', 'admin', '註冊人數'),
-('PROMO', 'promoRegR',    120, TRUE,  'NORMAL', 'admin', '註冊轉化率'),
-('PROMO', 'promoFtd',     130, TRUE,  'NORMAL', 'admin', '首存人數'),
-('PROMO', 'promoFtdR',    140, TRUE,  'NORMAL', 'admin', '首存轉化率'),
-('PROMO', 'promoFtdAmt',  150, FALSE, 'NORMAL', 'admin', '首存金額'),
-('PROMO', 'promoRd',      160, FALSE, 'NORMAL', 'admin', '復存人數')
+-- 存款人数 depU、提款笔数 wOk（出款成功笔数）、派彩 pay 原来只作派生指标的操作数（隐藏原子量），
+-- 风控概览要单独显示，改为可展示（不影响运营总览：运营总览只显示挂在 OVERVIEW 页上的指标）。
+-- 不改的话注册表启动校验会报「页面 RISK 挂了隐藏原子量」。回滚：UPDATE ... SET show_as_card = FALSE WHERE metric_code IN ('depU', 'wOk', 'pay');
+UPDATE dashboard_metric_card SET show_as_card = TRUE, update_time = CURRENT_TIMESTAMP
+ WHERE metric_code IN ('depU', 'wOk', 'pay') AND show_as_card = FALSE;
+
+-- 风控概览页：15 个指标（复用运营总览已有的指标），CORE = 默认核心 10 个
+INSERT INTO dashboard_page_metric (page_code, metric_code, sort_no, is_default, emphasis, create_by, remark)
+SELECT 'RISK', v.code, v.sort_no, TRUE, v.emphasis, 'admin', v.remark
+FROM (VALUES
+    ('reg', 10, 'NORMAL', '註冊人數'), ('dep', 20, 'CORE', '存款總額'), ('depU', 30, 'NORMAL', '存款人數（只支持單日）'),
+    ('ftd', 40, 'NORMAL', '首存人數'), ('wd', 50, 'CORE', '提款總額'), ('wOk', 60, 'NORMAL', '提款筆數（出款成功）'),
+    ('net', 70, 'CORE', '存提差'), ('wdr', 80, 'CORE', '提存比'), ('dOkR', 90, 'CORE', '存款成功率'),
+    ('bet', 100, 'CORE', '有效投注'), ('pay', 110, 'NORMAL', '派彩'), ('ggr', 120, 'CORE', 'GGR'),
+    ('rtp', 130, 'CORE', 'RTP'), ('killR', 140, 'CORE', '殺率'), ('ngr', 150, 'CORE', 'NGR')
+) AS v(code, sort_no, emphasis, remark)
+WHERE EXISTS (SELECT 1 FROM dashboard_metric_card c WHERE c.metric_code = v.code AND c.status = '0')
 ON CONFLICT (page_code, metric_code) DO NOTHING;
 
--- 菜单：推广分析页（目录由 ③ 建好）
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '推广分析', d.menu_id, 0, 'analysis', 'promo/analysis/index', '', '',
-       1, 0, 'C', '0', '0', 'dashboard:promo:view', 'chart', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '推广分析：概览、获客与留存、渠道表现、裂变层级（FY-46 / FY-59）'
-FROM sys_menu d
-WHERE d.path = 'promo' AND d.parent_id = 0 AND d.menu_type = 'M'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:promo:view');
+-- 3. 排行榜的列与名单条件字段（接口编码见 ext.apiCode；指标编码加 rk 前缀，与运营总览的指标区分）
+INSERT INTO dashboard_metric_card (
+    metric_code, metric_name, group_code, update_frequency, single_day_only, chart_type, value_format, direction, show_as_card, sort_no,
+    calc_type, agg_type, monitorable, allow_negative, attributable, page_scope, uds_day_field, ext, status, create_by, create_time, remark
+) VALUES
+('rkDep', '存款', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3000, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'dep_amount', '{"apiCode": "dep", "group": "FUND", "source": "USER_DAY", "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkDepN', '存款筆數', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3010, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'dep_count', '{"apiCode": "depN", "group": "FUND", "source": "USER_DAY"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkWd', '提款', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3020, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'wd_amount', '{"apiCode": "wd", "group": "FUND", "source": "USER_DAY", "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkWdN', '提款筆數', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3030, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'wd_count', '{"apiCode": "wdN", "group": "FUND", "source": "USER_DAY"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkNet', '存提差', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'down', TRUE, 3040, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "net", "group": "FUND", "source": "CALC", "calc": {"op": "SUBTRACT", "left": "dep", "right": "wd"}, "riskDir": "asc", "condition": "RANGE"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkTurnX', '打碼倍數', 'risk', 'day', FALSE, 'LINE', 'MULTIPLE', 'down', TRUE, 3050, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "turnX", "group": "FUND", "source": "CALC", "calc": {"op": "DIVIDE", "left": "bet", "right": "dep"}, "riskDir": "asc", "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkBonus', '優惠', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3060, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'bonus_amount', '{"apiCode": "bonus", "group": "FUND", "source": "USER_DAY"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkBonusR', '優惠佔存款比', 'risk', 'day', FALSE, 'LINE', 'PCT', 'up', TRUE, 3070, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "bonusR", "group": "FUND", "source": "CALC", "calc": {"op": "DIVIDE", "left": "bonus", "right": "dep"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkBet', '有效投注', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3080, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'bet_amount', '{"apiCode": "bet", "group": "GAME", "source": "USER_GAME", "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkBetN', '投注筆數', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3090, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'bet_count', '{"apiCode": "betN", "group": "GAME", "source": "USER_GAME"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkWinLoss', '玩家輸贏', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3100, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "winLoss", "group": "GAME", "source": "CALC", "calc": {"op": "SUBTRACT", "left": "pay", "right": "bet"}, "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkRtp', 'RTP', 'risk', 'day', FALSE, 'LINE', 'PCT', 'up', TRUE, 3110, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "rtp", "group": "GAME", "source": "CALC", "calc": {"op": "DIVIDE", "left": "pay", "right": "bet"}, "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkMaxPayout', '單筆最大派彩', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3120, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'max_payout', '{"apiCode": "maxPayout", "group": "GAME", "source": "USER_GAME", "agg": "MAX", "tieBreak": {"ratioOf": "maxPayoutBet", "timeOf": "winTime"}, "condition": "RANGE", "common": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkPay', '派彩', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3130, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'payout_amount', '{"apiCode": "pay", "group": "GAME", "source": "USER_GAME"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkProfitGame', '盈利遊戲', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3140, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'game', '{"apiCode": "profitGame", "group": "GAME", "source": "USER_GAME", "kind": "TEXT", "agg": "ARGMAX", "argOf": "gWinLoss", "positive": true, "tieBy": "bet", "condition": "SELECT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkWinGame', '中獎遊戲', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3150, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'game', '{"apiCode": "winGame", "group": "GAME", "source": "USER_GAME", "kind": "TEXT", "agg": "FOLLOW", "follow": "maxPayout", "condition": "SELECT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkWinTime', '中獎時間', 'risk', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 3160, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'max_payout_settle_time', '{"apiCode": "winTime", "group": "GAME", "source": "USER_GAME", "kind": "TIME", "agg": "FOLLOW", "follow": "maxPayout"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkMaxPayoutBet', '該筆投注額', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3170, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'max_payout_bet', '{"apiCode": "maxPayoutBet", "group": "GAME", "source": "USER_GAME", "agg": "FOLLOW", "follow": "maxPayout", "rankable": false}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkPayoutX', '派彩倍數', 'risk', 'day', FALSE, 'LINE', 'MULTIPLE', 'up', TRUE, 3180, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "payoutX", "group": "GAME", "source": "CALC", "calc": {"op": "DIVIDE", "left": "maxPayout", "right": "maxPayoutBet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkChannel', '推廣渠道', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3190, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'channelId', '{"apiCode": "channel", "group": "ACCOUNT", "source": "DIM", "kind": "TEXT", "rankable": false}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkParent', '上級帳號', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3200, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'parent', '{"apiCode": "parent", "group": "ACCOUNT", "source": "DIM", "kind": "TEXT", "rankable": false, "condition": "SELECT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkRegTime', '註冊時間', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3210, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'regTime', '{"apiCode": "regTime", "group": "ACCOUNT", "source": "DIM", "kind": "TIME", "rankable": true, "riskDir": "desc"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkFirstDepTime', '首存時間', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3220, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'first_dep_time', '{"apiCode": "firstDepTime", "group": "HISTORY", "source": "SNAPSHOT", "kind": "TIME", "rankable": true, "riskDir": "desc"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkFirstDepAmt', '首存金額', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3230, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'first_dep_amount', '{"apiCode": "firstDepAmt", "group": "HISTORY", "source": "SNAPSHOT", "agg": "LAST"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkHistDep', '累計存款', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3240, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'hist_dep_amount', '{"apiCode": "histDep", "group": "HISTORY", "source": "SNAPSHOT", "agg": "LAST"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkHistWd', '累計提款', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3250, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'hist_wd_amount', '{"apiCode": "histWd", "group": "HISTORY", "source": "SNAPSHOT", "agg": "LAST"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkHistNet', '累計存提差', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'down', TRUE, 3260, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "histNet", "group": "HISTORY", "source": "CALC", "calc": {"op": "SUBTRACT", "left": "histDep", "right": "histWd"}, "riskDir": "asc"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('rkHistWinLoss', '累計玩家輸贏', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3270, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'hist_win_loss', '{"apiCode": "histWinLoss", "group": "HISTORY", "source": "SNAPSHOT", "agg": "LAST"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkGWinLoss', '遊戲輸贏（按遊戲匯總用）', 'risk', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 3280, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'win_loss', '{"apiCode": "gWinLoss", "group": "GAME", "source": "USER_GAME", "column": false, "rankable": false}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('rkTopGame', '投注最多的遊戲', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3290, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', 'game', '{"apiCode": "topGame", "group": "GAME", "source": "USER_GAME", "kind": "TEXT", "agg": "ARGMAX", "argOf": "bet", "column": false, "rankable": false}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '维度字段（risk.fields）'),
+('rkRegDays', '註冊天數', 'risk', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 3300, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_RANK', NULL, '{"apiCode": "regDays", "group": "ACCOUNT", "source": "CALC", "calc": {"op": "DAYS_SINCE", "left": "regTime"}, "riskDir": "asc", "condition": "RANGE", "common": true, "column": false}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）')
+ON CONFLICT (metric_code) DO NOTHING;
 
-INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
-SELECT m.menu_id, v.locale, v.menu_name, v.remark
-FROM sys_menu m
-JOIN (VALUES
-    ('zh-CN', '推广分析', '概览、获客与留存、渠道表现、裂变层级'),
-    ('zh-TW', '推廣分析', '概覽、獲客與留存、渠道表現、裂變層級'),
-    ('en-US', 'Promotion Analytics', 'Overview, acquisition & retention, channels, referral tree')
-) AS v(locale, menu_name, remark) ON TRUE
-WHERE m.perms = 'dashboard:promo:view'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
+-- 游戏分析的 20 列（ext.standard = 默认「标准」8 列）
+INSERT INTO dashboard_metric_card (
+    metric_code, metric_name, group_code, update_frequency, single_day_only, chart_type, value_format, direction, show_as_card, sort_no,
+    calc_type, agg_type, monitorable, allow_negative, attributable, page_scope, uds_day_field, ext, status, create_by, create_time, remark
+) VALUES
+('gmBet', '有效投注', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4000, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'bet_amount', '{"apiCode": "bet", "group": "BET", "standard": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmBetN', '注單數', 'riskGame', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 4010, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'bet_count', '{"apiCode": "betN", "group": "BET"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmBetU', '投注人數', 'riskGame', 'day', FALSE, 'LINE', 'INT', 'up', TRUE, 4020, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'bet_users', '{"apiCode": "betU", "group": "BET", "standard": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmPay', '派彩金額', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4030, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'payout_amount', '{"apiCode": "pay", "group": "WINLOSS", "standard": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmGgr', 'GGR', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4040, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'ggr', '{"apiCode": "ggr", "group": "WINLOSS", "standard": true}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmWinLoss', '會員輸贏', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4050, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "winLoss", "group": "WINLOSS", "calc": {"op": "SUBTRACT", "left": "pay", "right": "bet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmRtp', 'RTP', 'riskGame', 'day', FALSE, 'LINE', 'PCT', 'down', TRUE, 4060, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "rtp", "group": "WINLOSS", "standard": true, "calc": {"op": "DIVIDE", "left": "pay", "right": "bet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmKill', '殺率', 'riskGame', 'day', FALSE, 'LINE', 'PCT', 'up', TRUE, 4070, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "kill", "group": "WINLOSS", "standard": true, "calc": {"op": "DIVIDE", "left": "ggr", "right": "bet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmProfitU', '盈利總人數', 'riskGame', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 4080, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'profit_users', '{"apiCode": "profitU", "group": "USER"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmLossU', '虧損總人數', 'riskGame', 'day', FALSE, 'LINE', 'INT', 'flat', TRUE, 4090, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'loss_users', '{"apiCode": "lossU", "group": "USER"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmProfitUR', '盈利人數佔比', 'riskGame', 'day', FALSE, 'LINE', 'PCT', 'down', TRUE, 4100, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "profitUR", "group": "USER", "standard": true, "calc": {"op": "DIVIDE", "left": "profitU", "right": "betU"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmAvgWinLoss', '人均輸贏', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'down', TRUE, 4110, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "avgWinLoss", "group": "USER", "standard": true, "calc": {"op": "DIVIDE", "left": "winLoss", "right": "betU"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmCashBet', '本金投注', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4120, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'cash_bet_amount', '{"apiCode": "cashBet", "group": "SPLIT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmCashPay', '本金派彩', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4130, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'cash_payout_amount', '{"apiCode": "cashPay", "group": "SPLIT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmCashWinLoss', '本金輸贏', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4140, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "cashWinLoss", "group": "SPLIT", "calc": {"op": "SUBTRACT", "left": "cashPay", "right": "cashBet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmCashRtp', '本金 RTP', 'riskGame', 'day', FALSE, 'LINE', 'PCT', 'down', TRUE, 4150, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "cashRtp", "group": "SPLIT", "calc": {"op": "DIVIDE", "left": "cashPay", "right": "cashBet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmBonusBet', '優惠投注', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4160, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'bonus_bet_amount', '{"apiCode": "bonusBet", "group": "SPLIT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmBonusPay', '優惠派彩', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4170, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', 'bonus_payout_amount', '{"apiCode": "bonusPay", "group": "SPLIT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('gmBonusWinLoss', '優惠輸贏', 'riskGame', 'day', FALSE, 'LINE', 'MONEY', 'up', TRUE, 4180, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "bonusWinLoss", "group": "SPLIT", "calc": {"op": "SUBTRACT", "left": "bonusPay", "right": "bonusBet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）'),
+('gmBonusRtp', '優惠 RTP', 'riskGame', 'day', FALSE, 'LINE', 'PCT', 'down', TRUE, 4190, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'RISK_GAME', NULL, '{"apiCode": "bonusRtp", "group": "SPLIT", "calc": {"op": "DIVIDE", "left": "bonusPay", "right": "bonusBet"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '由其他列计算（ext.calc）')
+ON CONFLICT (metric_code) DO NOTHING;
 
-INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 1, m.menu_id
-FROM sys_menu m
-WHERE m.perms = 'dashboard:promo:view'
-  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
-
-COMMIT;
-
--- ⑤ 自检：可歸因列已加；推广分析指标 16 个（status = 1）、页面关系 16 条（默认 10 个）；菜单 1 行
-SELECT column_name, data_type, column_default FROM information_schema.columns
- WHERE table_name = 'dashboard_metric_card' AND column_name = 'attributable';
-SELECT count(*) AS promo_cards FROM dashboard_metric_card WHERE metric_code LIKE 'promo%';
-SELECT count(*) AS promo_page_rows, count(*) FILTER (WHERE is_default) AS promo_defaults FROM dashboard_page_metric WHERE page_code = 'PROMO';
-SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms = 'dashboard:promo:view';
-
-
--- ----------------------------------------------------------------------------
--- ⑥ 2026-11-05 · 管理后台 · AI 助手（右下角聊天）权限（新 JAR 上线后执行即可）
---   系统管理（menu_id = 1）下加按钮「AI 助手」copilot:chat:use；有这个权限的人在每个页面右下角看到 AI 助手。授给 role 1。
---   依赖 ① 的 copilot_usage_log（记次数，不记内容）。
---   回滚：DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms = 'copilot:chat:use' 对应的 menu_id
--- ----------------------------------------------------------------------------
-BEGIN;
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'AI 助手', 1, 99, '', '', '', '',
-       1, 0, 'F', '0', '0', 'copilot:chat:use', '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '每个页面右下角的 AI 助手（带本站今日、昨日指标与告警）'
-WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'copilot:chat:use');
-
-INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
-SELECT m.menu_id, v.locale, v.menu_name, v.remark
-FROM sys_menu m
-JOIN (VALUES
-    ('zh-CN', 'AI 助手', '每个页面右下角的 AI 助手'),
-    ('zh-TW', 'AI 助手', '每個頁面右下角的 AI 助手'),
-    ('en-US', 'AI Assistant', 'AI assistant on every page')
-) AS v(locale, menu_name, remark) ON TRUE
-WHERE m.perms = 'copilot:chat:use'
-  AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
-
-INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 1, m.menu_id
-FROM sys_menu m
-WHERE m.perms = 'copilot:chat:use'
-  AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
-
-COMMIT;
-
--- ⑥ 自检：1 行
-SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms = 'copilot:chat:use';
-
-
--- ----------------------------------------------------------------------------
--- ⑦ 2026-11-09 · 个人自定义指标集（个人视图）一期（新 JAR 启动前执行；没执行时视图接口 404、取数接口按原来的默认，不影响启动）
---   1. 定义表（研发 / 管理员维护，改了 1 分钟内热加载）：
---        dashboard_view_slot       配置位：页面上一处可自定义的列表（上下限、同组相邻、顺序规则、是否叠加站点排列）
---        dashboard_view_slot_item  可选项与全站默认（default_sort 不为空 = 默认选中，按它排序）
---        dashboard_view_preset     预置组合（如表格列的「標準」「投放日報」；is_default = 就是全站默认）
---   2. dashboard_user_view：个人视图，用户 + 站点 + 配置位唯一；等于默认且没有小状态时不存（管理员改默认，没自定义的人自动跟上）
---   3. 初始数据：推广分析 promo.overview.cards（16 选 1–10，默认 10 张，同推广分析页 is_default）、
---      promo.channel.columns（38 列 5 组，顺序完全由用户定、不要求同组相邻；標準 / 投放日報）、promo.channel.rows（5 个维度选 1–4 层，推廣渠道在推廣商之下）
---   回滚：DROP TABLE IF EXISTS dashboard_user_view, dashboard_view_preset, dashboard_view_slot_item, dashboard_view_slot;
--- ----------------------------------------------------------------------------
-BEGIN;
-
-CREATE TABLE IF NOT EXISTS dashboard_view_slot (
-    slot_code         VARCHAR(64)   PRIMARY KEY,
-    page_code         VARCHAR(32)   NOT NULL,
-    name              VARCHAR(50)   NOT NULL,
-    kind              VARCHAR(16)   NOT NULL,
-    min_items         SMALLINT      NOT NULL DEFAULT 1,
-    max_items         SMALLINT,
-    group_adjacent    BOOLEAN       NOT NULL DEFAULT FALSE,
-    rules             TEXT,
-    site_layout_page  VARCHAR(32),
-    sort_no           INTEGER       NOT NULL DEFAULT 0,
-    status            CHAR(1)       NOT NULL DEFAULT '0',
-    create_by         VARCHAR(64)   DEFAULT '',
-    create_time       TIMESTAMP     NOT NULL DEFAULT localtimestamp,
-    update_time       TIMESTAMP     NOT NULL DEFAULT localtimestamp,
-    CONSTRAINT ck_view_slot_kind   CHECK (kind IN ('METRICS', 'COLUMNS', 'DIMENSIONS')),
-    CONSTRAINT ck_view_slot_status CHECK (status IN ('0', '1')),
-    CONSTRAINT ck_view_slot_range  CHECK (min_items >= 0 AND (max_items IS NULL OR max_items >= min_items))
-);
-COMMENT ON TABLE  dashboard_view_slot                  IS '个人视图 · 配置位：页面上一处可自定义的列表';
-COMMENT ON COLUMN dashboard_view_slot.slot_code        IS '如 promo.overview.cards；前端用它读写';
-COMMENT ON COLUMN dashboard_view_slot.page_code        IS '所属页面（PROMO / OVERVIEW / SUMMARY）；读写需要该页面的查看权限';
-COMMENT ON COLUMN dashboard_view_slot.kind             IS 'METRICS 指标卡 / COLUMNS 表格列 / DIMENSIONS 行维度路径';
-COMMENT ON COLUMN dashboard_view_slot.max_items        IS '最多选几个；为空 = 不限';
-COMMENT ON COLUMN dashboard_view_slot.group_adjacent   IS '同组的项必须相邻（表格列）';
-COMMENT ON COLUMN dashboard_view_slot.rules            IS '顺序规则 JSON：[{"before":"agent","after":"channel","message":"…"}]';
-COMMENT ON COLUMN dashboard_view_slot.site_layout_page IS '叠加哪个页面的站点排列（OVERVIEW / SUMMARY）；为空不叠加';
-COMMENT ON COLUMN dashboard_view_slot.status           IS '0 启用 / 1 停用（停用后 GET 不返回、保存 404，个人记录保留）';
-
-CREATE TABLE IF NOT EXISTS dashboard_view_slot_item (
-    slot_code     VARCHAR(64)   NOT NULL,
-    item_code     VARCHAR(64)   NOT NULL,
-    item_name     VARCHAR(50),
-    group_code    VARCHAR(32),
-    group_name    VARCHAR(50),
-    sort_no       INTEGER       NOT NULL DEFAULT 0,
-    default_sort  INTEGER,
-    status        CHAR(1)       NOT NULL DEFAULT '0',
-    update_time   TIMESTAMP     NOT NULL DEFAULT localtimestamp,
-    PRIMARY KEY (slot_code, item_code),
-    CONSTRAINT ck_view_item_status CHECK (status IN ('0', '1'))
-);
-COMMENT ON TABLE  dashboard_view_slot_item              IS '个人视图 · 配置位的可选项与全站默认';
-COMMENT ON COLUMN dashboard_view_slot_item.item_code    IS '项编码，与取数接口一致（推广分析：spend、reg …；列 lpPV …；维度 agent …）';
-COMMENT ON COLUMN dashboard_view_slot_item.item_name    IS '显示名；为空取项来源（指标字典 / 推广分析列定义）的名称';
-COMMENT ON COLUMN dashboard_view_slot_item.default_sort IS '全站默认里的顺序；为空 = 默认不选（配置位有 is_default 的预置组合时以组合为准）';
-COMMENT ON COLUMN dashboard_view_slot_item.status       IS '0 启用 / 1 停用（停用即对所有人下线）';
-
-CREATE TABLE IF NOT EXISTS dashboard_view_preset (
-    slot_code    VARCHAR(64)   NOT NULL,
-    preset_code  VARCHAR(32)   NOT NULL,
-    name         VARCHAR(50)   NOT NULL,
-    tip          VARCHAR(200),
-    items        TEXT          NOT NULL,
-    is_default   BOOLEAN       NOT NULL DEFAULT FALSE,
-    sort_no      INTEGER       NOT NULL DEFAULT 0,
-    update_time  TIMESTAMP     NOT NULL DEFAULT localtimestamp,
-    PRIMARY KEY (slot_code, preset_code)
-);
-COMMENT ON TABLE  dashboard_view_preset            IS '个人视图 · 预置组合（如表格列的標準、投放日報）';
-COMMENT ON COLUMN dashboard_view_preset.items      IS '按顺序的项编码，逗号分隔';
-COMMENT ON COLUMN dashboard_view_preset.is_default IS '是否就是该配置位的全站默认；为 true 时优先于 slot_item.default_sort';
-
-CREATE TABLE IF NOT EXISTS dashboard_user_view (
-    id           BIGSERIAL     PRIMARY KEY,
+-- 4. 我的榜单
+CREATE TABLE IF NOT EXISTS risk_my_board (
+    board_id     BIGSERIAL     PRIMARY KEY,
     user_id      BIGINT        NOT NULL,
     site_code    VARCHAR(32)   NOT NULL,
-    slot_code    VARCHAR(64)   NOT NULL,
-    mode         VARCHAR(8)    NOT NULL DEFAULT 'DEFAULT',
-    preset_code  VARCHAR(32),
-    items        TEXT,
-    last_custom  TEXT,
-    attrs        TEXT,
-    update_time  TIMESTAMP     NOT NULL DEFAULT localtimestamp,
-    CONSTRAINT uk_user_view UNIQUE (user_id, site_code, slot_code),
-    CONSTRAINT ck_user_view_mode CHECK (mode IN ('DEFAULT', 'PRESET', 'CUSTOM'))
+    board_name   VARCHAR(16)   NOT NULL,
+    conditions   JSONB         NOT NULL DEFAULT '[]'::jsonb,
+    rank_col     VARCHAR(32)   NOT NULL,
+    rank_dir     VARCHAR(4)    NOT NULL DEFAULT 'desc',
+    order_num    INTEGER       NOT NULL DEFAULT 1,
+    show_card    BOOLEAN       NOT NULL DEFAULT FALSE,
+    del_flag     CHAR(1)       NOT NULL DEFAULT '0',
+    create_by    VARCHAR(64)   DEFAULT '',
+    create_time  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by    VARCHAR(64)   DEFAULT '',
+    update_time  TIMESTAMP,
+    CONSTRAINT ck_risk_my_board_dir   CHECK (rank_dir IN ('asc', 'desc')),
+    CONSTRAINT ck_risk_my_board_conds CHECK (jsonb_typeof(conditions) = 'array'),
+    CONSTRAINT ck_risk_my_board_del   CHECK (del_flag IN ('0', '2'))
 );
-COMMENT ON TABLE  dashboard_user_view             IS '个人视图：某人在某站点、某配置位上的选择（只对自己生效）';
-COMMENT ON COLUMN dashboard_user_view.user_id     IS 'sys_user.user_id，取自登录令牌';
-COMMENT ON COLUMN dashboard_user_view.site_code   IS '站点编码（大写），取自请求头 X-Site-Code；每个站点各存一份';
-COMMENT ON COLUMN dashboard_user_view.mode        IS 'DEFAULT 跟随默认（只存了小状态）/ CUSTOM 自己挑的 / PRESET 跟随某个预置组合';
-COMMENT ON COLUMN dashboard_user_view.items       IS 'mode = CUSTOM 时的项编码 JSON 数组，按显示顺序';
-COMMENT ON COLUMN dashboard_user_view.last_custom IS '最近一次自定义（JSON 数组），切到预置组合后仍可切回';
-COMMENT ON COLUMN dashboard_user_view.attrs       IS '小状态 JSON 对象（如 {"selected":"spend","spark":true}），服务端只限 4 KB、不解读';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_risk_my_board_name ON risk_my_board (user_id, upper(site_code), lower(board_name)) WHERE del_flag = '0';
+CREATE INDEX IF NOT EXISTS idx_risk_my_board_user ON risk_my_board (user_id, site_code, order_num) WHERE del_flag = '0';
+COMMENT ON TABLE  risk_my_board IS '风控分析 · 我的榜单：名单条件加排行字段保存为一张榜，按「用户 + 站点」隔离，逻辑删除';
+COMMENT ON COLUMN risk_my_board.conditions IS '名单条件（结构同 /dashboard/risk/rank/list 的 conditions），数值按保存时固定';
+COMMENT ON COLUMN risk_my_board.rank_col   IS '排行字段（指标管理 RISK_RANK 列的接口编码）';
+COMMENT ON COLUMN risk_my_board.show_card  IS '是否显示为卡片';
+COMMENT ON COLUMN risk_my_board.del_flag   IS '0 正常 / 2 已删除';
 
--- 配置位
+-- 配置中心：全站通用默认值（与代码里的默认相同；站点要不同时在配置中心另加一条本站的）
+INSERT INTO config_center (config_code, site_code, page_name, description, config_value, create_by, create_time)
+SELECT v.code, '', '風控分析', v.description, v.value, 'admin', CURRENT_TIMESTAMP
+FROM (VALUES
+    ('RISK_RANK_THRESHOLDS', '排行榜的榜單條件（全站共用，只作用於榜單本身）', '{
+  "values": {
+    "bigOne": 50000,
+    "newDays": 7,
+    "winMin": 20000,
+    "rtpBet": 20000,
+    "lowTurn": 1
+  },
+  "limits": {
+    "bigOne": {
+      "min": 1000,
+      "max": 100000000
+    },
+    "newDays": {
+      "min": 1,
+      "max": 90
+    },
+    "winMin": {
+      "min": 100,
+      "max": 100000000
+    },
+    "rtpBet": {
+      "min": 100,
+      "max": 100000000
+    },
+    "lowTurn": {
+      "min": 0,
+      "max": 100
+    }
+  },
+  "names": {
+    "bigOne": "大額提款榜 · 單筆提款 ≥",
+    "newDays": "新號榜 · 註冊 ≤（天）",
+    "winMin": "大額中獎榜 · 單筆派彩 ≥",
+    "rtpBet": "高 RTP 榜 · 有效投注 ≥",
+    "lowTurn": "低打碼提款榜 · 打碼倍數 ≤"
+  }
+}'),
+    ('RISK_RANK_BOARDS',     '排行榜的榜單設置：入榜條件、排行字段、佔比口徑、默認列、默認卡片、佔比檔位、我的榜單上限、風險類型', '{
+  "myBoardLimit": 10,
+  "bands": [
+    1,
+    5,
+    10
+  ],
+  "defaultCards": [
+    "pnl",
+    "wd",
+    "new",
+    "low",
+    "win",
+    "bigw"
+  ],
+  "riskTypes": [
+    {
+      "code": "newWin",
+      "name": "新號盈利",
+      "board": "new"
+    },
+    {
+      "code": "lowTurn",
+      "name": "低打碼提款",
+      "board": "low"
+    },
+    {
+      "code": "highRtp",
+      "name": "高 RTP",
+      "board": "rtp"
+    },
+    {
+      "code": "bigWin",
+      "name": "大額中獎",
+      "board": "win"
+    }
+  ],
+  "boards": [
+    {
+      "code": "pnl",
+      "name": "盈利榜",
+      "entry": [
+        {
+          "field": "winLoss",
+          "gt": 0
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "SHARE",
+      "shareBase": "ENTRY",
+      "cols": [
+        "bet",
+        "rtp",
+        "net"
+      ]
+    },
+    {
+      "code": "wd",
+      "name": "提款榜",
+      "entry": [
+        {
+          "field": "wd",
+          "gt": 0
+        }
+      ],
+      "rankCol": "wd",
+      "shareMode": "SHARE",
+      "shareBase": "ALL",
+      "cols": [
+        "dep",
+        "wdN",
+        "net",
+        "turnX"
+      ]
+    },
+    {
+      "code": "new",
+      "name": "新號榜",
+      "entry": [
+        {
+          "field": "regDays",
+          "max": "$newDays"
+        },
+        {
+          "field": "winLoss",
+          "gt": 0
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "SHARE",
+      "shareBase": "ENTRY",
+      "cols": [
+        "dep",
+        "wd",
+        "parent"
+      ]
+    },
+    {
+      "code": "win",
+      "name": "大額中獎榜",
+      "entry": [
+        {
+          "field": "maxPayout",
+          "min": "$winMin"
+        }
+      ],
+      "rankCol": "maxPayout",
+      "shareMode": "MULTIPLE_BUCKET",
+      "bucketCol": "payoutX",
+      "buckets": [
+        {
+          "label": "≥ 500 倍",
+          "min": 500
+        },
+        {
+          "label": "100–500 倍",
+          "min": 100,
+          "max": 500
+        },
+        {
+          "label": "< 100 倍",
+          "max": 100
+        }
+      ],
+      "cols": [
+        "winGame",
+        "winTime",
+        "maxPayoutBet",
+        "payoutX"
+      ]
+    },
+    {
+      "code": "rtp",
+      "name": "高 RTP 榜",
+      "entry": [
+        {
+          "field": "bet",
+          "min": "$rtpBet"
+        }
+      ],
+      "rankCol": "rtp",
+      "shareMode": "RTP_DIFF",
+      "cols": [
+        "bet",
+        "winLoss",
+        "profitGame"
+      ]
+    },
+    {
+      "code": "low",
+      "name": "低打碼提款榜",
+      "entry": [
+        {
+          "field": "wd",
+          "gt": 0
+        },
+        {
+          "field": "turnX",
+          "max": "$lowTurn"
+        }
+      ],
+      "rankCol": "wd",
+      "shareMode": "SHARE",
+      "shareBase": "ALL",
+      "cols": [
+        "dep",
+        "turnX",
+        "bet"
+      ]
+    },
+    {
+      "code": "bigw",
+      "name": "大額提款榜",
+      "kind": "ORDER",
+      "threshold": "$bigOne",
+      "shareMode": "SHARE",
+      "features": [
+        {
+          "code": "new",
+          "name": "新號",
+          "field": "regDays",
+          "max": "$newDays"
+        },
+        {
+          "code": "low",
+          "name": "低打碼",
+          "field": "turnX",
+          "max": "$lowTurn"
+        }
+      ],
+      "cols": [
+        "dep",
+        "winLoss",
+        "turnX"
+      ]
+    },
+    {
+      "code": "all",
+      "name": "全部用戶",
+      "entry": [
+        {
+          "any": [
+            {
+              "field": "dep",
+              "gt": 0
+            },
+            {
+              "field": "bet",
+              "gt": 0
+            }
+          ]
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "NONE",
+      "card": false,
+      "cols": [
+        "dep",
+        "wd",
+        "bet"
+      ]
+    }
+  ]
+}'),
+    ('RISK_GAME_DICT',       '遊戲字典：遊戲平台 › 品牌 / 類型 › 遊戲（編碼與 UDS 一致）', '{ "platforms": [], "games": [] }')
+) AS v(code, description, value)
+WHERE NOT EXISTS (SELECT 1 FROM config_center c WHERE c.config_code = v.code AND c.site_code = '');
+
+-- 个人视图配置位（可选项的名称与是否还在跟着指标管理、配置中心走：RiskViewItemSource）
 INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
-('promo.overview.cards',  'PROMO', '核心指標', 'METRICS',    1, 10,   FALSE, '[]', NULL, 10, 'admin'),
-('promo.channel.columns', 'PROMO', '表格列',   'COLUMNS',    1, NULL, FALSE, '[]', NULL, 20, 'admin'),
-('promo.channel.rows',    'PROMO', '行維度',   'DIMENSIONS', 1, 4,    FALSE, '[]', NULL, 30, 'admin')
+('risk.overview.cards', 'RISK', '核心指標', 'METRICS', 1, 10, FALSE, '[]', NULL, 10, 'admin'),
+('risk.rank.cards', 'RISK', '榜單卡片', 'COLUMNS', 1, 9, FALSE, '[]', NULL, 20, 'admin'),
+('risk.game.path', 'RISK', '遊戲分析 · 行維度', 'DIMENSIONS', 1, 5, FALSE, '[]', NULL, 90, 'admin'),
+('risk.game.cols', 'RISK', '遊戲分析 · 列', 'COLUMNS', 1, NULL, FALSE, '[]', NULL, 95, 'admin'),
+('risk.rank.cols.pnl', 'RISK', '盈利榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 30, 'admin'),
+('risk.rank.cols.wd', 'RISK', '提款榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 31, 'admin'),
+('risk.rank.cols.new', 'RISK', '新號榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 32, 'admin'),
+('risk.rank.cols.low', 'RISK', '低打碼提款榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 33, 'admin'),
+('risk.rank.cols.win', 'RISK', '大額中獎榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 34, 'admin'),
+('risk.rank.cols.bigw', 'RISK', '大額提款榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 35, 'admin'),
+('risk.rank.cols.rtp', 'RISK', '高 RTP 榜 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 36, 'admin'),
+('risk.rank.cols.all', 'RISK', '全部用戶 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 37, 'admin')
 ON CONFLICT (slot_code) DO NOTHING;
 
--- 核心指标卡：编码同概览接口 metrics；名称取指标字典（item_name 为空）；默认 10 张同推广分析页 is_default
-INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
-('promo.overview.cards', 'spend',   NULL, 'inv',  '投放',     10,  10),
-('promo.overview.cards', 'budget',  NULL, 'inv',  '投放',     20,  20),
-('promo.overview.cards', 'cpa',     NULL, 'inv',  '投放',     30,  30),
-('promo.overview.cards', 'ftdCost', NULL, 'inv',  '投放',     40,  40),
-('promo.overview.cards', 'net',     NULL, 'inv',  '投放',     50,  50),
-('promo.overview.cards', 'roi',     NULL, 'inv',  '投放',     60,  60),
-('promo.overview.cards', 'lpUV',    NULL, 'flow', '流量轉化', 70,  NULL),
-('promo.overview.cards', 'hUV',     NULL, 'flow', '流量轉化', 80,  NULL),
-('promo.overview.cards', 'dl',      NULL, 'flow', '流量轉化', 90,  NULL),
-('promo.overview.cards', 'act',     NULL, 'flow', '流量轉化', 100, NULL),
-('promo.overview.cards', 'reg',     NULL, 'flow', '流量轉化', 110, 110),
-('promo.overview.cards', 'regR',    NULL, 'flow', '流量轉化', 120, 120),
-('promo.overview.cards', 'ftd',     NULL, 'flow', '流量轉化', 130, 130),
-('promo.overview.cards', 'ftdR',    NULL, 'flow', '流量轉化', 140, 140),
-('promo.overview.cards', 'ftdAmt',  NULL, 'flow', '流量轉化', 150, NULL),
-('promo.overview.cards', 'rd',      NULL, 'flow', '流量轉化', 160, NULL)
+-- 风控概览核心指标：可选项 = RISK 页的指标，默认 = CORE
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+SELECT 'risk.overview.cards', p.metric_code, NULL, c.group_code, NULL, p.sort_no, CASE WHEN p.emphasis = 'CORE' THEN p.sort_no END
+FROM dashboard_page_metric p JOIN dashboard_metric_card c ON c.metric_code = p.metric_code
+WHERE p.page_code = 'RISK'
 ON CONFLICT (slot_code, item_code) DO NOTHING;
 
--- 渠道表现 · 表格列：编码同 /dashboard/promo/channels/table 的 columns；名称取列定义；默认 = 預置組合「標準」
+-- 榜单卡片：系统榜单，默认 6 张（我的榜单是否显示为卡片存在 risk_my_board.show_card；占比档位存在这个配置位的 attrs.bands）
 INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
-('promo.channel.columns', 'lpPV',     NULL, 'traffic',    '流量',       10,  NULL),
-('promo.channel.columns', 'lpUV',     NULL, 'traffic',    '流量',       20,  NULL),
-('promo.channel.columns', 'hPV',      NULL, 'traffic',    '流量',       30,  NULL),
-('promo.channel.columns', 'hUV',      NULL, 'traffic',    '流量',       40,  NULL),
-('promo.channel.columns', 'dl',       NULL, 'traffic',    '流量',       50,  NULL),
-('promo.channel.columns', 'act',      NULL, 'traffic',    '流量',       60,  NULL),
-('promo.channel.columns', 'reg',      NULL, 'conversion', '轉化',       70,  NULL),
-('promo.channel.columns', 'regR',     NULL, 'conversion', '轉化',       80,  NULL),
-('promo.channel.columns', 'ftd',      NULL, 'conversion', '轉化',       90,  NULL),
-('promo.channel.columns', 'ftdR',     NULL, 'conversion', '轉化',       100, NULL),
-('promo.channel.columns', 'depR',     NULL, 'conversion', '轉化',       110, NULL),
-('promo.channel.columns', 'ftdAmt',   NULL, 'conversion', '轉化',       120, NULL),
-('promo.channel.columns', 'rd',       NULL, 'conversion', '轉化',       130, NULL),
-('promo.channel.columns', 'rdAmt',    NULL, 'conversion', '轉化',       140, NULL),
-('promo.channel.columns', 'rdR',      NULL, 'conversion', '轉化',       150, NULL),
-('promo.channel.columns', 'spend',    NULL, 'spend',      '投放',       160, NULL),
-('promo.channel.columns', 'budget',   NULL, 'spend',      '投放',       170, NULL),
-('promo.channel.columns', 'uvCost',   NULL, 'spend',      '投放',       180, NULL),
-('promo.channel.columns', 'cpa',      NULL, 'spend',      '投放',       190, NULL),
-('promo.channel.columns', 'ftdCost',  NULL, 'spend',      '投放',       200, NULL),
-('promo.channel.columns', 'roi',      NULL, 'spend',      '投放',       210, NULL),
-('promo.channel.columns', 'roas7',    NULL, 'retention',  '留存與回收', 220, NULL),
-('promo.channel.columns', 'roas30',   NULL, 'retention',  '留存與回收', 230, NULL),
-('promo.channel.columns', 'regRet1',  NULL, 'retention',  '留存與回收', 240, NULL),
-('promo.channel.columns', 'regRet3',  NULL, 'retention',  '留存與回收', 250, NULL),
-('promo.channel.columns', 'regRet7',  NULL, 'retention',  '留存與回收', 260, NULL),
-('promo.channel.columns', 'regRet15', NULL, 'retention',  '留存與回收', 270, NULL),
-('promo.channel.columns', 'regRet30', NULL, 'retention',  '留存與回收', 280, NULL),
-('promo.channel.columns', 'depU',     NULL, 'value',      '價值',       290, NULL),
-('promo.channel.columns', 'dep',      NULL, 'value',      '價值',       300, NULL),
-('promo.channel.columns', 'wdU',      NULL, 'value',      '價值',       310, NULL),
-('promo.channel.columns', 'wd',       NULL, 'value',      '價值',       320, NULL),
-('promo.channel.columns', 'net',      NULL, 'value',      '價值',       330, NULL),
-('promo.channel.columns', 'arppu',    NULL, 'value',      '價值',       340, NULL),
-('promo.channel.columns', 'betU',     NULL, 'value',      '價值',       350, NULL),
-('promo.channel.columns', 'bet',      NULL, 'value',      '價值',       360, NULL),
-('promo.channel.columns', 'vbet',     NULL, 'value',      '價值',       370, NULL),
-('promo.channel.columns', 'ggr',      NULL, 'value',      '價值',       380, NULL)
+('risk.rank.cards', 'pnl', '盈利榜', 'board', '榜單', 10, 10),
+('risk.rank.cards', 'wd', '提款榜', 'board', '榜單', 20, 20),
+('risk.rank.cards', 'new', '新號榜', 'board', '榜單', 30, 30),
+('risk.rank.cards', 'low', '低打碼提款榜', 'board', '榜單', 40, 40),
+('risk.rank.cards', 'win', '大額中獎榜', 'board', '榜單', 50, 50),
+('risk.rank.cards', 'bigw', '大額提款榜', 'board', '榜單', 60, 60),
+('risk.rank.cards', 'rtp', '高 RTP 榜', 'board', '榜單', 70, NULL)
 ON CONFLICT (slot_code, item_code) DO NOTHING;
 
--- 預置組合：標準（全站默认）、投放日報（同投放日报导出的 17 列，按组靠拢）
-INSERT INTO dashboard_view_preset (slot_code, preset_code, name, tip, items, is_default, sort_no) VALUES
-('promo.channel.columns', 'standard', '標準',     '常用的流量、轉化、投放與價值列',
- 'lpUV,hUV,reg,regR,ftd,ftdR,ftdAmt,spend,cpa,ftdCost,roi,dep,net', TRUE, 10),
-('promo.channel.columns', 'daily',    '投放日報', '與投放日報導出同一組指標',
- 'spend,uvCost,cpa,roi,lpUV,hUV,dl,act,dep,wd,depU,wdU,arppu,reg,ftd,ftdR,depR', FALSE, 20)
-ON CONFLICT (slot_code, preset_code) DO NOTHING;
-
--- 行维度：编码同 rows；默认 推廣商 › 推廣渠道
-INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
-('promo.channel.rows', 'agent',    NULL, 'dim', '維度', 10, 10),
-('promo.channel.rows', 'channel',  NULL, 'dim', '維度', 20, 20),
-('promo.channel.rows', 'terminal', NULL, 'dim', '維度', 30, NULL),
-('promo.channel.rows', 'relation', NULL, 'dim', '維度', 40, NULL),
-('promo.channel.rows', 'date',     NULL, 'dim', '維度', 50, NULL)
+-- 每张榜单的列设置：可选项 = 指标管理里的排行榜列（ext.column 不为 false），默认 = 榜单设置的默认列；
+-- 以后在指标管理加了列，要在这里补一行可选项（同一写法再执行一次即可）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+SELECT s.slot_code, c.ext->>'apiCode', NULL, c.ext->>'group', NULL, c.sort_no, d.default_sort
+FROM dashboard_view_slot s
+JOIN dashboard_metric_card c ON c.page_scope = 'RISK_RANK' AND coalesce(c.ext->>'column', 'true') <> 'false'
+LEFT JOIN (VALUES
+    ('risk.rank.cols.pnl', 'bet', 10),
+    ('risk.rank.cols.pnl', 'rtp', 20),
+    ('risk.rank.cols.pnl', 'net', 30),
+    ('risk.rank.cols.wd', 'dep', 10),
+    ('risk.rank.cols.wd', 'wdN', 20),
+    ('risk.rank.cols.wd', 'net', 30),
+    ('risk.rank.cols.wd', 'turnX', 40),
+    ('risk.rank.cols.new', 'dep', 10),
+    ('risk.rank.cols.new', 'wd', 20),
+    ('risk.rank.cols.new', 'parent', 30),
+    ('risk.rank.cols.win', 'winGame', 10),
+    ('risk.rank.cols.win', 'winTime', 20),
+    ('risk.rank.cols.win', 'maxPayoutBet', 30),
+    ('risk.rank.cols.win', 'payoutX', 40),
+    ('risk.rank.cols.rtp', 'bet', 10),
+    ('risk.rank.cols.rtp', 'winLoss', 20),
+    ('risk.rank.cols.rtp', 'profitGame', 30),
+    ('risk.rank.cols.low', 'dep', 10),
+    ('risk.rank.cols.low', 'turnX', 20),
+    ('risk.rank.cols.low', 'bet', 30),
+    ('risk.rank.cols.bigw', 'dep', 10),
+    ('risk.rank.cols.bigw', 'winLoss', 20),
+    ('risk.rank.cols.bigw', 'turnX', 30),
+    ('risk.rank.cols.all', 'dep', 10),
+    ('risk.rank.cols.all', 'wd', 20),
+    ('risk.rank.cols.all', 'bet', 30)
+) AS d(slot_code, item_code, default_sort) ON d.slot_code = s.slot_code AND d.item_code = c.ext->>'apiCode'
+WHERE s.slot_code LIKE 'risk.rank.cols.%' AND s.slot_code NOT IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill')
 ON CONFLICT (slot_code, item_code) DO NOTHING;
 
-COMMIT;
+-- 游戏分析：行维度（默认 平台 › 品牌 › 游戏）、列（默认 standard 8 列）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('risk.game.path', 'platform', '遊戲平台', 'dim', '維度', 10, 10),
+('risk.game.path', 'brand',    '遊戲品牌', 'dim', '維度', 20, 20),
+('risk.game.path', 'gameType', '遊戲類型', 'dim', '維度', 30, NULL),
+('risk.game.path', 'game',     '遊戲',     'dim', '維度', 40, 30),
+('risk.game.path', 'date',     '日期',     'dim', '維度', 50, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+SELECT 'risk.game.cols', c.ext->>'apiCode', NULL, c.ext->>'group', NULL, c.sort_no,
+       CASE WHEN (c.ext->>'standard')::boolean THEN c.sort_no END
+FROM dashboard_metric_card c WHERE c.page_scope = 'RISK_GAME'
+ON CONFLICT (slot_code, item_code) DO NOTHING;
 
--- ⑦ 自检：配置位 3 个；可选项 16 / 38 / 5；预置组合 2 个；个人视图表已建
-SELECT s.slot_code, s.name, s.min_items, s.max_items, s.group_adjacent,
-       (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code) AS items,
-       (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code AND i.default_sort IS NOT NULL) AS defaults,
-       (SELECT count(*) FROM dashboard_view_preset p WHERE p.slot_code = s.slot_code) AS presets
-FROM dashboard_view_slot s ORDER BY s.sort_no;
-SELECT to_regclass('dashboard_user_view') AS user_view_table;
-
-
--- ----------------------------------------------------------------------------
--- 新的改动从这里往下追加（⑧ 起，编号顺延）
--- ----------------------------------------------------------------------------
-
--- ----------------------------------------------------------------------------
--- ⑧ 2026-11-10 · 推广分析 · 16 个概览指标补 UDS 取数对照（《推广分析 · 指标与 UDS 数据集字段映射》2026-11-05 @Daniel，
---   按 2026-11-10 的实现与确认修订；新 JAR 上线后执行即可，顺序不限）
---   只改 dashboard_metric_card 里 promo 前缀的 16 行，只影响「系统管理 › 指标管理」的显示，不影响推广分析页取数：
---     source_table / source_field = UDS 数据集与字段，只写纯标识符（指标管理保存时会校验：表只允许字母、数字、_ 和 .，
---     字段只允许字母、数字、_）；算出来的指标（CPA、转化率等）和没有来源的留空，公式写在 remark；
---     remark 第二行写对照状态（UDS：可映射 / 需确认 / 缺源）与原因。
---   不填 uds_hour_field 等四列：那是运营总览的线上配置对照，填了指标管理会显示「與配置不一致」。
---   只更新还没写过对照状态（remark 里没有「UDS：」）的行，或上游表 / 字段不合规的行（修正旧版写入的中文说明）；
---   指标管理里手工改过的不覆盖，可重复执行。
---   回滚：UPDATE dashboard_metric_card SET source_table = NULL, source_field = NULL WHERE metric_code LIKE 'promo%' AND status = '1';
---         （remark 回滚为 ⑤ 的原文，见 ⑤ 的 INSERT）
--- ----------------------------------------------------------------------------
-BEGIN;
-
-UPDATE dashboard_metric_card c
-   SET source_table = v.source_table,
-       source_field = v.source_field,
-       remark       = v.remark,
-       update_by    = 'admin',
-       update_time  = CURRENT_TIMESTAMP
-  FROM (VALUES
-    ('promoSpend',   'import_yata_promo_cost',   'cost_amount',
-     E'推广分析 spend：运营导入的消耗合计（全部数据），按 biz_date × 推广商 × 推广渠道，站点默认币种，次日导入\nUDS：可映射'),
-    ('promoBudget',  'import_yata_promo_budget', 'budget_amount',
-     E'推广分析 budget：运营导入的预算合计，按日（含今天）\nUDS：可映射'),
-    ('promoCpa',     NULL,                       NULL,
-     E'推广分析 cpa：有效格子的消耗 ÷ 有效格子的注册人数（import_yata_promo_cost.cost_amount ÷ dashboard_market_hour_v1.reg）\nUDS：缺源（行为数据没有推广渠道维度，算不出有效格子）'),
-    ('promoFtdCost', NULL,                       NULL,
-     E'推广分析 ftdCost：有效格子的消耗 ÷ 有效格子的首存人数（cost_amount ÷ ftd_players）\nUDS：缺源（同 CPA）'),
-    ('promoNet',     'dashboard_market_hour_v1', 'deposit_amount',
-     E'推广分析 net：＝存款總額（2026-11-09 已确认；与运营总览的存提差 net 不同）\nUDS：可映射（精确数据集）'),
-    ('promoRoi',     NULL,                       NULL,
-     E'推广分析 roi：有效格子的淨充值 ÷ 有效格子的消耗 − 1（deposit_amount ÷ cost_amount − 1）\nUDS：缺源（同 CPA）'),
-    ('promoLpUV',    'dashboard_market_hour_v1', 'lp_uv',
-     E'推广分析 lpUV：落地页去重访问人数\nUDS：需确认（字段是 IP 在推荐码下的首次访问次数、不分终端；页面要按用户 ID / 匿名标识去重的人数，产品确认前不展示）'),
-    ('promoHUV',     NULL,                       NULL,
-     E'推广分析 hUV：主页去重访问人数（含 Web 与 APP 内打开）\nUDS：缺源（缺主站访问事件与访客身份）'),
-    ('promoDl',      'dashboard_market_hour_v1', 'lp_download',
-     E'推广分析 dl：点击下载 APK 的次数\nUDS：需确认（没有按钮点击事件；用下载请求数 lp_download 还是下载完成数 lp_download_ok 待产品定，确认前不展示）'),
-    ('promoAct',     'dashboard_market_hour_v1', 'android_first_open',
-     E'推广分析 act：Android 安装后首次启动的人数\nUDS：需确认（页面现取 android_first_open：APK 首次打开数，是设备数不是人数，没有终端拆分，只在「全部」与 Android 有值；口径待定。另有按推荐码的 lp_install，与它同源，不可相加）'),
-    ('promoReg',     'dashboard_market_hour_v1', 'reg',
-     E'推广分析 reg：按注册时的推广渠道与终端归属\nUDS：可映射（分终端用 web_ / android_ / ios_ / unknown_ 前缀；按推广商 / 推广渠道拆分缺源）'),
-    ('promoRegR',    NULL,                       NULL,
-     E'推广分析 regR：注册人数 ÷ 入口 UV（按渠道入口类型取 UV-落地頁或 UV-主頁）\nUDS：缺源（主站入口缺 UV-主頁；落地页入口的 lp_uv 口径需确认）'),
-    ('promoFtd',     'dashboard_market_hour_v1', 'ftd_players',
-     E'推广分析 ftd：按注册终端，按到账时间 bill_date\nUDS：可映射（分终端加前缀）'),
-    ('promoFtdR',    NULL,                       NULL,
-     E'推广分析 ftdR：首存人数 ÷ 注册人数（dashboard_market_hour_v1 的 ftd_players ÷ reg，同一条查询）\nUDS：可映射'),
-    ('promoFtdAmt',  'dashboard_market_hour_v1', 'ftd_amount',
-     E'推广分析 ftdAmt：首存金额，商户默认币种\nUDS：可映射'),
-    ('promoRd',      'dashboard_market_hour_v1', 'redeposit_users',
-     E'推广分析 rd：首存后再次存款；多天按日累加\nUDS：可映射（精确数据集；不用宽表 redeposit_players：它要求六个代码维度全部固定）')
-  ) AS v(metric_code, source_table, source_field, remark)
- WHERE c.metric_code = v.metric_code
-   AND (position('UDS：' IN coalesce(c.remark, '')) = 0
-        OR (c.source_table IS NOT NULL AND c.source_table !~ '^[A-Za-z_][A-Za-z0-9_.]*$')
-        OR (c.source_field IS NOT NULL AND c.source_field !~ '^[A-Za-z_][A-Za-z0-9_]*$'));
-
-COMMIT;
-
--- ⑧ 自检：16 行；上游表 / 字段都是纯标识符或为空；淨充值为「可映射」、激活为「需确认」
-SELECT metric_code, source_table, source_field, split_part(remark, E'\n', 2) AS uds_status
-  FROM dashboard_metric_card WHERE metric_code LIKE 'promo%' ORDER BY sort_no;
-
-
--- ============================================================================
--- ⑨ 2026-11-10 · 系统管理 · API Key（系统对接用；新 JAR 启动前执行，没执行时带 X-Api-Key 的请求返回 401，不影响其他功能）
---   1. 新表 sys_api_key：只存 Key 的 SHA-256 与前 12 位，明文只在新建时返回一次。每个 Key 绑定一个后台账号（按它的权限放行），
---      再限定能访问的接口（必须在 application.yml security.api-key.paths 里，目前只有 /notification/lark/send）、来源 IP、到期时间。
---   2. 系统管理（menu_id = 1）下加按钮：API Key 查看 system:apikey:list / 新建 system:apikey:add / 作废 system:apikey:edit，授给 role 1。
---   回滚：DROP TABLE IF EXISTS sys_api_key;
---         DELETE FROM sys_role_menu / sys_menu_i18n / sys_menu WHERE perms LIKE 'system:apikey:%' 对应的 menu_id
--- ============================================================================
-BEGIN;
-
-CREATE TABLE IF NOT EXISTS sys_api_key (
-    key_id          BIGSERIAL       PRIMARY KEY,
-    key_name        VARCHAR(64)     NOT NULL,
-    key_prefix      VARCHAR(16)     NOT NULL,
-    key_hash        CHAR(64)        NOT NULL,
-    user_id         BIGINT          NOT NULL,
-    allowed_paths   VARCHAR(500)    NOT NULL,
-    allowed_ips     VARCHAR(500),
-    expire_time     TIMESTAMP,
-    status          CHAR(1)         NOT NULL DEFAULT '0',
-    last_used_time  TIMESTAMP,
-    last_used_ip    VARCHAR(64),
-    create_by       VARCHAR(64)     NOT NULL DEFAULT '',
-    create_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
-    update_by       VARCHAR(64)     NOT NULL DEFAULT '',
-    update_time     TIMESTAMP       NOT NULL DEFAULT localtimestamp,
-    remark          VARCHAR(500),
-    CONSTRAINT uk_api_key_hash UNIQUE (key_hash),
-    CONSTRAINT ck_api_key_status CHECK (status IN ('0', '1'))
-);
-COMMENT ON TABLE  sys_api_key               IS '系统对接用的 API Key（请求头 X-Api-Key）';
-COMMENT ON COLUMN sys_api_key.key_name      IS '对接方名称，如「数据平台 · 数据更新通知」';
-COMMENT ON COLUMN sys_api_key.key_prefix    IS '明文前 12 位（ftk_ + 8 位），列表与日志里认 Key 用，不能用来调用';
-COMMENT ON COLUMN sys_api_key.key_hash      IS '明文的 SHA-256（十六进制）；明文不落库';
-COMMENT ON COLUMN sys_api_key.user_id       IS '绑定的后台账号：按它的角色权限放行，操作日志记在它名下';
-COMMENT ON COLUMN sys_api_key.allowed_paths IS '能访问的接口，逗号分隔；须在 security.api-key.paths 里';
-COMMENT ON COLUMN sys_api_key.allowed_ips   IS '允许的来源 IP，逗号分隔；为空不限';
-COMMENT ON COLUMN sys_api_key.expire_time   IS '到期时间；为空永不过期';
-COMMENT ON COLUMN sys_api_key.status        IS '0 启用 / 1 已作废（作废立即失效，不能恢复）';
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 查看', 1, 101, '', '', '', '',
-       1, 0, 'F', '0', '0', 'system:apikey:list', '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '系统对接用的 API Key 列表（只显示前缀）'
-WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:list');
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 新建', 1, 102, '', '', '', '',
-       1, 0, 'F', '0', '0', 'system:apikey:add', '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '新建 API Key（明文只显示一次）'
-WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:add');
-
-INSERT INTO sys_menu (
-    menu_id, menu_name, parent_id, order_num, path, component, "query", route_name,
-    is_frame, is_cache, menu_type, visible, status, perms, icon, create_by,
-    create_time, update_by, update_time, remark
-)
-SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), 'API Key 作废', 1, 103, '', '', '', '',
-       1, 0, 'F', '0', '0', 'system:apikey:edit', '#', 'admin',
-       CURRENT_TIMESTAMP, '', NULL, '作废 API Key（立即失效）'
-WHERE EXISTS (SELECT 1 FROM sys_menu WHERE menu_id = 1)
-  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:apikey:edit');
+-- 菜单：目录「风控分析」（站点板块，推广分析之后）+ 页面 + 按钮
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '风控分析', 0,
+       COALESCE((SELECT order_num + 1 FROM sys_menu WHERE path = 'promo' AND parent_id = 0 AND menu_type = 'M' LIMIT 1), 5),
+       'risk', NULL, '', '', 1, 0, 'M', '0', '0', '', 'monitor', 'admin', CURRENT_TIMESTAMP, '', NULL, '风控分析：概览、排行榜、游戏分析'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE path = 'risk' AND parent_id = 0 AND menu_type = 'M');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '风控分析', d.menu_id, 1, 'analysis', 'risk/analysis/index', '', '',
+       1, 0, 'C', '0', '0', 'dashboard:risk:view', 'chart', 'admin', CURRENT_TIMESTAMP, '', NULL, '概览、排行榜、游戏分析；我的榜单'
+FROM sys_menu d WHERE d.path = 'risk' AND d.parent_id = 0 AND d.menu_type = 'M'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:risk:view');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '风控导出', p.menu_id, 1, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:risk:export', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '导出概览、完整名单、游戏分析'
+FROM sys_menu p WHERE p.perms = 'dashboard:risk:view'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:risk:export');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, "query", route_name, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT (SELECT COALESCE(MAX(menu_id), 0) + 1 FROM sys_menu), '修改榜单条件', p.menu_id, 2, '', '', '', '', 1, 0,
+       'F', '0', '0', 'dashboard:risk:cond:edit', '#', 'admin', CURRENT_TIMESTAMP, '', NULL, '风控负责人：改榜单条件（全站共用）'
+FROM sys_menu p WHERE p.perms = 'dashboard:risk:view'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'dashboard:risk:cond:edit');
 
 INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
 SELECT m.menu_id, v.locale, v.menu_name, v.remark
 FROM sys_menu m
 JOIN (VALUES
-    ('system:apikey:list', 'zh-CN', 'API Key 查看', '系统对接用的 API Key 列表'),
-    ('system:apikey:list', 'zh-TW', 'API Key 查看', '系統對接用的 API Key 列表'),
-    ('system:apikey:list', 'en-US', 'View API keys', 'API keys for system integration'),
-    ('system:apikey:add',  'zh-CN', 'API Key 新建', '新建 API Key'),
-    ('system:apikey:add',  'zh-TW', 'API Key 新建', '新建 API Key'),
-    ('system:apikey:add',  'en-US', 'Create API key', 'Create an API key'),
-    ('system:apikey:edit', 'zh-CN', 'API Key 作废', '作废 API Key'),
-    ('system:apikey:edit', 'zh-TW', 'API Key 作廢', '作廢 API Key'),
-    ('system:apikey:edit', 'en-US', 'Revoke API key', 'Revoke an API key')
+    ('dashboard:risk:view',      'zh-CN', '风控分析',     '概览、排行榜、游戏分析'),
+    ('dashboard:risk:view',      'zh-TW', '風控分析',     '概覽、排行榜、遊戲分析'),
+    ('dashboard:risk:view',      'en-US', 'Risk Analytics', 'Overview, rankings, game analysis'),
+    ('dashboard:risk:export',    'zh-CN', '风控导出',     '导出概览、完整名单、游戏分析'),
+    ('dashboard:risk:export',    'zh-TW', '風控匯出',     '匯出概覽、完整名單、遊戲分析'),
+    ('dashboard:risk:export',    'en-US', 'Export',       'Export overview, rankings, game analysis'),
+    ('dashboard:risk:cond:edit', 'zh-CN', '修改榜单条件', '全站共用'),
+    ('dashboard:risk:cond:edit', 'zh-TW', '修改榜單條件', '全站共用'),
+    ('dashboard:risk:cond:edit', 'en-US', 'Edit board thresholds', 'Shared by everyone')
 ) AS v(perms, locale, menu_name, remark) ON v.perms = m.perms
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
+INSERT INTO sys_menu_i18n (menu_id, locale, menu_name, remark)
+SELECT m.menu_id, v.locale, v.menu_name, ''
+FROM sys_menu m
+JOIN (VALUES ('zh-CN', '风控分析'), ('zh-TW', '風控分析'), ('en-US', 'Risk Analytics')) AS v(locale, menu_name) ON TRUE
+WHERE m.path = 'risk' AND m.parent_id = 0 AND m.menu_type = 'M'
+  AND NOT EXISTS (SELECT 1 FROM sys_menu_i18n i WHERE i.menu_id = m.menu_id AND i.locale = v.locale);
 
 INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 1, m.menu_id
-FROM sys_menu m
-WHERE m.perms IN ('system:apikey:list', 'system:apikey:add', 'system:apikey:edit')
+SELECT 1, m.menu_id FROM sys_menu m
+WHERE (m.perms LIKE 'dashboard:risk:%' OR (m.path = 'risk' AND m.parent_id = 0 AND m.menu_type = 'M'))
   AND EXISTS (SELECT 1 FROM sys_role r WHERE r.role_id = 1)
   AND NOT EXISTS (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id = 1 AND rm.menu_id = m.menu_id);
 
 COMMIT;
 
--- ⑨ 自检：表已建；3 个按钮
-SELECT to_regclass('sys_api_key') AS api_key_table;
-SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE perms LIKE 'system:apikey:%' ORDER BY menu_id;
-
-
--- ----------------------------------------------------------------------------
--- ⑩ 2026-11-10 · 个人视图 · 推广分析行维度去掉「推廣渠道須在推廣商之下」
---   ⑦ 给 promo.channel.rows 配了顺序规则（channel 不能排在 agent 前面），产品要求去掉：rules 清空为 []。
---   ⑦ 的 INSERT 已同步改为 '[]'，新库执行 ⑦ 即可；已执行过 ⑦ 的库执行本段。
---   update_time 一变，后端约 1 分钟内自动重新加载视图定义，不用重启；用户已保存的视图不受影响。
---   回滚：UPDATE dashboard_view_slot SET rules = '[{"before":"agent","after":"channel","message":"推廣渠道須在推廣商之下"}]',
---                update_time = localtimestamp WHERE slot_code = 'promo.channel.rows';
--- ----------------------------------------------------------------------------
-UPDATE dashboard_view_slot
-   SET rules = '[]', update_time = localtimestamp
- WHERE slot_code = 'promo.channel.rows' AND coalesce(rules, '') <> '[]';
-
--- ⑩ 自检：rules = []
-SELECT slot_code, rules FROM dashboard_view_slot WHERE slot_code = 'promo.channel.rows';
-
+-- ㉒ 自检：ext 列；风控概览 15 个指标（CORE 10）；排行榜 31 列、游戏分析 20 列；配置位 12 个；配置中心 3 条；菜单 4 行
+SELECT column_name FROM information_schema.columns WHERE table_name = 'dashboard_metric_card' AND column_name = 'ext';
+SELECT count(*) AS risk_page, count(*) FILTER (WHERE emphasis = 'CORE') AS risk_core FROM dashboard_page_metric WHERE page_code = 'RISK';
+SELECT page_scope, count(*) FROM dashboard_metric_card WHERE page_scope IN ('RISK', 'RISK_RANK', 'RISK_GAME') GROUP BY page_scope ORDER BY 1;
+SELECT s.slot_code, (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code) AS items,
+       (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code AND i.default_sort IS NOT NULL) AS defaults
+FROM dashboard_view_slot s WHERE s.slot_code LIKE 'risk.%' ORDER BY s.sort_no;
+SELECT config_code, site_code FROM config_center WHERE config_code LIKE 'RISK_%' ORDER BY 1;
+SELECT menu_id, menu_name, parent_id, menu_type, perms FROM sys_menu WHERE (path = 'risk' AND parent_id = 0) OR perms LIKE 'dashboard:risk:%' ORDER BY menu_id;
 
 -- ----------------------------------------------------------------------------
--- ⑪ 2026-11-10 · 站点管理 · 实时站点（新 JAR 启动前执行：启动时加载站点表会读这一列）
---   realtime = true：UDS 提供该站点当前小时的实时数据（分钟级），页头显示「實時更新」；默认 false（每小时更新）。
---   站点管理新增 / 修改时编辑（body.realtime = true / false），站点列表、登录 getInfo 的 sites[]、运营总览 overview 都返回 realtime。
---   回滚：ALTER TABLE monitor_site_setting DROP COLUMN IF EXISTS realtime;
--- ----------------------------------------------------------------------------
-ALTER TABLE monitor_site_setting ADD COLUMN IF NOT EXISTS realtime BOOLEAN NOT NULL DEFAULT FALSE;
-COMMENT ON COLUMN monitor_site_setting.realtime IS '实时站点：UDS 提供当前小时的实时数据（分钟级），页头显示「實時更新」；false 为每小时更新';
-
--- ⑪ 自检：每个站点一行，realtime 默认 false；实时站点在「系统管理 › 站点管理」里打开，或：
---   UPDATE monitor_site_setting SET realtime = TRUE, update_time = localtimestamp WHERE upper(site_code) IN ('J9');
-SELECT site_code, site_name, realtime FROM monitor_site_setting WHERE site_name IS NOT NULL ORDER BY sort_no, site_code;
-
-
--- ----------------------------------------------------------------------------
--- ⑫ 2026-11-11 · 站点管理 · 数据起始日（新 JAR 启动前执行：启动时加载站点表会读这一列）
---   data_start_date：站点数据从哪天开始（之前没有数据），前端日期选择从这天起；为空用 application.yml 的 dashboard.launch-date。
---   站点管理新增 / 修改时编辑（body.dataStartDate = yyyy-MM-dd，传空串清空），站点列表、登录 getInfo 的 sites[].dataStartDate 返回。
---   回滚：ALTER TABLE monitor_site_setting DROP COLUMN IF EXISTS data_start_date;
--- ----------------------------------------------------------------------------
-ALTER TABLE monitor_site_setting ADD COLUMN IF NOT EXISTS data_start_date DATE;
-COMMENT ON COLUMN monitor_site_setting.data_start_date IS '站点数据起始日（之前没有数据，前端日期选择从这天起）；为空用 dashboard.launch-date';
-
--- ⑫ 自检：每个站点一行，data_start_date 默认为空（用 dashboard.launch-date）；在「系统管理 › 站点管理」里设置，或：
---   UPDATE monitor_site_setting SET data_start_date = DATE '2026-03-01', update_time = localtimestamp WHERE upper(site_code) = 'H86';
-SELECT site_code, site_name, data_start_date FROM monitor_site_setting WHERE site_name IS NOT NULL ORDER BY sort_no, site_code;
-
-
--- ----------------------------------------------------------------------------
--- ⑬ 2026-11-12 · 推广分析 · 去掉渠道表现行维度「推廣關係」；淨充值改为与存提差一致（新 JAR 上线时一起执行，顺序不限）
---   1. 推廣關係（relation）数据近期不能同步，渠道表现的行维度去掉它：删除可选项 promo.channel.rows / relation。
---      新 JAR 不再认 rows 里的 relation（4003）；用户已保存的视图里含 relation 的，后端读取时自动忽略，不用改数据。
---      视图定义按「行数 + max(update_time)」热加载，删除后约 1 分钟生效，不用重启。
---   2. 淨充值口径业务侧调整为「存款總額 − 提款總額」（与运营总览的存提差一致）：只更新指标管理里 promoNet 的取数对照与说明，
---      页面取数由代码决定（deposit_amount − withdraw_amount）。
---   回滚：INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
---           VALUES ('promo.channel.rows', 'relation', NULL, 'dim', '維度', 40, NULL) ON CONFLICT (slot_code, item_code) DO NOTHING;
---         UPDATE dashboard_metric_card SET remark = E'推广分析 net：＝存款總額（2026-11-09 已确认；与运营总览的存提差 net 不同）\nUDS：可映射（精确数据集）',
---                update_time = CURRENT_TIMESTAMP WHERE metric_code = 'promoNet';
+-- ㉓ 2026-11-16 · 监控 · 条件规则（新 JAR 启动前执行：条件规则的读写、检测任务、事件列表都会用到新列）
+--   1. monitor_rule.edit_time / edit_by：最近一次修改配置的时间与人（启停不改），告警规则列表按它排序并显示修改人；
+--      回填为 update_time / update_by（没有时取创建）
+--   2. monitor_rule_condition：条件规则的条件，每条规则 1–5 行（条件关系、窗口、连续次数在 monitor_rule.config）
+--   3. monitor_event.rule_type / detail；metric_code 改为可空（条件规则的事件没有单一指标）
+--   4. monitor_rule_state.detail：条件规则最近一次检测的说明（如基准不足的条件）
+--   5. 条件规则的字段目录 27 项（dashboard_metric_card，page_scope = MONITOR_COND，group_code = cond）：
+--      名称、格式、UDS 取数字段、支持的维度、比率的分子分母、样本口径都在「指标管理」里改；UDS 字段名待 UDS 确认
+--   回滚：DROP TABLE IF EXISTS monitor_rule_condition; DELETE FROM dashboard_metric_card WHERE page_scope = 'MONITOR_COND';
+--         新增列保留不影响旧 JAR（旧 JAR 不写条件规则；metric_code 恢复 NOT NULL 前须先删 rule_type = 'COND' 的事件）
 -- ----------------------------------------------------------------------------
 BEGIN;
 
-ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE dashboard_subscription ADD COLUMN IF NOT EXISTS snapshot_filters VARCHAR(500);
-COMMENT ON COLUMN dashboard_subscription.snapshot_enabled IS '卡片带运营总览截图（后端无头浏览器截图后上传 Lark）；截图失败照常发送';
-COMMENT ON COLUMN dashboard_subscription.snapshot_filters IS '截图的运营总览筛选条件 JSON（range / gran / cmp，自定义加 from / to，可用 {from} {to}）；为空按统计范围生成';
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS edit_time TIMESTAMP;
+COMMENT ON COLUMN monitor_rule.edit_time IS '最近一次修改配置的时间（启停不改），告警规则列表按它排序';
+UPDATE monitor_rule SET edit_time = coalesce(update_time, create_time) WHERE edit_time IS NULL;
+ALTER TABLE monitor_rule ADD COLUMN IF NOT EXISTS edit_by VARCHAR(64);
+COMMENT ON COLUMN monitor_rule.edit_by IS '最近一次修改配置的人（登录名，启停不改），与 edit_time 配对';
+UPDATE monitor_rule SET edit_by = coalesce(nullif(update_by, ''), create_by) WHERE edit_by IS NULL;
+
+ALTER TABLE monitor_rule DROP CONSTRAINT IF EXISTS ck_monitor_rule_cond;
+ALTER TABLE monitor_rule ADD CONSTRAINT ck_monitor_rule_cond CHECK (
+    rule_type <> 'COND' OR (rule_name IS NOT NULL AND level IN ('CRIT', 'WARN') AND notify_enabled IS NOT NULL AND config IS NOT NULL));
+
+CREATE TABLE IF NOT EXISTS monitor_rule_condition (
+    rule_id         BIGINT          NOT NULL,
+    seq             SMALLINT        NOT NULL,
+    field_code      VARCHAR(32)     NOT NULL,
+    scope           JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    how             VARCHAR(8)      NOT NULL,
+    op              VARCHAR(8)      NOT NULL,
+    unit            VARCHAR(8),
+    threshold_low   NUMERIC(20,4),
+    threshold_high  NUMERIC(20,4),
+    min_sample      NUMERIC(20,4),
+    CONSTRAINT pk_monitor_rule_condition PRIMARY KEY (rule_id, seq),
+    CONSTRAINT ck_monitor_rule_condition_seq CHECK (seq BETWEEN 1 AND 10),
+    CONSTRAINT ck_monitor_rule_condition_scope CHECK (jsonb_typeof(scope) = 'object'),
+    CONSTRAINT ck_monitor_rule_condition_how CHECK (how IN ('CUR', 'BASE', 'YD')),
+    CONSTRAINT ck_monitor_rule_condition_op CHECK (
+        (how = 'CUR' AND op IN ('GT', 'GE', 'LT', 'LE', 'OUT') AND unit IS NULL)
+        OR (how IN ('BASE', 'YD') AND op IN ('UP', 'DOWN', 'CHG') AND unit IN ('PCT', 'ABS'))),
+    CONSTRAINT ck_monitor_rule_condition_out CHECK (
+        (op = 'OUT' AND threshold_low IS NOT NULL AND threshold_high IS NOT NULL AND threshold_low < threshold_high)
+        OR (op <> 'OUT' AND threshold_low IS NOT NULL AND threshold_high IS NULL)),
+    CONSTRAINT ck_monitor_rule_condition_sample CHECK (min_sample IS NULL OR min_sample >= 0)
+);
+COMMENT ON TABLE monitor_rule_condition IS '监控 · 条件规则的条件（每条规则 1–5 行）';
+COMMENT ON COLUMN monitor_rule_condition.field_code IS '字段接口编码（指标管理 MONITOR_COND 行的 ext.apiCode）';
+COMMENT ON COLUMN monitor_rule_condition.scope IS '范围：维度 → 一个值，如 {"ch":"g:1001","term":"Android"}；{} = 不限';
+COMMENT ON COLUMN monitor_rule_condition.how IS 'CUR 当前值 / BASE 较基准（近 4 周同星期同时段平均）/ YD 较昨日同时段';
+COMMENT ON COLUMN monitor_rule_condition.threshold_high IS '只有 op = OUT（超出区间）时有值';
+
+ALTER TABLE monitor_event ADD COLUMN IF NOT EXISTS rule_type VARCHAR(10) NOT NULL DEFAULT 'METRIC';
+ALTER TABLE monitor_event ADD COLUMN IF NOT EXISTS detail JSONB;
+ALTER TABLE monitor_event ALTER COLUMN metric_code DROP NOT NULL;
+ALTER TABLE monitor_event DROP CONSTRAINT IF EXISTS ck_monitor_event_rule_type;
+ALTER TABLE monitor_event ADD CONSTRAINT ck_monitor_event_rule_type CHECK (
+    rule_type IN ('METRIC', 'COND') AND (rule_type <> 'METRIC' OR metric_code IS NOT NULL));
+COMMENT ON COLUMN monitor_event.rule_type IS 'METRIC 指标规则 / COND 条件规则（订单规则的命中在 monitor_order_event）';
+COMMENT ON COLUMN monitor_event.detail IS '条件规则：各条件触发时（triggered）与最近一期（latest）的值、基准、结果';
+
+ALTER TABLE monitor_rule_state ADD COLUMN IF NOT EXISTS detail JSONB;
+COMMENT ON COLUMN monitor_rule_state.detail IS '条件规则最近一次检测的说明，如 {"noBase":[1,3],"from":"2026-11-20"}';
+
+INSERT INTO dashboard_metric_card (
+    metric_code, metric_name, group_code, update_frequency, single_day_only, chart_type, value_format, direction, show_as_card, sort_no,
+    calc_type, agg_type, monitorable, allow_negative, attributable, page_scope, uds_hour_field, ext, status, create_by, create_time, remark
+) VALUES
+('cdReg', '註冊人數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'up', TRUE, 5000, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'reg_cnt', '{"apiCode": "reg", "group": "user", "dims": ["ch", "term"], "defaultHow": "BASE", "defaultOp": "UP"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdFtd', '首存人數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'up', TRUE, 5010, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'ftd_cnt', '{"apiCode": "ftd", "group": "user", "dims": ["ch", "term"], "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdFtdr', '首存轉化率', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'up', TRUE, 5020, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "ftdr", "group": "user", "dims": ["ch", "term"], "defaultHow": "CUR", "defaultOp": "LT", "ratio": {"numerator": "ftd_cnt", "denominator": "reg_cnt"}, "sample": {"key": "reg", "name": "註冊人數", "unit": "人", "field": "reg_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '首存人數 ÷ 註冊人數；UDS 字段待 UDS 确认'),
+('cdActive', '活躍人數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'up', TRUE, 5030, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'active_cnt', '{"apiCode": "active", "group": "user", "dims": ["ch", "term"], "additive": false, "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '多小時取各小時平均（小時去重人數不能相加）；UDS 字段待 UDS 确认'),
+('cdDep', '存款總額', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5040, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'dep_amount', '{"apiCode": "dep", "group": "fund", "dims": ["ch", "pay", "term"], "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdDOkR', '存款成功率', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'up', TRUE, 5050, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "dOkR", "group": "fund", "dims": ["ch", "pay", "term"], "defaultHow": "CUR", "defaultOp": "LT", "ratio": {"numerator": "dep_ok_cnt", "denominator": "dep_try_cnt"}, "sample": {"key": "dTry", "name": "存款訂單數", "unit": "筆", "field": "dep_try_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '成功訂單數 ÷ 存款訂單數；UDS 字段待 UDS 确认'),
+('cdDTry', '存款訂單數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'up', TRUE, 5060, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'dep_try_cnt', '{"apiCode": "dTry", "group": "fund", "dims": ["ch", "pay", "term"], "defaultHow": "BASE", "defaultOp": "CHG"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '含未成功的訂單；UDS 字段待 UDS 确认'),
+('cdDT', '平均到賬時長', 'cond', 'hour', FALSE, 'LINE', 'MIN', 'down', TRUE, 5070, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "dT", "group": "fund", "dims": ["pay", "term"], "defaultHow": "CUR", "defaultOp": "GT", "ratio": {"numerator": "dep_minutes_sum", "denominator": "dep_ok_cnt", "scale": 1}, "sample": {"key": "dOk", "name": "成功存款筆數", "unit": "筆", "field": "dep_ok_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '到賬分鐘數合計 ÷ 成功筆數；UDS 字段待 UDS 确认'),
+('cdWd', '提款總額', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'down', TRUE, 5080, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'wd_amount', '{"apiCode": "wd", "group": "fund", "dims": ["ch", "term"], "defaultHow": "BASE", "defaultOp": "UP"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdNet', '存提差', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5090, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'net_amount', '{"apiCode": "net", "group": "fund", "dims": ["ch", "term"], "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '存款總額 − 提款總額；UDS 字段待 UDS 确认'),
+('cdWdr', '提存比', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'down', TRUE, 5100, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "wdr", "group": "fund", "dims": ["ch", "term"], "defaultHow": "CUR", "defaultOp": "GT", "ratio": {"numerator": "wd_amount", "denominator": "dep_amount"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '提款總額 ÷ 存款總額；UDS 字段待 UDS 确认'),
+('cdWdN', '提款筆數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'down', TRUE, 5110, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'wd_cnt', '{"apiCode": "wdN", "group": "fund", "dims": ["ch", "term"], "defaultHow": "BASE", "defaultOp": "UP"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdBigN', '大額提款筆數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'down', TRUE, 5120, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'big_wd_cnt', '{"apiCode": "bigN", "group": "fund", "dims": ["ch", "term"], "defaultHow": "CUR", "defaultOp": "GT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '單筆 ≥ ₹10,000 的提款筆數（門檻由 UDS 統計口徑決定）；UDS 字段待 UDS 确认'),
+('cdWOkR', '出款成功率', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'up', TRUE, 5130, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "wOkR", "group": "fund", "dims": [], "defaultHow": "CUR", "defaultOp": "LT", "ratio": {"numerator": "wd_ok_cnt", "denominator": "wd_done_cnt"}, "sample": {"key": "wDone", "name": "已處理提款筆數", "unit": "筆", "field": "wd_done_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '出款成功筆數 ÷ 已處理筆數；UDS 字段待 UDS 确认'),
+('cdWT', '平均出款時長', 'cond', 'hour', FALSE, 'LINE', 'MIN', 'down', TRUE, 5140, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "wT", "group": "fund", "dims": [], "defaultHow": "CUR", "defaultOp": "GT", "ratio": {"numerator": "wd_minutes_sum", "denominator": "wd_ok_cnt", "scale": 1}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '出款分鐘數合計 ÷ 出款成功筆數；UDS 字段待 UDS 确认'),
+('cdWPendT', '待審核平均等待時長', 'cond', 'hour', FALSE, 'LINE', 'MIN', 'down', TRUE, 5150, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'w_pend_minutes_avg', '{"apiCode": "wPendT", "group": "fund", "dims": [], "snapshot": true, "defaultHow": "CUR", "defaultOp": "GT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '整點快照；UDS 字段待 UDS 确认'),
+('cdWPendN', '待審核筆數', 'cond', 'hour', FALSE, 'LINE', 'INT', 'down', TRUE, 5160, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'w_pend_cnt', '{"apiCode": "wPendN", "group": "fund", "dims": [], "snapshot": true, "defaultHow": "CUR", "defaultOp": "GT"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '整點快照；UDS 字段待 UDS 确认'),
+('cdArppu', 'ARPPU', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5170, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "arppu", "group": "fund", "dims": ["ch"], "defaultHow": "BASE", "defaultOp": "DOWN", "ratio": {"numerator": "dep_amount", "denominator": "dep_users"}, "sample": {"key": "depU", "name": "存款人數", "unit": "人", "field": "dep_users"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '存款總額 ÷ 存款人數；UDS 字段待 UDS 确认'),
+('cdFtdA', '平均首存金額', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5180, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "ftdA", "group": "fund", "dims": ["ch"], "defaultHow": "BASE", "defaultOp": "DOWN", "ratio": {"numerator": "ftd_amount", "denominator": "ftd_cnt"}, "sample": {"key": "ftd", "name": "首存人數", "unit": "人", "field": "ftd_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '首存金額 ÷ 首存人數；UDS 字段待 UDS 确认'),
+('cdBet', '投注', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5190, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'bet_amount', '{"apiCode": "bet", "group": "game", "dims": ["pf", "gty", "game", "ch", "term"], "defaultHow": "BASE", "defaultOp": "CHG"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '有效投注；UDS 字段待 UDS 确认'),
+('cdGgr', 'GGR', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5200, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'ggr', '{"apiCode": "ggr", "group": "game", "dims": ["pf", "gty", "game", "ch", "term"], "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '投注 − 派彩；UDS 字段待 UDS 确认'),
+('cdKillR', '殺率', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'up', TRUE, 5210, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "killR", "group": "game", "dims": ["pf", "gty", "game", "ch", "term"], "defaultHow": "CUR", "defaultOp": "LT", "ratio": {"numerator": "ggr", "denominator": "bet_amount"}, "sample": {"key": "betN", "name": "注單數", "unit": "筆", "field": "bet_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'GGR ÷ 投注；UDS 字段待 UDS 确认'),
+('cdRtp', 'RTP', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'down', TRUE, 5220, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "rtp", "group": "game", "dims": ["pf", "gty", "game", "ch", "term"], "defaultHow": "CUR", "defaultOp": "GT", "ratio": {"numerator": "payout_amount", "denominator": "bet_amount"}, "sample": {"key": "betN", "name": "注單數", "unit": "筆", "field": "bet_cnt"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '派彩 ÷ 投注；UDS 字段待 UDS 确认'),
+('cdNgr', 'NGR', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'up', TRUE, 5230, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'ngr', '{"apiCode": "ngr", "group": "game", "dims": [], "defaultHow": "BASE", "defaultOp": "DOWN"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'GGR − 贈金；UDS 字段待 UDS 确认'),
+('cdBonus', '贈金', 'cond', 'hour', FALSE, 'LINE', 'MONEY', 'down', TRUE, 5240, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', 'bonus_amount', '{"apiCode": "bonus", "group": "game", "dims": [], "defaultHow": "BASE", "defaultOp": "UP"}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, 'UDS 字段待 UDS 确认'),
+('cdBonusR', '贈金佔比', 'cond', 'hour', FALSE, 'LINE', 'PCT', 'down', TRUE, 5250, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "bonusR", "group": "game", "dims": [], "defaultHow": "CUR", "defaultOp": "GT", "ratio": {"numerator": "bonus_amount", "denominator": "dep_amount"}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '贈金 ÷ 存款總額；UDS 字段待 UDS 确认'),
+('cdTurnX', '打碼倍數', 'cond', 'hour', FALSE, 'LINE', 'MULTIPLE', 'up', TRUE, 5260, 'NONE', 'SUM', FALSE, TRUE, FALSE, 'MONITOR_COND', NULL, '{"apiCode": "turnX", "group": "game", "dims": [], "defaultHow": "CUR", "defaultOp": "LT", "ratio": {"numerator": "bet_amount", "denominator": "dep_amount", "scale": 1}}'::jsonb, '0', 'admin', CURRENT_TIMESTAMP, '投注 ÷ 存款總額；UDS 字段待 UDS 确认')
+ON CONFLICT (metric_code) DO NOTHING;
 
 COMMIT;
 
--- ⑨ 自检：应返回 snapshot_enabled、snapshot_filters 两行
-SELECT column_name, data_type FROM information_schema.columns
- WHERE table_name = 'dashboard_subscription' AND column_name IN ('snapshot_enabled', 'snapshot_filters');
+-- ㉓ 自检：新表与新列；条件规则字段目录 27 项
+SELECT to_regclass('monitor_rule_condition') AS condition_table;
+SELECT table_name, column_name FROM information_schema.columns
+ WHERE (table_name, column_name) IN (('monitor_rule', 'edit_time'), ('monitor_rule', 'edit_by'), ('monitor_event', 'rule_type'), ('monitor_event', 'detail'),
+                                     ('monitor_rule_state', 'detail'))
+ ORDER BY 1, 2;
+SELECT count(*) AS cond_fields FROM dashboard_metric_card WHERE page_scope = 'MONITOR_COND';
 
+-- ----------------------------------------------------------------------------
+-- ㉔ 2026-11-17 · 风控分析 · 排行榜对齐《榜单逻辑总览》（原型第 96 版）（新 JAR 启动前执行）
+--   1. RISK_RANK_BOARDS 全站默认升级：渠道风险榜 chrisk、卡片 3 个数 stats、大额中奖 / 高RTP 卡片中间改为游戏分布、
+--      大额提款榜的名单条件 filters（去掉风险特征）、高RTP 风险类型加 RTP ≥ 100%、各榜默认列补 註冊時間 / 推廣渠道。
+--      只升级还是 ㉒ 写入的旧版本（不含 chrisk）；站点自己改过的配置不动，需按新结构手工补。
+--   2. 个人视图配置位：渠道风险榜的列（渠道列）、下钻名单的列、个人风险类型（没设过 = 跟随全局默认）。
+--   3. 用户类榜单列设置的默认列按新配置重排；大额提款榜默认只留打碼倍數。
+--   回滚：把 RISK_RANK_BOARDS 改回 ㉒ 的值；DELETE FROM dashboard_view_slot_item WHERE slot_code IN ('risk.rank.cols.chrisk',
+--         'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes') OR (slot_code = 'risk.rank.cards' AND item_code = 'chrisk');
+--         DELETE FROM dashboard_view_slot WHERE slot_code IN ('risk.rank.cols.chrisk', 'risk.rank.cols.chriskDrill', 'risk.rank.riskTypes');
+-- ----------------------------------------------------------------------------
 BEGIN;
 
-DELETE FROM dashboard_view_slot_item WHERE slot_code = 'promo.channel.rows' AND item_code = 'relation';
+UPDATE config_center
+   SET config_value = '{
+  "myBoardLimit": 10,
+  "bands": [
+    1,
+    5,
+    10
+  ],
+  "defaultCards": [
+    "pnl",
+    "wd",
+    "new",
+    "low",
+    "win",
+    "bigw"
+  ],
+  "shareCols": [
+    "dep",
+    "wd",
+    "bet",
+    "pay",
+    "bonus",
+    "maxPayout"
+  ],
+  "sharePositiveCols": [
+    "winLoss"
+  ],
+  "ratioCols": [
+    "rtp",
+    "turnX",
+    "bonusR"
+  ],
+  "riskTypes": [
+    {
+      "code": "newWin",
+      "name": "新號盈利",
+      "board": "new"
+    },
+    {
+      "code": "lowTurn",
+      "name": "低打碼提款",
+      "board": "low"
+    },
+    {
+      "code": "highRtp",
+      "name": "高RTP",
+      "board": "rtp",
+      "and": [
+        {
+          "field": "rtp",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "code": "bigWin",
+      "name": "大額中獎",
+      "board": "win"
+    }
+  ],
+  "channelRiskDefault": [
+    "newWin",
+    "lowTurn",
+    "bigWin"
+  ],
+  "boards": [
+    {
+      "code": "pnl",
+      "name": "盈利榜",
+      "entry": [
+        {
+          "field": "winLoss",
+          "gt": 0
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "SHARE",
+      "shareBase": "ENTRY",
+      "cols": [
+        "bet",
+        "rtp",
+        "net",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "sum",
+          "label": "合計"
+        },
+        {
+          "code": "activeShare",
+          "label": "佔活躍用戶"
+        }
+      ]
+    },
+    {
+      "code": "wd",
+      "name": "提款榜",
+      "entry": [
+        {
+          "field": "wd",
+          "gt": 0
+        }
+      ],
+      "rankCol": "wd",
+      "shareMode": "SHARE",
+      "shareBase": "ALL",
+      "cols": [
+        "wdN",
+        "dep",
+        "net",
+        "turnX",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "sum",
+          "label": "合計"
+        },
+        {
+          "code": "ratio",
+          "num": "wd",
+          "den": "dep",
+          "label": "提存比"
+        }
+      ]
+    },
+    {
+      "code": "new",
+      "name": "新號榜",
+      "entry": [
+        {
+          "field": "regDays",
+          "max": "$newDays"
+        },
+        {
+          "field": "winLoss",
+          "gt": 0
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "SHARE",
+      "shareBase": "ENTRY",
+      "cols": [
+        "dep",
+        "wd",
+        "parent",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "sum",
+          "label": "合計"
+        },
+        {
+          "code": "shareOfPositive",
+          "col": "winLoss",
+          "label": "佔全部盈利"
+        }
+      ]
+    },
+    {
+      "code": "win",
+      "name": "大額中獎榜",
+      "entry": [
+        {
+          "field": "maxPayout",
+          "min": "$winMin"
+        }
+      ],
+      "rankCol": "maxPayout",
+      "shareMode": "GAME_DIST",
+      "distCol": "winGame",
+      "cols": [
+        "winGame",
+        "winTime",
+        "maxPayoutBet",
+        "payoutX",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "max",
+          "label": "最高派彩"
+        },
+        {
+          "code": "maxOf",
+          "col": "payoutX",
+          "label": "最高倍數"
+        }
+      ]
+    },
+    {
+      "code": "rtp",
+      "name": "高RTP榜",
+      "entry": [
+        {
+          "field": "bet",
+          "min": "$rtpBet"
+        }
+      ],
+      "rankCol": "rtp",
+      "shareMode": "GAME_DIST",
+      "distCol": "profitGame",
+      "cols": [
+        "bet",
+        "winLoss",
+        "profitGame",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "countAtLeast",
+          "col": "rtp",
+          "value": 1,
+          "label": "RTP ≥ 100% 的人數"
+        },
+        {
+          "code": "sumOf",
+          "col": "winLoss",
+          "label": "輸贏合計"
+        }
+      ]
+    },
+    {
+      "code": "low",
+      "name": "低打碼提款榜",
+      "entry": [
+        {
+          "field": "wd",
+          "gt": 0
+        },
+        {
+          "field": "turnX",
+          "max": "$lowTurn"
+        }
+      ],
+      "rankCol": "wd",
+      "shareMode": "SHARE",
+      "shareBase": "ALL",
+      "cols": [
+        "dep",
+        "turnX",
+        "wdN",
+        "regTime",
+        "channel"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "入榜"
+        },
+        {
+          "code": "sum",
+          "label": "合計"
+        },
+        {
+          "code": "shareOfAll",
+          "col": "wd",
+          "label": "佔全部提款"
+        }
+      ]
+    },
+    {
+      "code": "bigw",
+      "name": "大額提款榜",
+      "kind": "ORDER",
+      "threshold": "$bigOne",
+      "shareMode": "SHARE",
+      "filters": [
+        "regDays",
+        "turnX",
+        "dep",
+        "winLoss"
+      ],
+      "cols": [
+        "turnX"
+      ],
+      "colOptions": [
+        "turnX",
+        "dep",
+        "winLoss"
+      ],
+      "stats": [
+        {
+          "code": "entry",
+          "label": "大額筆數"
+        },
+        {
+          "code": "sum",
+          "label": "金額"
+        },
+        {
+          "code": "shareOfAll",
+          "col": "wd",
+          "label": "佔全部提款"
+        }
+      ]
+    },
+    {
+      "code": "chrisk",
+      "name": "渠道風險榜",
+      "kind": "CHANNEL",
+      "rankCol": "riskWd",
+      "cols": [
+        "ftdUsers",
+        "depAmt",
+        "avgDep",
+        "activeUsers",
+        "riskUsers",
+        "riskRate",
+        "riskWd",
+        "riskTypeCounts",
+        "winLoss"
+      ],
+      "drillCols": [
+        "dep",
+        "turnX",
+        "winLoss",
+        "regTime"
+      ],
+      "drillRankCol": "wd",
+      "stats": [
+        {
+          "code": "riskChannels",
+          "label": "風險渠道"
+        },
+        {
+          "code": "riskUsers",
+          "label": "風險用戶"
+        },
+        {
+          "code": "riskWd",
+          "label": "風險用戶提款"
+        }
+      ],
+      "channelCols": [
+        {
+          "code": "regUsers",
+          "name": "註冊用戶",
+          "group": "ACQ",
+          "valueFormat": "INT",
+          "rank": true,
+          "condition": true,
+          "fixed": true,
+          "remark": "所選時間內註冊的用戶數（含沒有存款或投注的）"
+        },
+        {
+          "code": "ftdUsers",
+          "name": "首存人數",
+          "group": "ACQ",
+          "valueFormat": "INT",
+          "rank": true,
+          "condition": true,
+          "remark": "所選時間內完成首存的用戶數（按首存時間，不看註冊時間）"
+        },
+        {
+          "code": "ftdAmt",
+          "name": "首存金額",
+          "group": "ACQ",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "remark": "所選時間內完成首存的用戶，首存金額合計"
+        },
+        {
+          "code": "activeUsers",
+          "name": "活躍用戶",
+          "group": "ACQ",
+          "valueFormat": "INT",
+          "rank": true,
+          "remark": "所選時間內有存款或投注的用戶數"
+        },
+        {
+          "code": "depUsers",
+          "name": "存款人數",
+          "group": "FUND",
+          "valueFormat": "INT",
+          "rank": true,
+          "condition": true,
+          "remark": "所選時間內有成功存款的用戶數"
+        },
+        {
+          "code": "depAmt",
+          "name": "存款金額",
+          "group": "FUND",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true,
+          "remark": "所選時間內的成功存款合計"
+        },
+        {
+          "code": "avgDep",
+          "name": "平均存款金額",
+          "group": "FUND",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true,
+          "remark": "存款金額 ÷ 存款人數"
+        },
+        {
+          "code": "wd",
+          "name": "提款",
+          "group": "FUND",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true
+        },
+        {
+          "code": "riskUsers",
+          "name": "風險用戶",
+          "group": "RISK",
+          "valueFormat": "INT",
+          "rank": true,
+          "condition": true
+        },
+        {
+          "code": "riskRate",
+          "name": "風險用戶佔比",
+          "group": "RISK",
+          "valueFormat": "PCT",
+          "rank": true,
+          "condition": true,
+          "remark": "風險用戶 ÷ 活躍用戶"
+        },
+        {
+          "code": "riskWd",
+          "name": "風險用戶提款",
+          "group": "RISK",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true
+        },
+        {
+          "code": "riskTypeCounts",
+          "name": "各風險類型人數",
+          "group": "RISK",
+          "valueFormat": "INT"
+        },
+        {
+          "code": "bet",
+          "name": "有效投注",
+          "group": "GAME",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true
+        },
+        {
+          "code": "winLoss",
+          "name": "玩家輸贏",
+          "group": "GAME",
+          "valueFormat": "MONEY",
+          "rank": true,
+          "condition": true
+        }
+      ]
+    },
+    {
+      "code": "all",
+      "name": "全部用戶",
+      "scope": [
+        {
+          "any": [
+            {
+              "field": "dep",
+              "gt": 0
+            },
+            {
+              "field": "bet",
+              "gt": 0
+            }
+          ]
+        }
+      ],
+      "rankCol": "winLoss",
+      "shareMode": "NONE",
+      "card": false,
+      "cols": [
+        "dep",
+        "wd",
+        "bet",
+        "regTime",
+        "channel"
+      ]
+    }
+  ]
+}',
+       update_by = 'admin', update_time = CURRENT_TIMESTAMP
+ WHERE config_code = 'RISK_RANK_BOARDS' AND site_code = '' AND config_value NOT LIKE '%"chrisk"%';
 
-UPDATE dashboard_view_slot SET update_time = localtimestamp WHERE slot_code = 'promo.channel.rows';
+INSERT INTO dashboard_view_slot (slot_code, page_code, name, kind, min_items, max_items, group_adjacent, rules, site_layout_page, sort_no, create_by) VALUES
+('risk.rank.cols.chrisk',      'RISK', '渠道風險榜 · 列',            'COLUMNS', 0, NULL, FALSE, '[]', NULL, 38, 'admin'),
+('risk.rank.cols.chriskDrill', 'RISK', '渠道風險榜 · 下鑽名單 · 列', 'COLUMNS', 0, NULL, FALSE, '[]', NULL, 39, 'admin'),
+('risk.rank.riskTypes',        'RISK', '渠道風險榜 · 風險類型',      'COLUMNS', 1, 4,    FALSE, '[]', NULL, 40, 'admin')
+ON CONFLICT (slot_code) DO NOTHING;
 
-UPDATE dashboard_metric_card
-   SET source_table = 'dashboard_market_hour_v1',
-       source_field = 'deposit_amount',
-       remark       = E'推广分析 net：存款總額 − 提款總額（deposit_amount − withdraw_amount，2026-11-12 起与运营总览的存提差一致）\nUDS：可映射（精确数据集）',
-       update_by    = 'admin',
-       update_time  = CURRENT_TIMESTAMP
- WHERE metric_code = 'promoNet'
-   AND position('withdraw_amount' IN coalesce(remark, '')) = 0;
+-- 卡片：渠道风险榜可加为卡片（不在默认 6 张里）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('risk.rank.cards', 'chrisk', '渠道風險榜', 'board', '榜單', 80, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 渠道风险榜的列（註冊用戶固定第一列，不在可选项里；「各風險類型人數」按所选风险类型展开）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('risk.rank.cols.chrisk', 'ftdUsers', '首存人數', 'ACQ', NULL, 20, 10),
+('risk.rank.cols.chrisk', 'ftdAmt', '首存金額', 'ACQ', NULL, 30, NULL),
+('risk.rank.cols.chrisk', 'activeUsers', '活躍用戶', 'ACQ', NULL, 40, 40),
+('risk.rank.cols.chrisk', 'depUsers', '存款人數', 'FUND', NULL, 50, NULL),
+('risk.rank.cols.chrisk', 'depAmt', '存款金額', 'FUND', NULL, 60, 20),
+('risk.rank.cols.chrisk', 'avgDep', '平均存款金額', 'FUND', NULL, 70, 30),
+('risk.rank.cols.chrisk', 'wd', '提款', 'FUND', NULL, 80, NULL),
+('risk.rank.cols.chrisk', 'riskUsers', '風險用戶', 'RISK', NULL, 90, 50),
+('risk.rank.cols.chrisk', 'riskRate', '風險用戶佔比', 'RISK', NULL, 100, 60),
+('risk.rank.cols.chrisk', 'riskWd', '風險用戶提款', 'RISK', NULL, 110, 70),
+('risk.rank.cols.chrisk', 'riskTypeCounts', '各風險類型人數', 'RISK', NULL, 120, 80),
+('risk.rank.cols.chrisk', 'bet', '有效投注', 'GAME', NULL, 130, NULL),
+('risk.rank.cols.chrisk', 'winLoss', '玩家輸贏', 'GAME', NULL, 140, 90)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 个人风险类型：可选项 = 系统 4 类；不设默认（没设过 = 跟随全局默认，见 RISK_RANK_THRESHOLDS.channelRiskTypes）
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort) VALUES
+('risk.rank.riskTypes', 'newWin',  '新號盈利',   'risk', '風險類型', 10, NULL),
+('risk.rank.riskTypes', 'lowTurn', '低打碼提款', 'risk', '風險類型', 20, NULL),
+('risk.rank.riskTypes', 'highRtp', '高RTP',      'risk', '風險類型', 30, NULL),
+('risk.rank.riskTypes', 'bigWin',  '大額中獎',   'risk', '風險類型', 40, NULL)
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 下钻名单的列：可选项同用户类榜单（指标管理 RISK_RANK 列），默认 存款、打碼倍數、玩家輸贏、註冊時間
+INSERT INTO dashboard_view_slot_item (slot_code, item_code, item_name, group_code, group_name, sort_no, default_sort)
+SELECT 'risk.rank.cols.chriskDrill', c.ext->>'apiCode', NULL, c.ext->>'group', NULL, c.sort_no, d.default_sort
+FROM dashboard_metric_card c
+LEFT JOIN (VALUES
+    ('risk.rank.cols.chriskDrill', 'dep', 10),
+    ('risk.rank.cols.chriskDrill', 'turnX', 20),
+    ('risk.rank.cols.chriskDrill', 'winLoss', 30),
+    ('risk.rank.cols.chriskDrill', 'regTime', 40)
+) AS d(slot_code, item_code, default_sort) ON d.item_code = c.ext->>'apiCode'
+WHERE c.page_scope = 'RISK_RANK' AND coalesce(c.ext->>'column', 'true') <> 'false'
+ON CONFLICT (slot_code, item_code) DO NOTHING;
+
+-- 用户类榜单与大额提款榜的默认列（FY-66 表 3-1、FY-70）：先清掉旧默认，再按新顺序写
+UPDATE dashboard_view_slot_item SET default_sort = NULL
+ WHERE slot_code IN ('risk.rank.cols.pnl', 'risk.rank.cols.wd', 'risk.rank.cols.new', 'risk.rank.cols.win', 'risk.rank.cols.rtp',
+                     'risk.rank.cols.low', 'risk.rank.cols.bigw', 'risk.rank.cols.all');
+UPDATE dashboard_view_slot_item i SET default_sort = d.default_sort
+FROM (VALUES
+    ('risk.rank.cols.pnl', 'bet', 10),
+    ('risk.rank.cols.pnl', 'rtp', 20),
+    ('risk.rank.cols.pnl', 'net', 30),
+    ('risk.rank.cols.pnl', 'regTime', 40),
+    ('risk.rank.cols.pnl', 'channel', 50),
+    ('risk.rank.cols.wd', 'wdN', 10),
+    ('risk.rank.cols.wd', 'dep', 20),
+    ('risk.rank.cols.wd', 'net', 30),
+    ('risk.rank.cols.wd', 'turnX', 40),
+    ('risk.rank.cols.wd', 'regTime', 50),
+    ('risk.rank.cols.wd', 'channel', 60),
+    ('risk.rank.cols.new', 'dep', 10),
+    ('risk.rank.cols.new', 'wd', 20),
+    ('risk.rank.cols.new', 'parent', 30),
+    ('risk.rank.cols.new', 'regTime', 40),
+    ('risk.rank.cols.new', 'channel', 50),
+    ('risk.rank.cols.win', 'winGame', 10),
+    ('risk.rank.cols.win', 'winTime', 20),
+    ('risk.rank.cols.win', 'maxPayoutBet', 30),
+    ('risk.rank.cols.win', 'payoutX', 40),
+    ('risk.rank.cols.win', 'regTime', 50),
+    ('risk.rank.cols.win', 'channel', 60),
+    ('risk.rank.cols.rtp', 'bet', 10),
+    ('risk.rank.cols.rtp', 'winLoss', 20),
+    ('risk.rank.cols.rtp', 'profitGame', 30),
+    ('risk.rank.cols.rtp', 'regTime', 40),
+    ('risk.rank.cols.rtp', 'channel', 50),
+    ('risk.rank.cols.low', 'dep', 10),
+    ('risk.rank.cols.low', 'turnX', 20),
+    ('risk.rank.cols.low', 'wdN', 30),
+    ('risk.rank.cols.low', 'regTime', 40),
+    ('risk.rank.cols.low', 'channel', 50),
+    ('risk.rank.cols.all', 'dep', 10),
+    ('risk.rank.cols.all', 'wd', 20),
+    ('risk.rank.cols.all', 'bet', 30),
+    ('risk.rank.cols.all', 'regTime', 40),
+    ('risk.rank.cols.all', 'channel', 50),
+    ('risk.rank.cols.bigw', 'turnX', 10)
+) AS d(slot_code, item_code, default_sort)
+WHERE i.slot_code = d.slot_code AND i.item_code = d.item_code;
 
 COMMIT;
 
--- ⑬ 自检：行维度剩 agent / channel / terminal / date 4 项；promoNet 的说明含 withdraw_amount
-SELECT item_code, sort_no, default_sort FROM dashboard_view_slot_item WHERE slot_code = 'promo.channel.rows' ORDER BY sort_no;
-SELECT metric_code, source_table, source_field, remark FROM dashboard_metric_card WHERE metric_code = 'promoNet';
+-- ㉔ 自检：配置已是新版本；新配置位 3 个；各榜默认列
+SELECT config_code, site_code, config_value LIKE '%"chrisk"%' AS upgraded FROM config_center WHERE config_code = 'RISK_RANK_BOARDS' ORDER BY site_code;
+SELECT s.slot_code, (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slot_code = s.slot_code) AS items,
+       (SELECT string_agg(i.item_code, ',' ORDER BY i.default_sort) FROM dashboard_view_slot_item i
+         WHERE i.slot_code = s.slot_code AND i.default_sort IS NOT NULL) AS defaults
+FROM dashboard_view_slot s WHERE s.slot_code LIKE 'risk.rank.%' ORDER BY s.sort_no;

@@ -22,7 +22,11 @@ import com.fivetech.system.service.ISysUserService;
 /** 系统对接 API Key：生成、哈希、新建校验、调用校验、按绑定账号认证（不连库） */
 class ApiKeyServiceTest
 {
-    private static final String LARK = "/notification/lark/send";
+    /** 配置与 Key 里存的模式 */
+    private static final String ALERT = "/monitor/rules/*/alert";
+
+    /** 实际请求的路径 */
+    private static final String PATH = "/monitor/rules/23/alert";
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 10, 12, 0);
 
@@ -107,7 +111,7 @@ class ApiKeyServiceTest
 
     private final MemMapper mapper = new MemMapper();
 
-    private final ApiKeyService service = new ApiKeyService(mapper, users(), new String[] { LARK });
+    private final ApiKeyService service = new ApiKeyService(mapper, users(), new String[] { ALERT });
 
     private static ApiKey req(String name, Long userId, String paths, String ips, LocalDateTime expire)
     {
@@ -149,7 +153,7 @@ class ApiKeyServiceTest
         ApiKey saved = c.key();
         assertEquals(ApiKeyService.sha256(c.secret()), saved.getKeyHash());
         assertEquals(c.secret().substring(0, 12), saved.getKeyPrefix());
-        assertEquals(LARK, saved.getAllowedPaths(), "不填接口 = 全部支持的接口");
+        assertEquals(ALERT, saved.getAllowedPaths(), "不填接口 = 全部支持的接口");
         assertNull(saved.getExpireTime(), "不填到期 = 永不过期");
         assertEquals("admin", saved.getCreateBy());
     }
@@ -168,51 +172,77 @@ class ApiKeyServiceTest
     @Test
     void checkCoversEveryRejection()
     {
-        String ok = service.create(req("ok", 1L, LARK, null, null), "admin").secret();
-        assertTrue(service.check(ok, LARK, "9.9.9.9", NOW).ok());
-        assertEquals("格式不对", service.check("Bearer xyz", LARK, null, NOW).reason());
+        String ok = service.create(req("ok", 1L, ALERT, null, null), "admin").secret();
+        assertTrue(service.check(ok, PATH, "9.9.9.9", NOW).ok());
+        assertEquals("格式不对", service.check("Bearer xyz", PATH, null, NOW).reason());
         assertEquals("接口不支持 API Key", service.check(ok, "/system/user/list", null, NOW).reason());
-        assertEquals("Key 不存在", service.check(ApiKeyService.generate(), LARK, null, NOW).reason());
+        assertEquals("Key 不存在", service.check(ApiKeyService.generate(), PATH, null, NOW).reason());
 
         ApiKeyService.Created ipOnly = service.create(req("ip", 1L, null, "10.0.0.1, 10.0.0.2", null), "admin");
-        assertTrue(service.check(ipOnly.secret(), LARK, "10.0.0.2", NOW).ok());
-        assertTrue(service.check(ipOnly.secret(), LARK, "10.0.0.3", NOW).reason().contains("不在白名单"));
-        assertFalse(service.check(ipOnly.secret(), LARK, null, NOW).ok());
+        assertTrue(service.check(ipOnly.secret(), PATH, "10.0.0.2", NOW).ok());
+        assertTrue(service.check(ipOnly.secret(), PATH, "10.0.0.3", NOW).reason().contains("不在白名单"));
+        assertFalse(service.check(ipOnly.secret(), PATH, null, NOW).ok());
 
         ApiKeyService.Created expiring = service.create(req("exp", 1L, null, null, LocalDateTime.now().plusDays(1)), "admin");
-        assertTrue(service.check(expiring.secret(), LARK, null, LocalDateTime.now()).ok());
-        assertEquals("Key 已过期", service.check(expiring.secret(), LARK, null, LocalDateTime.now().plusDays(2)).reason());
+        assertTrue(service.check(expiring.secret(), PATH, null, LocalDateTime.now()).ok());
+        assertEquals("Key 已过期", service.check(expiring.secret(), PATH, null, LocalDateTime.now().plusDays(2)).reason());
 
         service.revoke(ipOnly.key().getKeyId(), "admin");
-        assertEquals("Key 已作废", service.check(ipOnly.secret(), LARK, "10.0.0.2", NOW).reason());
+        assertEquals("Key 已作废", service.check(ipOnly.secret(), PATH, "10.0.0.2", NOW).reason());
         assertEquals(404, code(() -> service.revoke(999L, "admin")));
 
         // Key 自己的接口范围：系统多支持一个接口，但这个 Key 只开了 Lark
-        ApiKeyService wider = new ApiKeyService(mapper, users(), new String[] { LARK + ",/other/send" });
-        String larkOnly = wider.create(req("lark", 1L, LARK, null, null), "admin").secret();
+        ApiKeyService wider = new ApiKeyService(mapper, users(), new String[] { ALERT + ",/other/send" });
+        String larkOnly = wider.create(req("lark", 1L, ALERT, null, null), "admin").secret();
         assertEquals("Key 不能访问该接口", wider.check(larkOnly, "/other/send", null, NOW).reason());
         assertTrue(wider.supports("/other/send"));
         assertFalse(service.supports("/other/send"));
     }
 
     @Test
+    void pathPatternsMatchOneSegment()
+    {
+        assertTrue(service.supports("/monitor/rules/1/alert"));
+        assertTrue(service.supports("/monitor/rules/R-023/alert"));
+        assertFalse(service.supports("/monitor/rules/1/2/alert"), "* 只匹配一段");
+        assertFalse(service.supports("/monitor/rules/1/test-alert"));
+        assertFalse(service.supports("/notification/lark/send"), "Lark 直发接口不再认 API Key");
+        assertFalse(service.supports(null));
+        String raw = service.create(req("alert", 1L, ALERT, null, null), "admin").secret();
+        assertTrue(service.check(raw, "/monitor/rules/7/alert", null, NOW).ok());
+        assertEquals("接口不支持 API Key", service.check(raw, "/notification/lark/send", null, NOW).reason());
+    }
+
+    @Test
+    void orderRuleQueryPathsMatchWithDoubleStar()
+    {
+        String rules = "/open/monitor/order-rules/**";
+        assertTrue(ApiKeyService.matchesAny(List.of(rules), "/open/monitor/order-rules"), "** 也匹配列表本身");
+        assertTrue(ApiKeyService.matchesAny(List.of(rules), "/open/monitor/order-rules/23"));
+        assertTrue(ApiKeyService.matchesAny(List.of(rules), "/open/monitor/order-rules/R-023"));
+        assertFalse(ApiKeyService.matchesAny(List.of(rules), "/open/monitor/order-rules-x"));
+        assertFalse(ApiKeyService.matchesAny(List.of(rules), "/monitor/order-rules/23"), "后台接口不认 Key");
+        assertFalse(ApiKeyService.matchesAny(List.of(ALERT), "/open/monitor/order-rules"), "只开了发告警的 Key 不能拉规则");
+    }
+
+    @Test
     void authenticateLogsInAsBoundUserWithItsPermissions()
     {
         String raw = service.create(req("bot", 1L, null, null, null), "admin").secret();
-        ApiKeyService.Result r = service.authenticate(raw, LARK, "1.1.1.1", NOW, u -> Set.of("notification:lark:send"));
+        ApiKeyService.Result r = service.authenticate(raw, PATH, "1.1.1.1", NOW, u -> Set.of("monitor:rule:alert"));
         assertTrue(r.ok());
         assertEquals("lark_bot", r.user().getUsername());
-        assertEquals(Set.of("notification:lark:send"), r.user().getPermissions());
+        assertEquals(Set.of("monitor:rule:alert"), r.user().getPermissions());
         assertEquals("bot", r.key().getKeyName());
         service.touch(r.key(), "1.1.1.1");
         assertEquals(List.of(r.key().getKeyId() + "@1.1.1.1"), mapper.touched);
 
         String disabled = service.create(req("disabled", 2L, null, null, null), "admin").secret();
-        ApiKeyService.Result d = service.authenticate(disabled, LARK, null, NOW, u -> Set.of());
+        ApiKeyService.Result d = service.authenticate(disabled, PATH, null, NOW, u -> Set.of());
         assertFalse(d.ok());
         assertEquals("绑定的账号不存在或已停用", d.reason());
 
-        ApiKeyService.Result bad = service.authenticate("ftk_nope_nope_nope_nope", LARK, null, NOW, u -> Set.of());
+        ApiKeyService.Result bad = service.authenticate("ftk_nope_nope_nope_nope", PATH, null, NOW, u -> Set.of());
         assertFalse(bad.ok());
         assertNull(bad.key());
     }

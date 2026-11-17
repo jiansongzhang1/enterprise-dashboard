@@ -55,4 +55,14 @@ public interface MetricDictMapper
     /** 指标管理「可歸因」开关：所有状态的指标都能改 */
     int updateAttributable(@Param("metricCode") String metricCode, @Param("attributable") boolean attributable,
         @Param("updateBy") String updateBy);
+
+    /** 所属范围：OVERVIEW / PROMO / RISK，null = 所有页面 */
+    int updatePageScope(@Param("metricCode") String metricCode, @Param("pageScope") String pageScope,
+        @Param("updateBy") String updateBy);
+
+    /** 页面专属属性（jsonb）；ext 为 null 时清空 */
+    int updateExt(@Param("metricCode") String metricCode, @Param("ext") String ext, @Param("updateBy") String updateBy);
+
+    /** 某个范围的全部指标（含仅登记），按排序号；风控排行榜、游戏分析、条件规则按它读目录 */
+    List<MetricDictItem> selectByPageScope(@Param("pageScope") String pageScope);
 }

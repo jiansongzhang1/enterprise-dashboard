@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * GET /monitor/events 的 data：分页 + asOf + pendingTotal。
+ * GET /monitor/events 的 data：分页 + asOf + pendingTotal + orderPendingTotal（「訂單告警」页签的未处理数）。
  *
  * @author fivetech
  */
@@ -15,6 +15,9 @@ public class MonitorEventPageVO
 
     /** 本站未处理的告警事件总数，不受任何筛选影响 */
     private int pendingTotal;
+
+    /** 订单告警未处理数，同 GET /monitor/order-events 的 pendingTotal */
+    private Integer orderPendingTotal;
 
     private long total;
 
@@ -28,6 +31,8 @@ public class MonitorEventPageVO
     public void setAsOf(String asOf) { this.asOf = asOf; }
     public int getPendingTotal() { return pendingTotal; }
     public void setPendingTotal(int pendingTotal) { this.pendingTotal = pendingTotal; }
+    public Integer getOrderPendingTotal() { return orderPendingTotal; }
+    public void setOrderPendingTotal(Integer orderPendingTotal) { this.orderPendingTotal = orderPendingTotal; }
     public long getTotal() { return total; }
     public void setTotal(long total) { this.total = total; }
     public int getPageNum() { return pageNum; }

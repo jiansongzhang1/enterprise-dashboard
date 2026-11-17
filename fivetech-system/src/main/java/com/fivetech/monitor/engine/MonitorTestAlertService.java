@@ -73,10 +73,13 @@ public class MonitorTestAlertService
 
     private final ZoneId zone;
 
+    private final MonitorTestSender testSender;
+
     public MonitorTestAlertService(MonitorEngineMapper mapper, MonitorDataFetcher fetcher, MonitorPeriodBuilder periodBuilder,
             MonitorMessageBuilder messages, MonitorNotifyTemplateService templates, LarkClient larkClient,
-            MonitorProperties properties, DashboardProperties dashboard)
+            MonitorProperties properties, DashboardProperties dashboard, MonitorTestSender testSender)
     {
+        this.testSender = testSender;
         this.mapper = mapper;
         this.fetcher = fetcher;
         this.periodBuilder = periodBuilder;
@@ -94,11 +97,7 @@ public class MonitorTestAlertService
     public Map<String, Object> trigger(MonitorScope scope, Long ruleId, String operator)
     {
         MonitorProperties.Lark lark = properties.getLark();
-        String chatId = StringUtils.trim(lark.getTestChatId());
-        if (StringUtils.isEmpty(chatId))
-        {
-            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "未配置測試群（環境變量 MONITOR_TEST_CHAT_ID）");
-        }
+        // 2026-11-17 起发到规则当前所有正常的群（FY-91 R9 / FY-92 R4），不再发测试群；测试群只给判定试运行（dry-run）用
         if (StringUtils.isEmpty(lark.getAppId()) || StringUtils.isEmpty(lark.getAppSecret()))
         {
             throw new MonitorException(MonitorErrorCode.LARK_CREDENTIAL_INVALID, "Lark 應用憑證未配置");
@@ -147,17 +146,11 @@ public class MonitorTestAlertService
         MonitorNotifyTemplateService.Rendered rendered = templates.render(scope.getSiteCode(), MonitorNotifyTemplate.ALERT_NEW, values);
         String content = TEST_PREFIX + rendered.getContent();
 
-        LarkResult<String> r = larkClient.sendPost(lark.getAppId(), lark.getAppSecret(), "chat_id", chatId, "",
-                MonitorLarkPost.paragraphs(content));
-        String error = r.isSuccess() ? null : MonitorNotifySender.reason(r, false);
-        log.info("[monitor] 手动触发测试告警 site={} rule={} metric={} period={}~{} level={} by={} → {}", scope.getSiteCode(),
-                ruleId, rule.getMetricCode(), period[0], period[1], level, operator, r.isSuccess() ? "已发送 " + r.getData() : error);
+        Map<String, Object> sent = testSender.send(scope, rule.getNotifyChats(), rule.getNotifyChatId(), rule.getNotifyChatName(), content);
+        log.info("[monitor] 手动触发测试告警 site={} rule={} metric={} period={}~{} level={} by={} → success={} chats={}", scope.getSiteCode(),
+                ruleId, rule.getMetricCode(), period[0], period[1], level, operator, sent.get("success"), sent.get("chats"));
 
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("success", r.isSuccess());
-        out.put("messageId", r.isSuccess() ? r.getData() : null);
-        out.put("error", error);
-        out.put("chatId", chatId);
+        Map<String, Object> out = new LinkedHashMap<>(sent);
         out.put("ruleId", rule.getRuleId());
         out.put("ruleCode", values.get("ruleCode"));
         out.put("metricCode", rule.getMetricCode());

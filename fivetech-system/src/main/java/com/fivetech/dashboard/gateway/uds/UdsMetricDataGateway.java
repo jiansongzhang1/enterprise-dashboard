@@ -99,6 +99,48 @@ public class UdsMetricDataGateway implements MetricDataGateway
         this.dashboard = dashboard;
     }
 
+    /** 派生公式：op 为 SUBTRACT / ADD / DIVIDE，left、right 为操作数的指标编码（操作数本身也可以是派生指标） */
+    record Formula(String op, String left, String right)
+    {
+    }
+
+    /** 公式最多嵌套几层（防止配置成环时无限递归；循环依赖在指标管理保存时已拦截） */
+    private static final int MAX_FORMULA_DEPTH = 5;
+
+    /**
+     * 指标管理里配的派生公式（dashboard_metric_card.calc_type + left_code / right_code）。
+     * yml 的 overview.subtract / add / divide 优先；数据集里直接映射了的指标不按公式算。
+     * 这样新指标（如提存比、RTP）只在「指标管理」里配公式即可，不用改 yml、不用发版。
+     */
+    private volatile java.util.function.Function<String, Formula> dbFormulas = c -> null;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setMetricRegistry(com.fivetech.dashboard.service.MetricRegistry registry)
+    {
+        this.dbFormulas = registry == null ? c -> null : code -> dbFormula(registry.get(code));
+    }
+
+    /** 测试注入 */
+    void setDbFormulas(java.util.function.Function<String, Formula> formulas)
+    {
+        this.dbFormulas = formulas == null ? c -> null : formulas;
+    }
+
+    static Formula dbFormula(com.fivetech.dashboard.domain.MetricDefinition def)
+    {
+        if (def == null || StringUtils.isEmpty(def.getCalcType()) || StringUtils.isEmpty(def.getLeftCode())
+            || StringUtils.isEmpty(def.getRightCode()))
+        {
+            return null;
+        }
+        String op = def.getCalcType().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!"DIVIDE".equals(op) && !"SUBTRACT".equals(op) && !"ADD".equals(op))
+        {
+            return null;
+        }
+        return new Formula(op, def.getLeftCode().trim(), def.getRightCode().trim());
+    }
+
     // ===================== 新鲜度 =====================
 
     /** 最近一次指标查询带回的元信息。UDS 没有独立的水位线接口，只能从查询响应里捎带 */
@@ -173,8 +215,11 @@ public class UdsMetricDataGateway implements MetricDataGateway
         }
         for (String code : codes)
         {
-            List<String> ops = composedOps(code);
-            boolean gone = ops != null ? isOmitted(m, ops.get(0)) || isOmitted(m, ops.get(1)) : isOmitted(m, code);
+            boolean gone = false;
+            for (String leaf : leaves(code))
+            {
+                gone = gone || isOmitted(m, leaf);
+            }
             if (gone)
             {
                 out.add(code);
@@ -295,29 +340,94 @@ public class UdsMetricDataGateway implements MetricDataGateway
         return result;
     }
 
-    /** 后端组装指标（overview.subtract / overview.add / overview.divide）的两个操作数；不是组装指标返回 null */
-    private List<String> composedOps(String code)
+    /**
+     * 后端组装指标的公式：先看 yml 的 overview.subtract / add / divide，再看指标管理里配的公式；
+     * 在任一数据集里直接映射了的指标不是组装指标。不是组装指标返回 null
+     */
+    Formula formula(String code)
     {
         UdsProperties.Overview ov = properties.getOverview();
-        List<String> ops = ov.getSubtract().get(code);
-        if (ops == null)
+        Formula f = ymlFormula("SUBTRACT", ov.getSubtract().get(code));
+        if (f == null)
         {
-            ops = ov.getAdd().get(code);
+            f = ymlFormula("ADD", ov.getAdd().get(code));
         }
-        if (ops == null)
+        if (f == null)
         {
-            ops = ov.getDivide().get(code);
+            f = ymlFormula("DIVIDE", ov.getDivide().get(code));
         }
-        return ops != null && ops.size() == 2 ? ops : null;
+        if (f != null || code == null || directlyMapped(code))
+        {
+            return f;
+        }
+        return dbFormulas.apply(code);
     }
 
-    /**
-     * 按 overview.subtract（a − b）、overview.add（a + b）或 overview.divide（a ÷ b）组装；任一为 NULL 则 NULL。
-     * 相除时 a、b 是同一时间片 / 区间的合计（SUM），分母为 0 返回 NULL（sum(a) / nullif(sum(b), 0)）
-     */
-    private BigDecimal compose(String code, BigDecimal a, BigDecimal b)
+    private static Formula ymlFormula(String op, List<String> ops)
     {
-        return compose(properties.getOverview(), code, a, b);
+        return ops != null && ops.size() == 2 ? new Formula(op, ops.get(0), ops.get(1)) : null;
+    }
+
+    /** 任一数据集（小时 / 日 / 金额）直接映射了这个编码 */
+    private boolean directlyMapped(String code)
+    {
+        for (UdsProperties.Dataset d : properties.getDatasets().values())
+        {
+            if (d != null && d.getMetrics() != null && d.getMetrics().containsKey(code))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 组装指标展开到最底层的原子量（要向 UDS 取的列）；不是组装指标返回它自己 */
+    Set<String> leaves(String code)
+    {
+        Set<String> out = new LinkedHashSet<>();
+        collectLeaves(code, out, 0);
+        return out;
+    }
+
+    private void collectLeaves(String code, Set<String> out, int depth)
+    {
+        Formula f = depth >= MAX_FORMULA_DEPTH ? null : formula(code);
+        if (f == null)
+        {
+            out.add(code);
+            return;
+        }
+        collectLeaves(f.left(), out, depth + 1);
+        collectLeaves(f.right(), out, depth + 1);
+    }
+
+    /** 按公式逐层计算；raw 给出原子量的值。任一操作数为 NULL 则 NULL，除数为 0 则 NULL */
+    BigDecimal value(String code, java.util.function.Function<String, BigDecimal> raw, int depth)
+    {
+        Formula f = depth >= MAX_FORMULA_DEPTH ? null : formula(code);
+        if (f == null)
+        {
+            return raw.apply(code);
+        }
+        return apply(f.op(), value(f.left(), raw, depth + 1), value(f.right(), raw, depth + 1));
+    }
+
+    static BigDecimal apply(String op, BigDecimal a, BigDecimal b)
+    {
+        if (a == null || b == null)
+        {
+            return null;
+        }
+        if ("DIVIDE".equals(op))
+        {
+            return b.signum() == 0 ? null : a.divide(b, 6, java.math.RoundingMode.HALF_UP);
+        }
+        return "SUBTRACT".equals(op) ? a.subtract(b) : a.add(b);
+    }
+
+    private static BigDecimal at(List<BigDecimal> list, int i)
+    {
+        return list == null || i >= list.size() ? null : list.get(i);
     }
 
     static BigDecimal compose(UdsProperties.Overview ov, String code, BigDecimal a, BigDecimal b)
@@ -339,15 +449,7 @@ public class UdsMetricDataGateway implements MetricDataGateway
         Set<String> fetch = new LinkedHashSet<>();
         for (String code : codes)
         {
-            List<String> ops = composedOps(code);
-            if (ops != null)
-            {
-                fetch.addAll(ops);
-            }
-            else
-            {
-                fetch.add(code);
-            }
+            fetch.addAll(leaves(code));
         }
         return fetch;
     }
@@ -398,15 +500,13 @@ public class UdsMetricDataGateway implements MetricDataGateway
 
         for (String code : request.getMetricCodes())
         {
-            List<String> ops = composedOps(code);
-            if (ops != null)
+            if (formula(code) != null)
             {
-                List<BigDecimal> a = raw.get(ops.get(0));
-                List<BigDecimal> b = raw.get(ops.get(1));
                 List<BigDecimal> out = result.get(code);
                 for (int i = 0; i < points; i++)
                 {
-                    out.set(i, compose(code, a == null ? null : a.get(i), b == null ? null : b.get(i)));
+                    final int idx = i;
+                    out.set(i, value(code, c -> at(raw.get(c), idx), 0));
                 }
             }
             else if (raw.containsKey(code))
@@ -510,21 +610,20 @@ public class UdsMetricDataGateway implements MetricDataGateway
         }
         for (String code : metricCodes)
         {
-            List<String> ops = composedOps(code);
-            if (ops != null)
+            Formula f = formula(code);
+            if (f != null)
             {
-                List<BigDecimal> a = raw.get(ops.get(0));
-                List<BigDecimal> b = raw.get(ops.get(1));
                 List<BigDecimal> composed = nulls(points);
                 for (int i = 0; i < points; i++)
                 {
-                    composed.set(i, compose(code, a == null ? null : a.get(i), b == null ? null : b.get(i)));
+                    final int idx = i;
+                    composed.set(i, value(code, c -> at(raw.get(c), idx), 0));
                 }
                 out.put(code, composed);
-                if (properties.getOverview().getDivide().containsKey(code))
+                if ("DIVIDE".equals(f.op()) && formula(f.left()) == null && formula(f.right()) == null)
                 {
                     // 多小时周期要用合计后的分子 ÷ 分母重算（MonitorPeriodBuilder），不能平均各小时的商
-                    out.putRatio(code, ops.get(0), ops.get(1));
+                    out.putRatio(code, f.left(), f.right());
                 }
             }
             else if (raw.containsKey(code))
@@ -806,11 +905,10 @@ public class UdsMetricDataGateway implements MetricDataGateway
 
         for (String code : request.getMetricCodes())
         {
-            List<String> ops = composedOps(code);
-            if (ops != null)
+            if (formula(code) != null)
             {
                 // 不能先算每小时再 SUM：某小时一项 NULL 会丢掉其他存在的金额
-                result.put(code, compose(code, raw.get(ops.get(0)), raw.get(ops.get(1))));
+                result.put(code, value(code, raw::get, 0));
             }
             else
             {

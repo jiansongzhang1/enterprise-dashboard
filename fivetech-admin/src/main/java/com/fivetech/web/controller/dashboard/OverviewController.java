@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.fivetech.common.annotation.Log;
 import com.fivetech.common.core.controller.BaseController;
 import com.fivetech.common.core.domain.AjaxResult;
 import com.fivetech.common.enums.BusinessType;
@@ -80,18 +81,26 @@ public class OverviewController extends BaseController
     /**
      * 查询指标墙；{@code export=true} 时下载 xlsx。
      *
-     * <p>查询需要 {@code dashboard:overview:metrics}；{@code scene = PROMO}（推广分析概览）需要 {@code dashboard:promo:view}。
+     * <p>查询需要 {@code dashboard:overview:metrics}；{@code scene = PROMO}（推广分析概览）需要 {@code dashboard:promo:view}；
+     * {@code scene = RISK}（风控分析概览）需要 {@code dashboard:risk:view}，导出另需 {@code dashboard:risk:export}。
      * 能查询就能导出，{@code export=true} 时只校验导出总开关，并写入操作日志审计。</p>
      */
-    @PreAuthorize("@ss.hasAnyPermi('dashboard:overview:metrics,dashboard:promo:view')")
+    @PreAuthorize("@ss.hasAnyPermi('dashboard:overview:metrics,dashboard:promo:view,dashboard:risk:view')")
+    @Log(title = "概览指标查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/overview")
     public ResponseEntity<?> overview(@Validated @RequestBody OverviewQuery query)
     {
-        // 注解放宽为任一权限，这里按 scene 校验：推广分析要 dashboard:promo:view，运营总览要 dashboard:overview:metrics
-        String need = query.isPromo() ? "dashboard:promo:view" : "dashboard:overview:metrics";
+        // 注解放宽为任一权限，这里按 scene 校验：推广分析要 dashboard:promo:view，风控分析要 dashboard:risk:view，
+        // 运营总览要 dashboard:overview:metrics
+        String need = query.isPromo() ? "dashboard:promo:view"
+            : query.isRisk() ? "dashboard:risk:view" : "dashboard:overview:metrics";
         if (!SecurityUtils.hasPermi(need))
         {
             throw new org.springframework.security.access.AccessDeniedException("没有权限：" + need);
+        }
+        if (query.isExport() && query.isRisk() && !SecurityUtils.hasPermi("dashboard:risk:export"))
+        {
+            throw new org.springframework.security.access.AccessDeniedException("没有权限：dashboard:risk:export");
         }
         if (query.isExport())
         {
@@ -115,13 +124,20 @@ public class OverviewController extends BaseController
             notes.put("终端", query.getTerminal() == null || query.getTerminal().isBlank() ? "all" : query.getTerminal());
             file = xlsxExporter.export(data, notes);
         }
+        else if (query.isRisk())
+        {
+            java.util.Map<String, String> notes = new java.util.LinkedHashMap<>();
+            notes.put("页面", "风控分析 · 概览");
+            file = xlsxExporter.export(data, notes);
+        }
         else
         {
             file = xlsxExporter.export(data);
         }
         audit(query, file.length);
-        return DashboardExportSupport.xlsx(query.isPromo() ? xlsxExporter.fileName(data, "推廣分析概覽")
-            : xlsxExporter.fileName(data), file);
+        String fileName = query.isPromo() ? xlsxExporter.fileName(data, "推廣分析概覽")
+            : query.isRisk() ? xlsxExporter.fileName(data, "風控分析概覽") : xlsxExporter.fileName(data);
+        return DashboardExportSupport.xlsx(fileName, file);
     }
 
 
@@ -131,6 +147,7 @@ public class OverviewController extends BaseController
      * 前端按 leaderboard 调用，两个路径都映射到这里，以 leaderboard 为准。</p>
      */
     @PreAuthorize("@ss.hasPermi('dashboard:overview:leaderboard')")
+    @Log(title = "排行榜查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping({"/rankingboard"})
     public ResponseEntity<?> rankingBoard(@Validated @RequestBody RankingBoardQuery query)
     {
@@ -163,6 +180,7 @@ public class OverviewController extends BaseController
      * 留存与 LTV：按首投日 / 首存日分群的两张 T-1 队列矩阵。
      */
     @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
+    @Log(title = "留存查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/cohort")
     public AjaxResult cohort(@Validated @RequestBody CohortQuery query)
     {
@@ -183,6 +201,7 @@ public class OverviewController extends BaseController
      * 注册渠道：渠道分组 + 全部渠道，筛选在前端完成。
      */
     @PreAuthorize("@ss.hasPermi('dashboard:overview:view')")
+    @Log(title = "注册渠道查询", businessType = BusinessType.QUERY, isSaveResponseData = false)
     @PostMapping("/reg-channels")
     public AjaxResult regChannels(@Validated @RequestBody RegChannelQuery query)
     {

@@ -23,6 +23,19 @@
             <artifactId>fivetech-common</artifactId>
         </dependency>
 
+        <!-- 订单规则变更事件发到 MSK（没配 spring.kafka.bootstrap-servers 时不装配，见 OrderRuleEventPublisher）。
+             必须用 Boot 的 starter：Spring Boot 4 把自动配置拆成了独立模块，只加 spring-kafka 不会有 KafkaTemplate Bean -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
+        </dependency>
+
+        <!-- MSK 的 IAM 认证；走实例角色取临时凭证，代码里不配密钥 -->
+        <dependency>
+            <groupId>software.amazon.msk</groupId>
+            <artifactId>aws-msk-iam-auth</artifactId>
+        </dependency>
+
         <!-- 单元测试（版本由 spring-boot-dependencies 管理）：目前只有 MonitorMapperScopeTest -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

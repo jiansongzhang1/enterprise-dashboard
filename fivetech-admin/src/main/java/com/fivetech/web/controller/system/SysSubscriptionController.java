@@ -14,13 +14,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.fivetech.common.annotation.Log;
 import com.fivetech.common.core.controller.BaseController;
 import com.fivetech.common.core.domain.AjaxResult;
-import com.fivetech.common.core.domain.model.LoginUser;
 import com.fivetech.common.enums.BusinessType;
-import com.fivetech.common.utils.SecurityUtils;
+import com.fivetech.dashboard.subscription.SubscriptionActor;
 import com.fivetech.dashboard.subscription.SubscriptionService;
 
 /**
- * 【管理后台】系统管理 · 订阅简报：每天定时把运营总览某个范围的指标整理成卡片，发到 Lark 群或个人。
+ * 【管理后台】系统管理 · 订阅简报：按频率把运营总览某个范围的指标整理成卡片，发到 Lark 群（站点页面的订阅管理见
+ * {@code /dashboard/subscriptions}；这里的操作人一律按管理员）。
  *
  * <p>权限：查看 {@code system:subscription:list}；新增 {@code :add}；修改、启停、立即发送、测试发送 {@code :edit}；删除 {@code :remove}。
  * 站点在请求体 / 参数里指定（管理后台不走 X-Site-Code）。</p>
@@ -125,7 +125,7 @@ public class SysSubscriptionController extends BaseController
         return success(service.preview(body, getUsername()));
     }
 
-    /** 立即发送给全部接收者：{ status, period, sent, failed, results } */
+    /** 立即发送给全部接收群（异步）：{ accepted, message }，结果在发送记录里看 */
     @PreAuthorize("@ss.hasPermi('system:subscription:edit')")
     @Log(title = "訂閱簡報 · 立即發送", businessType = BusinessType.OTHER)
     @PostMapping("/{id}/send")
@@ -134,14 +134,12 @@ public class SysSubscriptionController extends BaseController
         return success(service.sendNow(id, getUsername()));
     }
 
-    /** 测试发送：只发给自己（按登录账号的邮箱），卡片标【測試】 */
+    /** 测试发送：发到订阅的接收群，卡片标【測試】，不记录、不影响排程（2026-11-13 起不再只发给自己） */
     @PreAuthorize("@ss.hasPermi('system:subscription:edit')")
     @Log(title = "訂閱簡報 · 測試發送", businessType = BusinessType.OTHER)
     @PostMapping("/{id}/test")
     public AjaxResult test(@PathVariable Long id)
     {
-        LoginUser user = SecurityUtils.getLoginUser();
-        String email = user == null || user.getUser() == null ? null : user.getUser().getEmail();
-        return success(service.test(id, getUserId(), email, getUsername()));
+        return success(service.test(id, SubscriptionActor.admin(getUserId(), getUsername())));
     }
 }

@@ -202,6 +202,7 @@ public class SysMenuServiceImpl implements ISysMenuService
             router.setName(getRouteName(menu));
             router.setPath(getRouterPath(menu));
             router.setComponent(getComponent(menu));
+            router.setGroupCode(groupCode(menu));
             router.setQuery(menu.getQuery());
             router.setMeta(new MetaVo(menu.getMenuName(), menu.getIcon(), StringUtils.equals("1", menu.getIsCache()), menu.getPath()));
             List<SysMenu> cMenus = menu.getChildren();
@@ -218,6 +219,7 @@ public class SysMenuServiceImpl implements ISysMenuService
                 RouterVo children = new RouterVo();
                 children.setPath(menu.getPath());
                 children.setComponent(menu.getComponent());
+                children.setGroupCode(groupCode(menu));
                 children.setName(getRouteName(menu.getRouteName(), menu.getPath()));
                 children.setMeta(new MetaVo(menu.getMenuName(), menu.getIcon(), StringUtils.equals("1", menu.getIsCache()), menu.getPath()));
                 children.setQuery(menu.getQuery());
@@ -233,6 +235,7 @@ public class SysMenuServiceImpl implements ISysMenuService
                 String routerPath = innerLinkReplaceEach(menu.getPath());
                 children.setPath(routerPath);
                 children.setComponent(UserConstants.INNER_LINK);
+                children.setGroupCode(groupCode(menu));
                 children.setName(getRouteName(menu.getRouteName(), routerPath));
                 children.setMeta(new MetaVo(menu.getMenuName(), menu.getIcon(), menu.getPath()));
                 childrenList.add(children);
@@ -331,6 +334,7 @@ public class SysMenuServiceImpl implements ISysMenuService
     @Override
     public int insertMenu(SysMenu menu)
     {
+        menu.setGroupCode(checkGroupCode(menu.getGroupCode()));
         return menuMapper.insertMenu(menu);
     }
 
@@ -343,7 +347,38 @@ public class SysMenuServiceImpl implements ISysMenuService
     @Override
     public int updateMenu(SysMenu menu)
     {
+        // 不传（空）沿用原值
+        menu.setGroupCode(StringUtils.isEmpty(StringUtils.trim(menu.getGroupCode())) ? null : checkGroupCode(menu.getGroupCode()));
         return menuMapper.updateMenu(menu);
+    }
+
+    /** 菜单分组（视角）：站点板块，默认 */
+    public static final String GROUP_SITE = "site";
+
+    /** 菜单分组（视角）：游戏板块（老板视角） */
+    public static final String GROUP_GAME = "game";
+
+    /** 路由的 group_code：菜单没设置时按站点板块 */
+    static String groupCode(SysMenu menu)
+    {
+        String g = menu == null ? null : StringUtils.trim(menu.getGroupCode());
+        return StringUtils.isEmpty(g) ? GROUP_SITE : g;
+    }
+
+    /** 新增 / 修改时校验分组：空 = site；只能是 site / game（不区分大小写） */
+    static String checkGroupCode(String value)
+    {
+        String g = StringUtils.trim(value);
+        if (StringUtils.isEmpty(g))
+        {
+            return GROUP_SITE;
+        }
+        g = g.toLowerCase(java.util.Locale.ROOT);
+        if (!GROUP_SITE.equals(g) && !GROUP_GAME.equals(g))
+        {
+            throw new ServiceException("菜單分組只能是 site（站點）或 game（遊戲）");
+        }
+        return g;
     }
 
     /**

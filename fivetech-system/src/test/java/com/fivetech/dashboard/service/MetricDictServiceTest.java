@@ -35,6 +35,12 @@ class MetricDictServiceTest
 
     private MetricDictItem lastWrite;
 
+    /** updateExt 的写入：编码 → JSON（null = 清空） */
+    private final Map<String, String> extWrites = new LinkedHashMap<>();
+
+    /** updatePageScope 的写入：编码 → 范围 */
+    private final Map<String, String> scopeWrites = new LinkedHashMap<>();
+
     private MetricDictService service;
 
     /** 记录重载次数；reloadFails 时模拟配置校验不通过 */
@@ -103,6 +109,8 @@ class MetricDictServiceTest
                                 c.setRightCode(it.getRightCode());
                                 c.setMinSampleKey(it.getMinSampleKey());
                                 c.setCalcType(it.getCalcType());
+                                c.setPageScope(it.getPageScope());
+                                c.setExtJson(it.getExtJson());
                                 copy.add(c);
                             }
                             return copy;
@@ -127,6 +135,20 @@ class MetricDictServiceTest
                         case "updateRegisteredBasic":
                         case "updateLiveBasic":
                             lastWrite = (MetricDictItem) args[0];
+                            return 1;
+                        case "updatePageScope":
+                            scopeWrites.put((String) args[0], (String) args[1]);
+                            if (rows.containsKey((String) args[0]))
+                            {
+                                rows.get((String) args[0]).setPageScope((String) args[1]);
+                            }
+                            return 1;
+                        case "updateExt":
+                            extWrites.put((String) args[0], (String) args[1]);
+                            if (rows.containsKey((String) args[0]))
+                            {
+                                rows.get((String) args[0]).setExtJson((String) args[1]);
+                            }
                             return 1;
                         case "deleteRegistered":
                             rows.remove((String) args[0]);
@@ -413,6 +435,147 @@ class MetricDictServiceTest
         assertTrue(e.getFields().containsKey("remark"));
         MonitorException nf = assertThrows(MonitorException.class, () -> service.update("nope", new MetricDictItem(), "ops"));
         assertEquals(404, nf.getCode());
+    }
+
+    // ------------------------------------------------------------------ 所属范围
+
+    @SuppressWarnings("unchecked")
+    private List<MetricDictItem> byScope(String scope)
+    {
+        return (List<MetricDictItem>) service.list(null, null, null, scope).get("rows");
+    }
+
+    @Test
+    void pageScopeEditableAndFilterable()
+    {
+        MetricDictItem body = new MetricDictItem();
+        body.setPageScope(" promo ");
+        service.update("reg", body, "ops");
+        assertEquals("PROMO", rows.get("reg").getPageScope(), "不区分大小写，去空格");
+        assertEquals(1, reloads, "已接入的指标照常重载");
+
+        assertEquals(List.of("reg"), byScope("PROMO").stream().map(MetricDictItem::getMetricCode).toList());
+        assertEquals(rows.size() - 1, byScope("ALL").size(), "ALL = 只看适用于所有页面的");
+        assertEquals(0, byScope("RISK").size());
+        assertEquals(rows.size(), byScope(null).size(), "不传不筛");
+        assertEquals(List.of("OVERVIEW", "PROMO", "RISK", "RISK_RANK", "RISK_GAME", "MONITOR_COND"),
+            service.list(null, null, null).get("pageScopes"));
+
+        calls.clear();
+        MetricDictItem keep = new MetricDictItem();
+        keep.setRemark("口徑：x");
+        service.update("reg", keep, "ops");
+        assertEquals("PROMO", rows.get("reg").getPageScope(), "不传沿用原值");
+        assertTrue(!calls.contains("updatePageScope"), "没变不写");
+
+        MetricDictItem clear = new MetricDictItem();
+        clear.setPageScope("");
+        service.update("reg", clear, "ops");
+        assertNull(rows.get("reg").getPageScope(), "空串清空为所有页面");
+
+        MetricDictItem risk = new MetricDictItem();
+        risk.setPageScope("RISK");
+        service.update("newOne", risk, "ops");
+        assertEquals("RISK", rows.get("newOne").getPageScope(), "仅登记的指标也能改");
+    }
+
+    @Test
+    void extOnlyForCatalogScopesAndValidatedPerScope()
+    {
+        // 普通范围不能带页面属性
+        MetricDictItem bad = new MetricDictItem();
+        bad.setExt(new LinkedHashMap<>(Map.of("apiCode", "dep")));
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update("reg", bad, "ops"));
+        assertTrue(e.getFields().containsKey("ext"));
+
+        // 登记一个排行榜列：范围 RISK_RANK + 页面属性
+        MetricDictItem col = new MetricDictItem();
+        col.setMetricCode("rkDep");
+        col.setMetricName("存款");
+        col.setGroupCode("eg1");
+        col.setPageScope("risk_rank");
+        Map<String, Object> ext = new LinkedHashMap<>();
+        ext.put("apiCode", "dep");
+        ext.put("group", "fund");
+        ext.put("source", "USER_DAY");
+        ext.put("condition", "range");
+        ext.put("common", true);
+        col.setExt(ext);
+        service.create(col, "admin");
+        assertEquals("RISK_RANK", scopeWrites.get("rkDep"));
+        assertTrue(extWrites.get("rkDep").contains("\"group\":\"FUND\""), "枚举统一大写：" + extWrites.get("rkDep"));
+        assertTrue(extWrites.get("rkDep").contains("\"condition\":\"RANGE\""));
+
+        // 缺必填、取值不对：按字段报错
+        MetricDictItem wrong = new MetricDictItem();
+        wrong.setMetricCode("rkX");
+        wrong.setMetricName("x");
+        wrong.setGroupCode("eg1");
+        wrong.setPageScope("RISK_RANK");
+        wrong.setExt(new LinkedHashMap<>(Map.of("apiCode", "X1", "group", "nope", "source", "USER_DAY", "agg", "FOLLOW")));
+        MonitorFieldException e2 = assertThrows(MonitorFieldException.class, () -> service.create(wrong, "admin"));
+        assertTrue(e2.getFields().containsKey("ext.apiCode"), "接口编码小写字母开头");
+        assertTrue(e2.getFields().containsKey("ext.group"));
+        assertTrue(e2.getFields().containsKey("ext.follow"), "FOLLOW 要填跟随哪一列");
+
+        // 条件规则字段：维度只能用目录里的
+        MetricDictItem cond = new MetricDictItem();
+        cond.setMetricCode("cdDep");
+        cond.setMetricName("存款總額");
+        cond.setGroupCode("eg1");
+        cond.setPageScope("MONITOR_COND");
+        cond.setExt(new LinkedHashMap<>(Map.of("apiCode", "dep", "dims", List.of("ch", "xx"))));
+        MonitorFieldException e3 = assertThrows(MonitorFieldException.class, () -> service.create(cond, "admin"));
+        assertTrue(e3.getFields().containsKey("ext.dims"));
+
+        // 改范围时，原有的页面属性要按新范围校验
+        rows.put("rkDep", row("rkDep", "1", null, null, null));
+        rows.get("rkDep").setPageScope("RISK_RANK");
+        rows.get("rkDep").setExtJson(extWrites.get("rkDep"));
+        MetricDictItem move = new MetricDictItem();
+        move.setPageScope("RISK");
+        MonitorFieldException e4 = assertThrows(MonitorFieldException.class, () -> service.update("rkDep", move, "ops"));
+        assertTrue(e4.getFields().containsKey("ext"), "带着排行榜属性不能改到 RISK");
+
+        // 详情带回解析后的 ext；传空对象清空
+        assertEquals("dep", service.detail("rkDep").getExt().get("apiCode"));
+        MetricDictItem clear = new MetricDictItem();
+        clear.setExt(new LinkedHashMap<>());
+        service.update("rkDep", clear, "ops");
+        assertNull(extWrites.get("rkDep"), "空对象清空");
+    }
+
+    @Test
+    void pageScopeValidatedOnUpdateAndCreate()
+    {
+        MetricDictItem bad = new MetricDictItem();
+        bad.setPageScope("SUMMARY");
+        MonitorFieldException e = assertThrows(MonitorFieldException.class, () -> service.update("reg", bad, "ops"));
+        assertTrue(e.getFields().containsKey("pageScope"));
+        assertNull(rows.get("reg").getPageScope(), "校验不通过不写");
+
+        MetricDictItem body = new MetricDictItem();
+        body.setMetricCode("riskWdN");
+        body.setMetricName("提款筆數");
+        body.setGroupCode("eg1");
+        body.setPageScope("risk");
+        service.create(body, "admin");
+        assertEquals("RISK", scopeWrites.get("riskWdN"), "登记时也能填范围");
+
+        MetricDictItem none = new MetricDictItem();
+        none.setMetricCode("anyPage");
+        none.setMetricName("通用指標");
+        none.setGroupCode("eg1");
+        service.create(none, "admin");
+        assertTrue(!scopeWrites.containsKey("anyPage"), "不填 = 所有页面，不写");
+
+        MetricDictItem badCreate = new MetricDictItem();
+        badCreate.setMetricCode("badScope");
+        badCreate.setMetricName("x");
+        badCreate.setGroupCode("eg1");
+        badCreate.setPageScope("ALL");
+        MonitorFieldException e2 = assertThrows(MonitorFieldException.class, () -> service.create(badCreate, "admin"));
+        assertTrue(e2.getFields().containsKey("pageScope"), "ALL 只是列表筛选值，不能存");
     }
 
     // ------------------------------------------------------------------ 删除

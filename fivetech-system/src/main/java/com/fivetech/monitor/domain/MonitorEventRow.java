@@ -36,6 +36,10 @@ public class MonitorEventRow
     private String chatName;
     private String chatStatus;
     private String notifyError;
+    /** 最近一次发送里每个群的结果（JSON 数组），见 MonitorEventMapper.selectEventList */
+    private String notifyBatch;
+    public String getNotifyBatch() { return notifyBatch; }
+    public void setNotifyBatch(String notifyBatch) { this.notifyBatch = notifyBatch; }
     private LocalDateTime muteSentAt;
     private Integer muteHours;
     private String handleStatus;
@@ -114,4 +118,20 @@ public class MonitorEventRow
     public void setHandledAt(LocalDateTime handledAt) { this.handledAt = handledAt; }
     public boolean isHandleReset() { return handleReset; }
     public void setHandleReset(boolean handleReset) { this.handleReset = handleReset; }
+
+    /** METRIC / COND（release_next ㉓） */
+    private String ruleType;
+
+    /** 条件规则的规则名 */
+    private String ruleName;
+
+    /** 条件规则：各条件触发时与最近一期的值（jsonb 文本） */
+    private String detail;
+
+    public String getRuleType() { return ruleType; }
+    public void setRuleType(String ruleType) { this.ruleType = ruleType; }
+    public String getRuleName() { return ruleName; }
+    public void setRuleName(String ruleName) { this.ruleName = ruleName; }
+    public String getDetail() { return detail; }
+    public void setDetail(String detail) { this.detail = detail; }
 }

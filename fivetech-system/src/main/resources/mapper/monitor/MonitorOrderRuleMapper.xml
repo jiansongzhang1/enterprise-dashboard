@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  订单规则：monitor_rule 里 rule_type = 'ORDER' 的行（release_next ⑱）。条件存在 config（jsonb），
+  键名见 OrderRuleConfig：orderType、triggerAt、amountMode、amountThreshold、channelScope{type, promoterId, channelId…}、dailyCap。
+-->
+<mapper namespace="com.fivetech.monitor.mapper.MonitorOrderRuleMapper">
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorRule" id="OrderRuleResult">
+		<id     property="ruleId"         column="rule_id"          />
+		<result property="siteCode"       column="site_code"        />
+		<result property="ruleNo"         column="rule_no"          />
+		<result property="ruleType"       column="rule_type"        />
+		<result property="ruleName"       column="rule_name"        />
+		<result property="description"    column="description"      />
+		<result property="level"          column="level"            />
+		<result property="enabled"        column="enabled"          />
+		<result property="pausedAt"       column="paused_at"        />
+		<result property="ownerUserId"    column="owner_user_id"    />
+		<result property="notifyEnabled"  column="notify_enabled"   />
+		<result property="notifyChatId"   column="notify_chat_id"   />
+		<result property="notifyChatName" column="notify_chat_name" />
+		<result property="notifyChats"    column="notify_chats"     />
+		<result property="currency"       column="currency"         />
+		<result property="config"         column="config"           />
+		<result property="version"        column="version"          />
+		<result property="delFlag"        column="del_flag"         />
+		<result property="createBy"       column="create_by"        />
+		<result property="createTime"     column="create_time"      />
+		<result property="updateBy"       column="update_by"        />
+		<result property="updateTime"     column="update_time"      />
+		<result property="ownerEmail"     column="owner_email"      />
+		<result property="ownerName"      column="owner_name"       />
+		<result property="ownerValid"     column="owner_valid"      />
+		<result property="chatName"       column="chat_name"        />
+		<result property="chatStatus"     column="chat_status"      />
+		<result property="createByEmail"  column="create_by_email"  />
+		<result property="updateByEmail"  column="update_by_email"  />
+	</resultMap>
+
+	<!-- 规则 + 负责人 + 通知群（缓存里的最新群名与状态）+ 创建 / 修改人邮箱 -->
+	<sql id="selectOrderRuleVo">
+		select r.rule_id, r.site_code, r.rule_no, r.rule_type, r.rule_name, r.description, r.level,
+		       r.enabled, r.paused_at, r.owner_user_id, r.notify_enabled, r.notify_chat_id, r.notify_chat_name,
+		       <include refid="com.fivetech.monitor.mapper.MonitorCommon.ruleChatsJson"><property name="alias" value="r"/></include> as notify_chats,
+		       r.currency, r.config::text as config, r.version, r.del_flag,
+		       r.create_by, r.create_time, r.update_by, r.update_time,
+		       u.email as owner_email, u.nick_name as owner_name,
+		       coalesce(u.del_flag = '0' and u.status = '0', false) as owner_valid,
+		       coalesce(ch.name, r.notify_chat_name) as chat_name, ch.status as chat_status,
+		       cu.email as create_by_email, mu.email as update_by_email
+		  from monitor_rule r
+		  left join sys_user u  on u.user_id = r.owner_user_id
+		  left join sys_user cu on cu.user_name = r.create_by and cu.del_flag = '0'
+		  left join sys_user mu on mu.user_name = r.update_by and mu.del_flag = '0'
+		  left join monitor_lark_chat ch on ch.site_code = r.site_code and ch.chat_id = r.notify_chat_id
+	</sql>
+
+	<!-- 对外查询 /open/monitor/order-rules：同一参数内为「或」，不同参数之间为「且」 -->
+	<!-- 增量拉取（sinceVersion > 0）时也返回之后删除的规则（deleted = true、enabled = false），判定服务据此停止判定；全量拉取只返回未删除的 -->
+	<select id="selectOrderRuleList" resultMap="OrderRuleResult">
+		<include refid="selectOrderRuleVo"/>
+		 where (r.del_flag = '0'<if test="f.sinceVersion != null and f.sinceVersion > 0"> or r.del_flag = '2'</if>)
+		   and r.rule_type = 'ORDER'
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+		<if test="f.ruleIds != null and f.ruleIds.size() > 0">
+		   and r.rule_id in <foreach collection="f.ruleIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="f.ruleNos != null and f.ruleNos.size() > 0">
+		   and r.rule_no in <foreach collection="f.ruleNos" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<!-- 用 strpos 不用 like：关键字里的 % _ 按字面匹配 -->
+		<if test="f.keyword != null and f.keyword != ''">
+		   and strpos(lower(r.rule_name), #{f.keyword}) > 0
+		</if>
+		<if test="f.enabled != null">
+		   and r.enabled = #{f.enabled}
+		</if>
+		<if test="f.orderTypes != null and f.orderTypes.size() > 0">
+		   and coalesce(r.config->>'orderType', 'WITHDRAW') in
+		       <foreach collection="f.orderTypes" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="f.amountModes != null and f.amountModes.size() > 0">
+		   and r.config->>'amountMode' in <foreach collection="f.amountModes" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="f.triggerAts != null and f.triggerAts.size() > 0">
+		   and r.config->>'triggerAt' in <foreach collection="f.triggerAts" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<if test="f.levels != null and f.levels.size() > 0">
+		   and r.level in <foreach collection="f.levels" item="v" open="(" separator="," close=")">#{v}</foreach>
+		</if>
+		<choose>
+			<when test="f.channelMode == 'ALL'">
+		   and coalesce(jsonb_typeof(r.config->'channelScope'), 'null') = 'null'
+			</when>
+			<when test="f.channelMode == 'PROMOTER'">
+		   and r.config->'channelScope'->>'type' = 'PROMOTER'
+		   and r.config->'channelScope'->>'promoterId' = #{f.promoterId}
+			</when>
+			<when test="f.channelMode == 'CHANNEL'">
+		   and r.config->'channelScope'->>'type' = 'CHANNEL'
+		   and r.config->'channelScope'->>'promoterId' = #{f.promoterId}
+		   and r.config->'channelScope'->>'channelId' = #{f.channelId}
+			</when>
+		</choose>
+		<if test="f.notifyEnabled != null">
+		   and r.notify_enabled = #{f.notifyEnabled}
+		</if>
+		<if test="f.chatIds != null and f.chatIds.size() > 0">
+		   and exists (select 1 from jsonb_array_elements(r.notify_chats) fc
+		                where fc->>'chatId' in <foreach collection="f.chatIds" item="v" open="(" separator="," close=")">#{v}</foreach>)
+		</if>
+		<if test="f.ownerEmail != null and f.ownerEmail != ''">
+		   and lower(u.email) = #{f.ownerEmail}
+		</if>
+		<if test="f.amountMin != null">
+		   and (r.config->>'amountThreshold')::numeric >= #{f.amountMin}
+		</if>
+		<if test="f.amountMax != null">
+		   and (r.config->>'amountThreshold')::numeric &lt;= #{f.amountMax}
+		</if>
+		<if test="f.sinceVersion != null">
+		   and r.version > #{f.sinceVersion}
+		</if>
+		<if test="f.updatedFrom != null">
+		   and r.update_time >= #{f.updatedFrom}
+		</if>
+		<if test="f.updatedTo != null">
+		   and r.update_time &lt; #{f.updatedTo}
+		</if>
+		<choose>
+			<when test="f.orderBy == 'updateTime'"> order by r.update_time desc, r.rule_id desc</when>
+			<when test="f.orderBy == 'ruleNo'"> order by r.rule_no</when>
+			<otherwise> order by r.version, r.rule_id</otherwise>
+		</choose>
+	</select>
+
+	<select id="selectOrderRuleById" resultMap="OrderRuleResult">
+		<include refid="selectOrderRuleVo"/>
+		 where r.del_flag = '0'
+		   and r.rule_type = 'ORDER'
+		   and r.rule_id = #{ruleId}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<!-- 含已删除的行：发 Kafka 事件时要拿到删除后的版本号 -->
+	<select id="selectOrderRuleStateById" resultMap="OrderRuleResult">
+		select r.rule_id, r.site_code, r.rule_no, r.rule_name, r.enabled, r.del_flag, r.version
+		  from monitor_rule r
+		 where r.rule_type = 'ORDER'
+		   and r.rule_id = #{ruleId}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<select id="selectOrderRuleByNo" resultMap="OrderRuleResult">
+		<include refid="selectOrderRuleVo"/>
+		 where r.del_flag = '0'
+		   and r.rule_type = 'ORDER'
+		   and r.rule_no = #{ruleNo}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<!-- metric_code / judge_type / min_sample_key 为空；周期、持续、静默等指标规则的列取默认值，订单规则不用 -->
+	<insert id="insertOrderRule" parameterType="com.fivetech.monitor.domain.MonitorRule"
+	        useGeneratedKeys="true" keyProperty="ruleId" keyColumn="rule_id">
+		insert into monitor_rule (
+		    site_code, rule_no, rule_type, owner_user_id, rule_name, description, level,
+		    notify_enabled, notify_chat_id, notify_chat_name, notify_chats, currency, config,
+		    enabled, paused_at, del_flag, create_by, create_time, update_by, update_time
+		) values (
+		    #{siteCode}, #{ruleNo}, 'ORDER', #{ownerUserId}, #{ruleName}, #{description,jdbcType=VARCHAR}, #{level},
+		    #{notifyEnabled}, #{notifyChatId,jdbcType=VARCHAR}, #{notifyChatName,jdbcType=VARCHAR},
+		    coalesce(#{notifyChats,jdbcType=VARCHAR}, '[]')::jsonb, #{currency}, #{config}::jsonb,
+		    #{enabled}, #{pausedAt,jdbcType=TIMESTAMP}, '0', #{createBy}, #{createTime}, #{createBy}, #{createTime}
+		)
+	</insert>
+
+	<update id="updateOrderRule">
+		update monitor_rule
+		   set owner_user_id    = #{rule.ownerUserId},
+		       rule_name        = #{rule.ruleName},
+		       description      = #{rule.description,jdbcType=VARCHAR},
+		       level            = #{rule.level},
+		       notify_enabled   = #{rule.notifyEnabled},
+		       notify_chat_id   = #{rule.notifyChatId,jdbcType=VARCHAR},
+		       notify_chat_name = #{rule.notifyChatName,jdbcType=VARCHAR},
+		       notify_chats     = coalesce(#{rule.notifyChats,jdbcType=VARCHAR}, '[]')::jsonb,
+		       currency         = #{rule.currency},
+		       config           = #{rule.config}::jsonb,
+		       version          = nextval('monitor_rule_version_seq'),
+		       update_by        = #{rule.updateBy},
+		       update_time      = #{rule.updateTime},
+		       edit_time        = #{rule.updateTime},
+		       edit_by          = #{rule.updateBy}
+		 where rule_id = #{rule.ruleId}
+		   and site_code = #{scope.siteCode}
+		   and del_flag = '0'
+		   and rule_type = 'ORDER'
+	</update>
+
+</mapper>

@@ -42,6 +42,34 @@ public class DashboardSubscriptionLog implements Serializable
 
     private LocalDateTime createTime;
 
+    /** 所属推送批次（dashboard_subscription_run.id）；2026-11-13 之前的记录为空 */
+    private Long runId;
+
+    /** 结果：OK / PART / FAIL / SKIP（{@link SubscriptionReason}）；status 仍写 SUCCESS / FAILED 兼容旧页面 */
+    private String result;
+
+    /** 原因代码（{@link SubscriptionReason#getCode()}），成功为空 */
+    private String reasonCode;
+
+    /** 实际调用 Lark 的次数（含自动重试） */
+    private Integer attempts;
+
+    public Long getRunId() { return runId; }
+
+    public void setRunId(Long runId) { this.runId = runId; }
+
+    public String getResult() { return result; }
+
+    public void setResult(String result) { this.result = result; }
+
+    public String getReasonCode() { return reasonCode; }
+
+    public void setReasonCode(String reasonCode) { this.reasonCode = reasonCode; }
+
+    public Integer getAttempts() { return attempts; }
+
+    public void setAttempts(Integer attempts) { this.attempts = attempts; }
+
     public Long getId() { return id; }
 
     public void setId(Long id) { this.id = id; }

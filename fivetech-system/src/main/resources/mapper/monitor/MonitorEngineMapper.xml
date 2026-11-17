@@ -25,6 +25,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="minSampleValue"    column="min_sample_value"    />
 		<result property="notifyChatId"      column="notify_chat_id"      />
 		<result property="notifyChatName"    column="notify_chat_name"    />
+		<result property="notifyChats"       column="notify_chats"        />
 		<result property="lastNotifiedAt"    column="last_notified_at"    />
 		<result property="stateRuleId"       column="state_rule_id"       />
 		<result property="runStartHour"      column="run_start_hour"      />
@@ -50,6 +51,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		  from monitor_rule r
 		 where r.del_flag = '0'
 		   and r.enabled = true
+		   and r.rule_type = 'METRIC'
 		 order by r.site_code
 	</select>
 
@@ -58,7 +60,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       c.metric_name, c.value_format, u.email as owner_email,
 		       r.judge_type, r.warn_low, r.warn_high, r.crit_low, r.crit_high,
 		       r.period_hours, r.duration_count, r.escalate_hours, r.mute_hours,
-		       r.min_sample_key, r.min_sample_value, r.notify_chat_id, r.notify_chat_name, r.last_notified_at,
+		       r.min_sample_key, r.min_sample_value, r.notify_chat_id, r.notify_chat_name, r.notify_chats::text as notify_chats,
+		       r.last_notified_at,
 		       s.rule_id as state_rule_id, s.run_start_hour,
 		       s.recent_levels::text as recent_levels, s.recent_periods::text as recent_periods,
 		       s.last_period_end, s.last_data_hour,
@@ -74,6 +77,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		                           and e.event_type = 'alert' and e.status = 'open'
 		 where r.del_flag = '0'
 		   and r.enabled = true
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>
@@ -86,7 +90,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		       c.metric_name, c.value_format, u.email as owner_email,
 		       r.judge_type, r.warn_low, r.warn_high, r.crit_low, r.crit_high,
 		       r.period_hours, r.duration_count, r.escalate_hours, r.mute_hours,
-		       r.min_sample_key, r.min_sample_value, r.notify_chat_id, r.notify_chat_name, r.last_notified_at,
+		       r.min_sample_key, r.min_sample_value, r.notify_chat_id, r.notify_chat_name, r.notify_chats::text as notify_chats,
+		       r.last_notified_at,
 		       s.rule_id as state_rule_id, s.run_start_hour,
 		       s.recent_levels::text as recent_levels, s.recent_periods::text as recent_periods,
 		       s.last_period_end, s.last_data_hour,
@@ -102,6 +107,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		                           and e.event_type = 'alert' and e.status = 'open'
 		 where r.del_flag = '0'
 		   and r.rule_id = #{ruleId}
+		   and r.rule_type = 'METRIC'
 		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
 			<property name="alias" value="r"/>
 		</include>

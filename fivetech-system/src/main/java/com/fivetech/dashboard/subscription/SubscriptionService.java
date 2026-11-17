@@ -32,13 +32,14 @@ import com.fivetech.monitor.service.IMonitorLarkChatService;
 import com.fivetech.monitor.service.IMonitorRuleService;
 
 /**
- * 系统管理 · 订阅简报：每天在站点时区的某个整点，把运营总览某个范围的勾选指标整理成卡片，发到 Lark 群或个人。
+ * 订阅简报：按发送频率（每日 / 每週 / 每 N 小時，站点时区整点）把运营总览某个视图的勾选指标整理成卡片（可带整页截图），发到 Lark 群。
  *
  * <ul>
- *   <li>站点建好后不能改（群、可选用户都按站点）；</li>
+ *   <li>站点建好后不能改；视图（统计范围、固定日期、粒度、对比）建立后也不能改（V0.4 原型：要换就在运营总览调整后重新订阅）；</li>
  *   <li>指标从该站点运营总览显示的指标里勾选，发送时按站点顺序输出；</li>
- *   <li>群从本站 Lark 机器人所在的群里选；个人从有本站权限、填了邮箱的用户里选，按邮箱发；</li>
- *   <li>「立即发送」发给全部接收者；「测试发送」只发给操作人自己（按其邮箱），都写发送记录。</li>
+ *   <li>接收者只能是本站 Lark 机器人所在的群（2026-11-13 起不发个人）；</li>
+ *   <li>负责人默认建立人，可转交；只有负责人和管理员能修改（{@link SubscriptionActor}）；</li>
+ *   <li>「立即发送」异步执行，结果写发送历史；「测试发送」按表单发到所选的群，卡片标【測試】，不记录。</li>
  * </ul>
  *
  * @author fivetech
@@ -50,9 +51,13 @@ public class SubscriptionService
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    static final int NAME_MAX = 50;
+    /** 名称（卡片标题）、说明（卡片正文）的字数上限（V0.4 原型：30 / 100） */
+    static final int NAME_MAX = 30;
 
-    static final int DESC_MAX = 200;
+    static final int DESC_MAX = 100;
+
+    /** 固定日期最长多少天 */
+    static final int CUSTOM_MAX_DAYS = 365;
 
     private final DashboardSubscriptionMapper mapper;
 
@@ -148,11 +153,36 @@ public class SubscriptionService
         snap.put("filtersHint", "留空按統計範圍；或填篩選條件 JSON，如 {\"range\":\"yesterday\",\"gran\":\"hour\",\"cmp\":\"previous-period\"}，"
             + "自定義加 \"from\" / \"to\"（yyyy-MM-dd，可用 {from} {to} 表示統計區間首尾日期）");
         out.put("snapshot", snap);
+        // 发送频率（V0.4 原型）：每日、每週（週几 + 整点）、每 N 小時（N = 1–12，从…到…）
+        List<Map<String, Object>> freqs = new ArrayList<>();
+        for (String[] f : new String[][] { { SubscriptionSchedule.DAY, "每日" }, { SubscriptionSchedule.WEEK, "每週" },
+            { SubscriptionSchedule.HOURS, "每 N 小時" } })
+        {
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("code", f[0]);
+            x.put("label", f[1]);
+            freqs.add(x);
+        }
+        out.put("freqTypes", freqs);
+        List<Map<String, Object>> dows = new ArrayList<>();
+        for (int i = 1; i <= 7; i++)
+        {
+            Map<String, Object> x = new LinkedHashMap<>();
+            x.put("value", i);
+            x.put("label", SubscriptionSchedule.DOW[i]);
+            dows.add(x);
+        }
+        out.put("dows", dows);
+        out.put("everyMin", SubscriptionSchedule.EVERY_MIN);
+        out.put("everyMax", SubscriptionSchedule.EVERY_MAX);
+        out.put("nameMax", NAME_MAX);
+        out.put("descriptionMax", DESC_MAX);
+        out.put("graceHours", properties.getGraceHours());
         return out;
     }
 
     /**
-     * 某站点的可选项：指标（该站点运营总览显示的，按站点顺序）、Lark 群（实时拉取；失败给原因）、个人（有本站权限且填了邮箱的用户）。
+     * 某站点的可选项：指标（该站点运营总览显示的，按站点顺序）、Lark 群（实时拉取；失败给原因）、负责人候选（有本站权限且填了邮箱的帐号）。
      */
     public Map<String, Object> options(String siteCode, Long userId)
     {
@@ -194,13 +224,14 @@ public class SubscriptionService
         {
             chatsError = e.getMessage();
         }
-        List<Map<String, Object>> users = new ArrayList<>();
-        for (MonitorOwnerVO o : ruleService.listOwners(scope))
+        // 负责人候选：有本站权限、填了邮箱的帐号（2026-11-13 起接收者只能是群，不再列个人）
+        List<Map<String, Object>> owners = new ArrayList<>();
+        for (MonitorOwnerVO o : ruleService == null ? List.<MonitorOwnerVO>of() : ruleService.listOwners(scope))
         {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("userId", o.getUserId());
             m.put("email", o.getEmail());
-            users.add(m);
+            owners.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("siteCode", site);
@@ -208,7 +239,7 @@ public class SubscriptionService
         out.put("metrics", metrics);
         out.put("chats", chats);
         out.put("chatsError", chatsError);
-        out.put("users", users);
+        out.put("owners", owners);
         return out;
     }
 
@@ -256,7 +287,21 @@ public class SubscriptionService
         }
         m.put("metricLabels", labels);
         m.put("sendHour", s.getSendHour());
-        m.put("sendTimeText", s.getSendHour() == null ? null : String.format("每日 %02d:00", s.getSendHour()));
+        m.put("freqType", SubscriptionSchedule.type(s.getFreqType()));
+        m.put("freqDow", s.getFreqDow());
+        m.put("freqEvery", s.getFreqEvery());
+        m.put("freqTo", s.getFreqTo());
+        m.put("sendTimeText", SubscriptionSchedule.text(s));
+        m.put("viewGran", SubscriptionSender.granularity(s, range == null ? SubscriptionRange.YESTERDAY : range).name());
+        m.put("viewCmp", s.isCustomCompare() ? "CUSTOM" : "PREV");
+        m.put("viewFrom", s.getViewFrom() == null ? null : s.getViewFrom().toString());
+        m.put("viewTo", s.getViewTo() == null ? null : s.getViewTo().toString());
+        m.put("viewCmpFrom", s.getViewCmpFrom() == null ? null : s.getViewCmpFrom().toString());
+        m.put("viewCmpTo", s.getViewCmpTo() == null ? null : s.getViewCmpTo().toString());
+        m.put("fixedDate", range == SubscriptionRange.CUSTOM);
+        m.put("viewText", viewText(s, range));
+        m.put("sourcePage", s.getSourcePage() == null ? "ov" : s.getSourcePage());
+        m.put("ownerUserId", s.getOwnerUserId());
         m.put("timezone", dashboard.siteTimezone(s.getSiteCode()));
         m.put("receivers", sender.receivers(s));
         m.put("enabled", s.isOn());
@@ -268,7 +313,7 @@ public class SubscriptionService
         m.put("snapshotEnabled", s.isSnapshotOn());
         m.put("snapshotFilters", s.getSnapshotFilters());
         m.put("nextRunAt", s.isOn() && properties.isEnabled() && s.getSendHour() != null
-            ? nextRun(sender.zone(s.getSiteCode()) == null ? null : LocalDateTime.now(sender.zone(s.getSiteCode())), s)
+            ? nextRun(LocalDateTime.now(sender.zone(s.getSiteCode())), s)
             : null);
         m.put("lastRunAt", s.getLastRunAt() == null ? null : s.getLastRunAt().format(TIME));
         m.put("lastStatus", s.getLastStatus());
@@ -280,23 +325,47 @@ public class SubscriptionService
         return m;
     }
 
-    /** 下一次定时发送时刻（站点时区）：今天的发送整点还没到（含等待分钟）就是今天，否则明天 */
+    /** 下一次定时发送时刻（站点时区，yyyy-MM-dd HH:mm）；按频率算，没有返回 null */
     String nextRun(LocalDateTime now, DashboardSubscription s)
     {
         if (now == null)
         {
             return null;
         }
-        LocalDateTime today = now.toLocalDate().atTime(s.getSendHour(), 0);
-        String todaySlot = today.format(SubscriptionSender.SLOT);
-        boolean doneToday = todaySlot.equals(s.getLastSlot());
-        LocalDateTime next = !doneToday && !now.isAfter(today.plusHours(properties.getGraceHours())) ? today : today.plusDays(1);
-        return next.format(TIME);
+        LocalDateTime next = SubscriptionSchedule.next(s, now, properties.getGraceHours(), s.getLastSlot());
+        return next == null ? null : next.format(TIME);
+    }
+
+    /** 视图文字：近 7 天 · 日 · 對比上一週期 / 09-01 – 09-07 · 日 · 對比自訂 08-25 – 08-31 */
+    static String viewText(DashboardSubscription s, SubscriptionRange range)
+    {
+        String r = range == null ? String.valueOf(s.getRangeCode())
+            : range == SubscriptionRange.CUSTOM && s.getViewFrom() != null && s.getViewTo() != null
+                ? s.getViewFrom() + " – " + s.getViewTo() : range.getLabel();
+        String g;
+        switch (SubscriptionSender.granularity(s, range == null ? SubscriptionRange.YESTERDAY : range))
+        {
+            case HOUR: g = "小時"; break;
+            case WEEK: g = "週"; break;
+            default: g = "日"; break;
+        }
+        String c = s.isCustomCompare() ? "對比自訂 " + s.getViewCmpFrom() + " – " + s.getViewCmpTo() : "對比上一週期";
+        return r + " · " + g + " · " + c;
     }
 
     // ===================== 写入 =====================
 
+    /** 管理后台新增（操作人按管理员；负责人默认为空 = 按建立人） */
     public Map<String, Object> create(Map<String, Object> body, String operator)
+    {
+        return create(body, SubscriptionActor.admin(null, operator));
+    }
+
+    /**
+     * 新增。负责人默认是操作人（{@code ownerUserId} 可指定其他候选人）；开了截图功能时新订阅默认带整页截图，
+     * 截图的筛选条件按视图生成。
+     */
+    public Map<String, Object> create(Map<String, Object> body, SubscriptionActor actor)
     {
         DashboardSubscription s = new DashboardSubscription();
         String site = trimToNull(str(body, "siteCode"));
@@ -307,20 +376,42 @@ public class SubscriptionService
             errors.put("siteCode", site == null ? "請選擇站點" : "站點不存在");
         }
         s.setSiteCode(canonical);
-        fill(s, body, errors, null);
+        s.setSourcePage("ov");
+        if (!body.containsKey("snapshotEnabled"))
+        {
+            s.setSnapshotEnabled(sender.snapshotAvailable());
+        }
+        fill(s, body, errors, null, null);
+        Long owner = body.containsKey("ownerUserId") ? longOrNull(body.get("ownerUserId")) : actor.getUserId();
+        checkOwner(canonical, owner, null, errors);
+        s.setOwnerUserId(owner);
         if (!errors.isEmpty())
         {
             throw new MonitorFieldException(errors);
         }
-        s.setCreateBy(operator);
+        if (s.getSnapshotFilters() == null)
+        {
+            s.setSnapshotFilters(viewFilters(s));
+        }
+        s.setCreateBy(actor.getUsername());
         mapper.insert(s);
-        log.info("[subscription] 新增 id={} site={} name={} by={}", s.getId(), s.getSiteCode(), s.getName(), operator);
+        log.info("[subscription] 新增 id={} site={} name={} owner={} by={}", s.getId(), s.getSiteCode(), s.getName(), owner,
+            actor.getUsername());
         return get(s.getId());
     }
 
     public Map<String, Object> update(Long id, Map<String, Object> body, String operator)
     {
+        return update(id, body, SubscriptionActor.admin(null, operator));
+    }
+
+    /**
+     * 修改：只有负责人和管理员能改；站点、视图（统计范围、固定日期、粒度、对比）不能改；负责人改成别人即转交，管理员可以改成自己（接管）。
+     */
+    public Map<String, Object> update(Long id, Map<String, Object> body, SubscriptionActor actor)
+    {
         DashboardSubscription old = require(id);
+        requireEditable(old, actor);
         Map<String, String> errors = new LinkedHashMap<>();
         String site = trimToNull(str(body, "siteCode"));
         if (site != null && !site.equalsIgnoreCase(old.getSiteCode()))
@@ -335,34 +426,92 @@ public class SubscriptionService
         s.setAiModel(old.getAiModel());
         s.setSnapshotEnabled(old.getSnapshotEnabled());
         s.setSnapshotFilters(old.getSnapshotFilters());
-        fill(s, body, errors, id);
+        s.setSourcePage(old.getSourcePage());
+        s.setCreateBy(old.getCreateBy());
+        fill(s, body, errors, id, old);
+        Long owner = body.containsKey("ownerUserId") ? longOrNull(body.get("ownerUserId")) : old.getOwnerUserId();
+        checkOwner(old.getSiteCode(), owner, old.getOwnerUserId(), errors);
+        s.setOwnerUserId(owner);
         if (!errors.isEmpty())
         {
             throw new MonitorFieldException(errors);
         }
-        s.setUpdateBy(operator);
+        s.setUpdateBy(actor.getUsername());
         mapper.update(s);
+        if (owner != null && !owner.equals(old.getOwnerUserId()))
+        {
+            log.info("[subscription] {}負責人 id={} {} → {} by={}", owner.equals(actor.getUserId()) ? "接管" : "轉交", id,
+                old.getOwnerUserId(), owner, actor.getUsername());
+        }
         return get(id);
     }
 
     public Map<String, Object> setEnabled(Long id, boolean enabled, String operator)
     {
-        require(id);
-        mapper.updateEnabled(id, enabled, operator);
+        return setEnabled(id, enabled, SubscriptionActor.admin(null, operator));
+    }
+
+    public Map<String, Object> setEnabled(Long id, boolean enabled, SubscriptionActor actor)
+    {
+        requireEditable(require(id), actor);
+        mapper.updateEnabled(id, enabled, actor.getUsername());
+        log.info("[subscription] {} id={} by={}", enabled ? "啟用" : "暫停", id, actor.getUsername());
         return get(id);
     }
 
     public void delete(Long id, String operator)
     {
-        require(id);
-        mapper.softDelete(id, operator);
-        log.info("[subscription] 删除 id={} by={}", id, operator);
+        delete(id, SubscriptionActor.admin(null, operator));
+    }
+
+    /** 逻辑删除；发送历史保留（标「已刪除」） */
+    public void delete(Long id, SubscriptionActor actor)
+    {
+        requireEditable(require(id), actor);
+        mapper.softDelete(id, actor.getUsername());
+        log.info("[subscription] 删除 id={} by={}", id, actor.getUsername());
+    }
+
+    void requireEditable(DashboardSubscription s, SubscriptionActor actor)
+    {
+        if (actor != null && !actor.canEdit(s))
+        {
+            throw MonitorException.forbidden("只有負責人與管理員可以修改這個訂閱");
+        }
+    }
+
+    /**
+     * 负责人：为空 = 不指定（按建立人）；没改不校验；改了必须是本站负责人候选（有本站权限、填了邮箱）。
+     * 单测里没有 ruleService 时不校验。
+     */
+    void checkOwner(String site, Long owner, Long oldOwner, Map<String, String> errors)
+    {
+        if (owner == null || owner.equals(oldOwner) || ruleService == null || site == null)
+        {
+            return;
+        }
+        boolean ok = false;
+        for (MonitorOwnerVO o : ruleService.listOwners(new MonitorScope(site, null)))
+        {
+            if (owner.equals(o.getUserId()))
+            {
+                ok = true;
+                break;
+            }
+        }
+        if (!ok)
+        {
+            errors.put("ownerUserId", "此帳號沒有本站「訂閱管理」權限，請選擇其他負責人");
+        }
     }
 
     /**
      * 校验并填入可改字段。errors 里收集全部字段错误，一次返回。
+     *
+     * @param old 修改时的原订阅：视图（统计范围、固定日期、粒度、对比）沿用原值，请求体改了就报错；新增为 null
      */
-    void fill(DashboardSubscription s, Map<String, Object> body, Map<String, String> errors, Long excludeId)
+    void fill(DashboardSubscription s, Map<String, Object> body, Map<String, String> errors, Long excludeId,
+            DashboardSubscription old)
     {
         String name = trimToNull(str(body, "name"));
         if (name == null)
@@ -384,25 +533,42 @@ public class SubscriptionService
         {
             errors.put("description", "說明不能超過 " + DESC_MAX + " 個字");
         }
+        else if (desc != null && desc.contains("<at"))
+        {
+            errors.put("description", "說明不支援 @ 人");
+        }
         s.setDescription(desc);
 
-        SubscriptionRange range = SubscriptionRange.of(str(body, "rangeCode"));
-        if (range == null)
+        SubscriptionRange range;
+        if (old != null)
         {
-            errors.put("rangeCode", "請選擇統計範圍");
+            range = SubscriptionRange.of(old.getRangeCode());
+            copyView(old, s);
+            SubscriptionRange asked = body.containsKey("rangeCode") ? SubscriptionRange.of(str(body, "rangeCode")) : range;
+            if (asked != range || viewChanged(old, body))
+            {
+                errors.put("rangeCode", "訂閱內容（時間範圍、粒度、對比）建立後不能修改；要換請在營運總覽調整後重新訂閱");
+            }
         }
-        s.setRangeCode(range == null ? null : range.name());
+        else
+        {
+            range = SubscriptionRange.of(str(body, "rangeCode"));
+            if (range == null)
+            {
+                errors.put("rangeCode", "請選擇統計範圍");
+            }
+            s.setRangeCode(range == null ? null : range.name());
+            fillView(s, range, body, errors);
+        }
 
-        Integer hour = intOrNull(body.get("sendHour"));
-        if (hour == null || hour < 0 || hour > 23)
-        {
-            errors.put("sendHour", "發送時間請選 00:00–23:00 的整點");
-        }
-        else if (range == SubscriptionRange.TODAY && hour == 0)
-        {
-            errors.put("sendHour", "統計「今日」時不能在 00:00 發送（還沒有資料）");
-        }
-        s.setSendHour(hour);
+        // 修改时没传的频率字段沿用原值（管理后台的旧页面只传 sendHour，不能把每週 / 每 N 小時改成每日）
+        boolean keep = old != null && !body.containsKey("freqType");
+        s.setSendHour(body.containsKey("sendHour") || old == null ? intOrNull(body.get("sendHour")) : old.getSendHour());
+        s.setFreqType(keep ? old.getFreqType() : str(body, "freqType"));
+        s.setFreqDow(keep && !body.containsKey("freqDow") ? old.getFreqDow() : intOrNull(body.get("freqDow")));
+        s.setFreqEvery(keep && !body.containsKey("freqEvery") ? old.getFreqEvery() : intOrNull(body.get("freqEvery")));
+        s.setFreqTo(keep && !body.containsKey("freqTo") ? old.getFreqTo() : intOrNull(body.get("freqTo")));
+        SubscriptionSchedule.validate(s, range, errors);
 
         List<String> metrics = strings(body.get("metrics"));
         if (metrics.isEmpty())
@@ -432,11 +598,11 @@ public class SubscriptionService
         List<SubscriptionReceiver> receivers = receivers(body.get("receivers"), errors);
         if (receivers.isEmpty() && !errors.containsKey("receivers"))
         {
-            errors.put("receivers", "請至少選擇 1 個接收群或接收人");
+            errors.put("receivers", "至少選擇一個通知群");
         }
         else if (receivers.size() > properties.getMaxReceivers())
         {
-            errors.put("receivers", "接收者不能超過 " + properties.getMaxReceivers() + " 個");
+            errors.put("receivers", "接收群不能超過 " + properties.getMaxReceivers() + " 個");
         }
         try
         {
@@ -444,7 +610,7 @@ public class SubscriptionService
         }
         catch (JacksonException e)
         {
-            errors.put("receivers", "接收者格式不正確");
+            errors.put("receivers", "接收群格式不正確");
         }
 
         // AI 摘要：不传沿用原值（新增默认关闭）；模型为空 = 默认模型，否则必须在 copilot.models 里
@@ -463,7 +629,7 @@ public class SubscriptionService
             s.setAiModel(model == null ? null : copilot.find(model) == null ? model : copilot.find(model).getId());
         }
 
-        // 运营总览截图：不传沿用原值（新增默认关闭）；筛选条件为 JSON 对象（也接受 JSON 字符串、或贴整条带参数的页面地址）
+        // 运营总览截图：不传沿用原值（新增时开了截图功能就默认带）；筛选条件为 JSON 对象（也接受 JSON 字符串、或贴整条带参数的页面地址）
         if (body.containsKey("snapshotEnabled"))
         {
             Object sn = body.get("snapshotEnabled");
@@ -493,7 +659,137 @@ public class SubscriptionService
         }
     }
 
-    /** 接收者：type 只能是 chat / user；群 ID 以 oc_ 开头；用户 ID 为数字；去重 */
+    /** 兼容旧调用（单测、预览）：新增口径 */
+    void fill(DashboardSubscription s, Map<String, Object> body, Map<String, String> errors, Long excludeId)
+    {
+        fill(s, body, errors, excludeId, null);
+    }
+
+    /** 视图字段：粒度 viewGran（HOUR / DAY / WEEK，空 = 范围默认）、固定日期 viewFrom / viewTo、对比 viewCmp（PREV / CUSTOM + viewCmpFrom / viewCmpTo） */
+    void fillView(DashboardSubscription s, SubscriptionRange range, Map<String, Object> body, Map<String, String> errors)
+    {
+        String gran = trimToNull(str(body, "viewGran"));
+        if (gran != null)
+        {
+            gran = gran.toUpperCase(java.util.Locale.ROOT);
+            if (!List.of("HOUR", "DAY", "WEEK").contains(gran))
+            {
+                errors.put("viewGran", "粒度只能是小時、日或週");
+            }
+        }
+        s.setViewGran(gran == null && range != null ? range.getGranularity().name() : gran);
+        if (range == SubscriptionRange.CUSTOM)
+        {
+            java.time.LocalDate from = dateOrNull(body.get("viewFrom"));
+            java.time.LocalDate to = dateOrNull(body.get("viewTo"));
+            if (from == null || to == null)
+            {
+                errors.put("viewFrom", "固定日期請填起止日期（yyyy-MM-dd）");
+            }
+            else if (to.isBefore(from))
+            {
+                errors.put("viewTo", "結束日期不能早於開始日期");
+            }
+            else if (java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1 > CUSTOM_MAX_DAYS)
+            {
+                errors.put("viewTo", "固定日期最多 " + CUSTOM_MAX_DAYS + " 天");
+            }
+            s.setViewFrom(from);
+            s.setViewTo(to);
+        }
+        String cmp = trimToNull(str(body, "viewCmp"));
+        if (cmp != null && "CUSTOM".equalsIgnoreCase(cmp))
+        {
+            java.time.LocalDate cf = dateOrNull(body.get("viewCmpFrom"));
+            java.time.LocalDate ct = dateOrNull(body.get("viewCmpTo"));
+            if (cf == null || ct == null || ct.isBefore(cf))
+            {
+                errors.put("viewCmp", "自訂對比請填起止日期（yyyy-MM-dd），結束不能早於開始");
+            }
+            s.setViewCmp("CUSTOM");
+            s.setViewCmpFrom(cf);
+            s.setViewCmpTo(ct);
+        }
+        else if (cmp != null && !"PREV".equalsIgnoreCase(cmp))
+        {
+            errors.put("viewCmp", "對比只能是上一週期或自訂");
+        }
+        else
+        {
+            s.setViewCmp("PREV");
+        }
+    }
+
+    static void copyView(DashboardSubscription from, DashboardSubscription to)
+    {
+        to.setRangeCode(from.getRangeCode());
+        to.setViewGran(from.getViewGran());
+        to.setViewCmp(from.getViewCmp());
+        to.setViewFrom(from.getViewFrom());
+        to.setViewTo(from.getViewTo());
+        to.setViewCmpFrom(from.getViewCmpFrom());
+        to.setViewCmpTo(from.getViewCmpTo());
+    }
+
+    /** 请求体带了视图字段且与原值不同 */
+    static boolean viewChanged(DashboardSubscription old, Map<String, Object> body)
+    {
+        if (body.containsKey("viewGran") && trimToNull(str(body, "viewGran")) != null && old.getViewGran() != null
+            && !old.getViewGran().equalsIgnoreCase(str(body, "viewGran").trim()))
+        {
+            return true;
+        }
+        if (body.containsKey("viewFrom") && dateOrNull(body.get("viewFrom")) != null
+            && !dateOrNull(body.get("viewFrom")).equals(old.getViewFrom()))
+        {
+            return true;
+        }
+        return body.containsKey("viewTo") && dateOrNull(body.get("viewTo")) != null
+            && !dateOrNull(body.get("viewTo")).equals(old.getViewTo());
+    }
+
+    /**
+     * 截图的页面筛选条件（写进运营总览 localStorage overview-filters）：按视图生成。
+     * 相对时间用 {from} {to} 占位（每次发送按统计区间替换），固定日期直接写日期。
+     */
+    static String viewFilters(DashboardSubscription s)
+    {
+        SubscriptionRange range = SubscriptionRange.of(s.getRangeCode());
+        String gran = (s.getViewGran() == null ? (range == null ? "HOUR" : range.getGranularity().name()) : s.getViewGran())
+            .toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder("{");
+        if (range == SubscriptionRange.TODAY)
+        {
+            sb.append("\"range\":\"today\"");
+        }
+        else if (range == SubscriptionRange.YESTERDAY)
+        {
+            sb.append("\"range\":\"yesterday\"");
+        }
+        else if (range == SubscriptionRange.CUSTOM && s.getViewFrom() != null && s.getViewTo() != null)
+        {
+            sb.append("\"range\":\"custom\",\"from\":\"").append(s.getViewFrom()).append("\",\"to\":\"").append(s.getViewTo()).append('"');
+        }
+        else
+        {
+            sb.append("\"range\":\"custom\",\"from\":\"{from}\",\"to\":\"{to}\"");
+        }
+        sb.append(",\"gran\":\"").append(gran).append('"');
+        if (s.isCustomCompare())
+        {
+            sb.append(",\"cmp\":\"custom\",\"cmpFrom\":\"").append(s.getViewCmpFrom()).append("\",\"cmpTo\":\"")
+                .append(s.getViewCmpTo()).append('"');
+        }
+        else
+        {
+            sb.append(",\"cmp\":\"previous-period\"");
+        }
+        return sb.append('}').toString();
+    }
+
+    /**
+     * 接收者：只能是群（type = chat，群 ID 以 oc_ 开头）；去重。2026-11-13 起不发个人（V0.4 原型），传了个人报错。
+     */
     static List<SubscriptionReceiver> receivers(Object raw, Map<String, String> errors)
     {
         List<SubscriptionReceiver> out = new ArrayList<>();
@@ -503,6 +799,7 @@ public class SubscriptionService
         }
         Set<String> seen = new HashSet<>();
         List<String> bad = new ArrayList<>();
+        boolean person = false;
         for (Object o : (List<?>) raw)
         {
             if (!(o instanceof Map))
@@ -511,29 +808,54 @@ public class SubscriptionService
                 continue;
             }
             Map<?, ?> m = (Map<?, ?>) o;
-            String type = m.get("type") == null ? "" : String.valueOf(m.get("type")).trim().toLowerCase(java.util.Locale.ROOT);
+            String type = m.get("type") == null ? SubscriptionReceiver.CHAT
+                : String.valueOf(m.get("type")).trim().toLowerCase(java.util.Locale.ROOT);
             String id = m.get("id") == null ? "" : String.valueOf(m.get("id")).trim();
             String name = m.get("name") == null ? null : String.valueOf(m.get("name")).trim();
-            boolean ok = (SubscriptionReceiver.CHAT.equals(type) && id.startsWith("oc_") && id.length() <= 64)
-                || (SubscriptionReceiver.USER.equals(type) && id.matches("\\d{1,18}"));
+            if (SubscriptionReceiver.USER.equals(type))
+            {
+                person = true;
+                continue;
+            }
+            boolean ok = SubscriptionReceiver.CHAT.equals(type) && id.startsWith("oc_") && id.length() <= 64;
             if (!ok)
             {
                 bad.add(type + ":" + id);
                 continue;
             }
-            if (seen.add(type + ":" + id))
+            if (seen.add(id))
             {
-                out.add(new SubscriptionReceiver(type, id, name == null || name.isEmpty() ? id : SubscriptionSender.cut(name, 128)));
+                out.add(new SubscriptionReceiver(SubscriptionReceiver.CHAT, id,
+                    name == null || name.isEmpty() ? id : SubscriptionSender.cut(name, 128)));
             }
         }
-        if (!bad.isEmpty())
+        if (person)
         {
-            errors.put("receivers", "接收者不正確：" + String.join("、", bad));
+            errors.put("receivers", "只能發到通知群，不發個人");
+        }
+        else if (!bad.isEmpty())
+        {
+            errors.put("receivers", "接收群不正確：" + String.join("、", bad));
         }
         return out;
     }
 
     // ===================== 发送 =====================
+
+    /** 立即发送的执行器（异步，结果写发送历史）；单测里换成同步 */
+    private java.util.concurrent.Executor executor = java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "subscription-send");
+        t.setDaemon(true);
+        return t;
+    });
+
+    void setExecutor(java.util.concurrent.Executor executor)
+    {
+        this.executor = executor;
+    }
+
+    /** 正在立即发送的订阅（同一实例内防重复点击；跨实例看 RUNNING 批次） */
+    private final Set<Long> sending = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /** 用表单当前内容预览（不保存、不发送）：按现在的整点取数 */
     public Map<String, Object> preview(Map<String, Object> body)
@@ -541,7 +863,10 @@ public class SubscriptionService
         return preview(body, null);
     }
 
-    /** 同上；开了 AI 摘要时预览也会调用一次模型（计入每日次数） */
+    /**
+     * 同上；开了 AI 摘要时预览也会调用一次模型（计入每日次数）。另外返回排程：下次发送 nextAt、今天的发送时刻 times、
+     * 频率文字 frequencyText、组合提示 warnings（不禁止）。
+     */
     public Map<String, Object> preview(Map<String, Object> body, String operator)
     {
         String site = site(str(body, "siteCode"));
@@ -549,10 +874,11 @@ public class SubscriptionService
         s.setSiteCode(site);
         Map<String, String> errors = new LinkedHashMap<>();
         fill(s, body, errors, null);
-        // 预览只要求能取数：名称重复、没选接收者不影响预览
-        errors.remove("name");
-        errors.remove("receivers");
-        errors.remove("sendHour");
+        // 预览只要求能取数：名称重复、没选接收群、频率不完整不影响预览
+        for (String f : List.of("name", "receivers", "sendHour", "freqType", "freqDow", "freqEvery", "freqTo"))
+        {
+            errors.remove(f);
+        }
         if (!errors.isEmpty())
         {
             throw new MonitorFieldException(errors);
@@ -561,38 +887,172 @@ public class SubscriptionService
         {
             s.setName("（未命名）");
         }
+        if (s.getSnapshotFilters() == null)
+        {
+            s.setSnapshotFilters(viewFilters(s));
+        }
         SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(site), false);
         sender.addAi(s, brief, operator);
         sender.addSnapshot(s, brief, false);
         Map<String, Object> out = brief.toPreview();
         out.put("card", brief.getCard());
+        out.putAll(schedule(s));
         return out;
     }
 
-    /** 立即发送：按现在的整点取数，发给全部接收者（不影响当天的定时发送） */
-    public Map<String, Object> sendNow(Long id, String operator)
+    /** 排程信息：下次发送、今天的发送时刻、频率文字、组合提示 */
+    Map<String, Object> schedule(DashboardSubscription s)
     {
-        DashboardSubscription s = require(id);
-        SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(s.getSiteCode()), false);
-        sender.addAi(s, brief, operator);
-        sender.addSnapshot(s, brief, true);
-        return sender.deliver(s, brief, sender.receivers(s), SubscriptionSender.MANUAL, operator, null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        LocalDateTime now = LocalDateTime.now(sender.zone(s.getSiteCode()));
+        SubscriptionRange range = SubscriptionRange.of(s.getRangeCode());
+        List<String> times = new ArrayList<>();
+        for (int h : SubscriptionSchedule.hoursOn(s, now.toLocalDate()))
+        {
+            times.add(String.format("%02d:00", h));
+        }
+        out.put("frequencyText", SubscriptionSchedule.text(s));
+        out.put("times", SubscriptionSchedule.HOURS.equals(SubscriptionSchedule.type(s.getFreqType())) ? times : null);
+        out.put("nextAt", s.getSendHour() == null ? null : nextRun(now, s));
+        out.put("warnings", SubscriptionSchedule.warnings(s, range, now.toLocalDate()));
+        out.put("sendDelayMinutes", properties.getSendDelayMinutes());
+        return out;
     }
 
-    /** 测试发送：只发给操作人自己（按其邮箱），卡片标【測試】 */
-    public Map<String, Object> test(Long id, Long userId, String email, String operator)
+    public Map<String, Object> sendNow(Long id, String operator)
+    {
+        return sendNow(id, SubscriptionActor.admin(null, operator));
+    }
+
+    /**
+     * 立即发送：异步执行（2026-11-13 确认），立即返回 { accepted, message }；按现在的整点取数，发给全部接收群，
+     * 结果（含取数失败、截图失败）写发送历史，不影响定时发送。已暂停、没有接收群、上一次还没发完时不接受。
+     */
+    public Map<String, Object> sendNow(Long id, SubscriptionActor actor)
     {
         DashboardSubscription s = require(id);
-        if (userId == null || email == null || email.trim().isEmpty())
+        requireEditable(s, actor);
+        if (!s.isOn())
         {
-            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "你的帳號沒有填郵箱，無法發送測試訊息");
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "訂閱已暫停");
+        }
+        List<SubscriptionReceiver> receivers = sender.receivers(s);
+        if (receivers.isEmpty())
+        {
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "沒有正常的接收群，無法發送");
+        }
+        if (sending.contains(id) || mapper.countRunning(id, SubscriptionScheduler.STALE_MINUTES) > 0)
+        {
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "上一次發送還沒完成，請稍後到發送歷史查看結果");
+        }
+        sending.add(id);
+        String operator = actor.getUsername();
+        try
+        {
+            executor.execute(() -> {
+                try
+                {
+                    sendNowSync(s, receivers, operator);
+                }
+                catch (RuntimeException e)
+                {
+                    log.error("[subscription] 立即发送异常 id={}", id, e);
+                }
+                finally
+                {
+                    sending.remove(id);
+                }
+            });
+        }
+        catch (RuntimeException e)
+        {
+            sending.remove(id);
+            throw e;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("accepted", true);
+        out.put("message", "已提交發送，結果請在「發送歷史」查看");
+        return out;
+    }
+
+    /** 立即发送的实际执行：取数失败、截图失败都写发送历史（整次失败） */
+    Map<String, Object> sendNowSync(DashboardSubscription s, List<SubscriptionReceiver> receivers, String operator)
+    {
+        LocalDateTime plan = sender.nowHour(s.getSiteCode());
+        SubscriptionBrief brief;
+        try
+        {
+            brief = sender.prepare(s, plan, false);
+        }
+        catch (SubscriptionSender.PrepareException e)
+        {
+            return sender.failWhole(s, null, receivers, SubscriptionSender.MANUAL, operator, null, plan, SubscriptionReason.DATA,
+                e.getMessage());
+        }
+        sender.addAi(s, brief, operator);
+        sender.addSnapshot(s, brief, true);
+        return sender.deliverChecked(s, brief, receivers, SubscriptionSender.MANUAL, operator, null, plan);
+    }
+
+    /**
+     * 测试发送（已保存的订阅）：发到订阅的接收群，卡片标【測試】，不记录、不影响排程。
+     */
+    public Map<String, Object> test(Long id, SubscriptionActor actor)
+    {
+        DashboardSubscription s = require(id);
+        requireEditable(s, actor);
+        return testSend(s, sender.receivers(s), actor.getUsername());
+    }
+
+    /**
+     * 测试发送（抽屉里的表单，可以是还没保存的订阅）：按当前设定发一次到所选的群，卡片标【測試】，不记录、不影响排程。
+     */
+    public Map<String, Object> testForm(Map<String, Object> body, SubscriptionActor actor)
+    {
+        String site = site(str(body, "siteCode"));
+        DashboardSubscription s = new DashboardSubscription();
+        s.setSiteCode(site);
+        Map<String, String> errors = new LinkedHashMap<>();
+        if (!body.containsKey("snapshotEnabled"))
+        {
+            s.setSnapshotEnabled(sender.snapshotAvailable());
+        }
+        fill(s, body, errors, null);
+        for (String f : List.of("name", "sendHour", "freqType", "freqDow", "freqEvery", "freqTo"))
+        {
+            errors.remove(f);
+        }
+        if (!errors.isEmpty())
+        {
+            throw new MonitorFieldException(errors);
+        }
+        if (s.getName() == null)
+        {
+            s.setName("（未命名）");
+        }
+        if (s.getSnapshotFilters() == null)
+        {
+            s.setSnapshotFilters(viewFilters(s));
+        }
+        List<SubscriptionReceiver> receivers = receivers(body.get("receivers"), errors);
+        return testSend(s, receivers, actor.getUsername());
+    }
+
+    private Map<String, Object> testSend(DashboardSubscription s, List<SubscriptionReceiver> receivers, String operator)
+    {
+        if (receivers.isEmpty())
+        {
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "至少選擇一個通知群");
         }
         SubscriptionBrief brief = prepareOrFail(s, sender.nowHour(s.getSiteCode()), true);
         sender.addAi(s, brief, operator);
         sender.addSnapshot(s, brief, true);
-        List<SubscriptionReceiver> me = new ArrayList<>();
-        me.add(new SubscriptionReceiver(SubscriptionReceiver.USER, String.valueOf(userId), email.trim()));
-        return sender.deliver(s, brief, me, SubscriptionSender.TEST, operator, null);
+        String shot = sender.snapshotFailure(s, brief);
+        if (shot != null)
+        {
+            throw new MonitorException(MonitorErrorCode.BAD_REQUEST, "截圖生成失敗，本次未發送：" + shot);
+        }
+        return sender.deliver(s, brief, receivers, SubscriptionSender.TEST, operator, null);
     }
 
     private SubscriptionBrief prepareOrFail(DashboardSubscription s, LocalDateTime sendAt, boolean test)
@@ -609,7 +1069,7 @@ public class SubscriptionService
 
     // ===================== 工具 =====================
 
-    private DashboardSubscription require(Long id)
+    DashboardSubscription require(Long id)
     {
         DashboardSubscription s = id == null ? null : mapper.selectById(id);
         if (s == null)
@@ -638,6 +1098,42 @@ public class SubscriptionService
     private static String trimToNull(String s)
     {
         return s == null || s.trim().isEmpty() ? null : s.trim();
+    }
+
+    static Long longOrNull(Object v)
+    {
+        if (v == null || String.valueOf(v).trim().isEmpty())
+        {
+            return null;
+        }
+        if (v instanceof Number)
+        {
+            return ((Number) v).longValue();
+        }
+        try
+        {
+            return Long.valueOf(String.valueOf(v).trim());
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
+    }
+
+    static java.time.LocalDate dateOrNull(Object v)
+    {
+        if (v == null)
+        {
+            return null;
+        }
+        try
+        {
+            return java.time.LocalDate.parse(String.valueOf(v).trim());
+        }
+        catch (java.time.format.DateTimeParseException e)
+        {
+            return null;
+        }
     }
 
     static Integer intOrNull(Object v)

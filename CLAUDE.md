@@ -65,6 +65,16 @@
 - 变化归因看 `dashboard_metric_card.attributable`，注意推广分析用的是 `promoReg` 等 promo 前缀指标，不是运营总览的 `reg`。
 - 「仅登记」（status='1'）的指标不参与 `application.yml` 取数配置对照，指标管理不提示「與配置不一致」。
 
+## 6.1 订阅（2026-11-13 下一期，V0.4 原型，只在 v4）
+
+- 站点页面接口 `/dashboard/subscriptions`（`SubscriptionController` → `SubscriptionCenter`），权限 `dashboard:subscription:list/add/edit/remove`，
+  管理员 `dashboard:subscription:admin`；管理后台 `/system/subscriptions` 保留，操作人按管理员。
+- 频率 `SubscriptionSchedule`（DAY / WEEK / HOURS，`send_hour` 兼作「從」）；视图（range、固定日期、粒度、对比）建立后不可改；近 7 / 30 天含当天、截至发送整点。
+- 只发群（旧订阅不迁移：release_next ⑭ 备份到 `*_bak_20261116` 后整表删除，上线后重新建立）；只有负责人和管理员能改（`SubscriptionActor`）。
+- 发送历史 = `dashboard_subscription_run`（一次发送）+ `dashboard_subscription_log.run_id`（逐群），结果 OK / PART / FAIL / SKIP，
+  原因代码见 `SubscriptionReason`；超时 / 限流 / 5xx 自动重试 2 次；凭证失效记已跳過；截图失败、取数失败整次不发并记录；测试发送不记录；不限保留期。
+- 立即发送异步（`SubscriptionService.executor`），结果到发送历史看。
+
 ## 7. 导出
 
 - 推广分析三个导出：`/dashboard/promo/{daily-report,channels,fission}/export`，POST，返回文件流。

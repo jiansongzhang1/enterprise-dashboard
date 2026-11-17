@@ -16,6 +16,7 @@ import com.fivetech.common.utils.SiteContext;
 import com.fivetech.copilot.AiClient;
 import com.fivetech.copilot.CopilotGateway;
 import com.fivetech.copilot.CopilotProperties;
+import com.fivetech.copilot.tool.CopilotAuditTools;
 import com.fivetech.copilot.mapper.CopilotUsageMapper;
 import com.fivetech.dashboard.config.DashboardProperties;
 import com.fivetech.dashboard.domain.query.OverviewQuery;
@@ -37,7 +38,9 @@ import com.fivetech.monitor.service.IMonitorEventService;
  * <ul>
  *   <li>每次提问自动带上当前站点（X-Site-Code）的数据：今日截至当前整点、昨日全天的运营总览指标（本期、上期、变化、方向、监控状态），
  *       以及昨日 0 点以来的告警事件（含仍异常中的）。同一站点的数据缓存几分钟（copilot.chat.context-cache-seconds）；</li>
- *   <li>模型只能根据这些数据回答，不能查库、不能改任何东西；</li>
+ *   <li>除此之外，模型可以用受限工具查审计日志（后台操作日志、登录日志）：只能填筛选条件，SQL 由后端拼，
+ *       权限跟随页面（monitor:operlog:list / monitor:logininfor:list），没权限的工具不会给模型。见 {@link CopilotAuditTools}；</li>
+ *   <li>模型不能写 SQL、不能改任何东西；</li>
  *   <li>对话内容不落库：前端存在浏览器里，每次把最近几条一起发来；后端只记一行调用记录（功能 CHAT、人、站点、token 用量）；</li>
  *   <li>每人每天有次数上限（copilot.chat.daily-limit-per-user）。</li>
  * </ul>
@@ -67,17 +70,21 @@ public class CopilotChatService
 
     private final IMonitorEventService monitorEvents;
 
+    private final CopilotAuditTools auditTools;
+
     /** 站点 → 数据上下文 */
     private final Map<String, Context> cache = new ConcurrentHashMap<>();
 
     public CopilotChatService(CopilotGateway gateway, CopilotProperties properties, CopilotUsageMapper usageMapper,
-        DashboardProperties dashboard, IOverviewService overviewService, MetricRegistry registry, IMonitorEventService monitorEvents)
+        DashboardProperties dashboard, IOverviewService overviewService, MetricRegistry registry, IMonitorEventService monitorEvents,
+        CopilotAuditTools auditTools)
     {
         this.gateway = gateway;
         this.properties = properties;
         this.usageMapper = usageMapper;
         this.dashboard = dashboard;
         this.overviewService = overviewService;
+        this.auditTools = auditTools;
         this.registry = registry;
         this.monitorEvents = monitorEvents;
     }
@@ -148,8 +155,16 @@ public class CopilotChatService
         r.siteCode = site;
         r.refId = page == null ? null : page.length() > 64 ? page.substring(0, 64) : page;
         r.model = model;
-        r.system = systemPrompt(dashboard.siteName(site), site, dashboard.siteTimezone(site), page, ctx.text);
+        // 审计日志工具：按调用人权限给，一个都没有时就是普通问答
+        List<AiClient.Tool> tools = auditTools.tools();
+        r.system = systemPrompt(dashboard.siteName(site), site, dashboard.siteTimezone(site), page, ctx.text, tools);
         r.messages = list;
+        r.tools = tools;
+        r.toolExecutor = call -> auditTools.execute(call, operator);
+        r.maxToolRounds = cfg.getDataQuery().getMaxRounds();
+        // 没挂上工具时这里是 tools=0，照旧只按上下文回答；排查「助手说查不到」先看这一行
+        log.info("[copilot] chat user={} site={} tools={}", operator, site,
+            tools.isEmpty() ? "0" : tools.size() + " " + tools.stream().map(AiClient.Tool::getName).toList());
         r.maxTokens = cfg.getMaxTokens();
         r.dailyLimit = cfg.getDailyLimitPerUser();
         r.limitPerOperator = true;
@@ -217,6 +232,18 @@ public class CopilotChatService
 
     static String systemPrompt(String siteName, String siteCode, String timezone, String page, String context)
     {
+        return systemPrompt(siteName, siteCode, timezone, page, context, List.of());
+    }
+
+    static String systemPrompt(String siteName, String siteCode, String timezone, String page, String context,
+        List<AiClient.Tool> tools)
+    {
+        StringBuilder names = new StringBuilder();
+        for (AiClient.Tool t : tools == null ? List.<AiClient.Tool>of() : tools)
+        {
+            names.append(names.length() == 0 ? "" : "、").append(t.getName());
+        }
+        boolean hasTools = names.length() > 0;
         return String.join("\n",
             "你是 Yata 營運後台的 AI 助手，服務線上娛樂平台的營運人員。",
             "目前站點：" + nvl(siteName) + "（" + nvl(siteCode) + "），時區 " + nvl(timezone) + "。"
@@ -225,7 +252,11 @@ public class CopilotChatService
             "1. 涉及本站數據的問題，只能根據下面「本站數據」回答；引用數字時原樣照抄，不要自行推算新的數字。",
             "2. 數據裡沒有的（例如其他日期、明細名單、推廣渠道），直接說目前取不到，並建議到後台對應頁面查看；不要猜測或編造。",
             "3. 分析原因時只能從指標之間的關係推斷，推斷要寫「可能」；不要編造活動、節假日、系統故障等數據裡沒有的事件。",
-            "4. 你不能查詢資料庫、不能修改任何設定，也不能代替使用者執行操作。",
+            hasTools
+                ? "4. 要查「誰在什麼時候做了什麼」「誰登入過」這類後台審計記錄時，呼叫工具（" + names + "）取數；"
+                    + "只回答工具真正返回的內容，沒有就說沒查到，不要編造。工具一次最多返回有限筆，需要更多時縮小時間範圍或加條件。"
+                    + "你只能讀這些日誌，不能寫 SQL、不能改任何設定。"
+                : "4. 你不能查詢資料庫、不能修改任何設定，也不能代替使用者執行操作。",
             "5. 用使用者的語言回答（預設繁體中文），簡潔，先給結論；需要時用短的條列。",
             "",
             "本站數據：",

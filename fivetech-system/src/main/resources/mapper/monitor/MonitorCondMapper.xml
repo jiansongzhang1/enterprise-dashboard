@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  条件规则（release_next ㉓）：monitor_rule 里 rule_type = 'COND' 的行 + monitor_rule_condition（每条规则 1–5 个条件）。
+  条件关系、窗口、连续次数存 config（jsonb）；duration_count 列固定 1（连续次数上限可在 yml 调，不受列上的 CHECK 限制）。
+  检测状态沿用 monitor_rule_state，事件沿用 monitor_event（rule_type = 'COND'，metric_code 为空，detail 存各条件的值）。
+-->
+<mapper namespace="com.fivetech.monitor.mapper.MonitorCondMapper">
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorCondRow" id="CondRowResult">
+		<result property="ruleId"        column="rule_id"        />
+		<result property="seq"           column="seq"            />
+		<result property="fieldCode"     column="field_code"     />
+		<result property="scope"         column="scope"          />
+		<result property="how"           column="how"            />
+		<result property="op"            column="op"             />
+		<result property="unit"          column="unit"           />
+		<result property="thresholdLow"  column="threshold_low"  />
+		<result property="thresholdHigh" column="threshold_high" />
+		<result property="minSample"     column="min_sample"     />
+	</resultMap>
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorCondState" id="CondStateResult">
+		<result property="ruleId"            column="rule_id"             />
+		<result property="runStartHour"      column="run_start_hour"      />
+		<result property="recentPeriods"     column="recent_periods"      />
+		<result property="lastPeriodEnd"     column="last_period_end"     />
+		<result property="lastDataHour"      column="last_data_hour"      />
+		<result property="detail"            column="detail"              />
+		<result property="eventId"           column="event_id"            />
+		<result property="eventStartHour"    column="event_start_hour"    />
+		<result property="eventTriggerHour"  column="event_trigger_hour"  />
+		<result property="eventDetail"       column="event_detail"        />
+		<result property="eventHandleStatus" column="event_handle_status" />
+	</resultMap>
+
+	<resultMap type="com.fivetech.monitor.domain.MonitorCondEvent" id="CondEventResult">
+		<id     property="eventId"       column="event_id"       />
+		<result property="ruleId"        column="rule_id"        />
+		<result property="ruleType"      column="rule_type"      />
+		<result property="level"         column="level"          />
+		<result property="status"        column="status"         />
+		<result property="startHour"     column="start_hour"     />
+		<result property="triggerHour"   column="trigger_hour"   />
+		<result property="endHour"       column="end_hour"       />
+		<result property="lastPeriodEnd" column="last_period_end"/>
+		<result property="stoppedAt"     column="stopped_at"     />
+		<result property="stopReason"    column="stop_reason"    />
+		<result property="ruleSnapshot"  column="rule_snapshot"  />
+		<result property="detail"        column="detail"         />
+		<result property="notifyStatus"  column="notify_status"  />
+		<result property="handleStatus"  column="handle_status"  />
+		<result property="handleNote"    column="handle_note"    />
+		<result property="handledBy"     column="handled_by"     />
+		<result property="handledAt"     column="handled_at"     />
+		<result property="ruleVersion"   column="rule_version"   />
+		<result property="ruleDeleted"   column="rule_deleted"   />
+	</resultMap>
+
+	<select id="selectCondRule" resultMap="com.fivetech.monitor.mapper.MonitorRuleMapper.MonitorRuleResult">
+		<include refid="com.fivetech.monitor.mapper.MonitorRuleMapper.selectRuleVo"/>
+		 where r.del_flag = '0'
+		   and r.rule_type = 'COND'
+		   and r.rule_id = #{ruleId}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<select id="selectEnabledCondRules" resultMap="com.fivetech.monitor.mapper.MonitorRuleMapper.MonitorRuleResult">
+		<include refid="com.fivetech.monitor.mapper.MonitorRuleMapper.selectRuleVo"/>
+		 where r.del_flag = '0'
+		   and r.rule_type = 'COND'
+		   and r.enabled = true
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+		 order by r.rule_no
+	</select>
+
+	<select id="selectConditions" resultMap="CondRowResult">
+		select c.rule_id, c.seq, c.field_code, c.scope::text as scope, c.how, c.op, c.unit,
+		       c.threshold_low, c.threshold_high, c.min_sample
+		  from monitor_rule_condition c
+		  join monitor_rule r on r.rule_id = c.rule_id
+		 where c.rule_id in <foreach collection="ruleIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+		 order by c.rule_id, c.seq
+	</select>
+
+	<insert id="insertCondRule" parameterType="com.fivetech.monitor.domain.MonitorRule"
+	        useGeneratedKeys="true" keyProperty="ruleId" keyColumn="rule_id">
+		insert into monitor_rule (
+		    site_code, rule_no, rule_type, owner_user_id, rule_name, description, level,
+		    period_hours, duration_count, mute_hours,
+		    notify_enabled, notify_chat_id, notify_chat_name, notify_chats, currency, config,
+		    enabled, paused_at, del_flag, create_by, create_time, update_by, update_time
+		) values (
+		    #{siteCode}, #{ruleNo}, 'COND', #{ownerUserId}, #{ruleName}, #{description,jdbcType=VARCHAR}, #{level},
+		    1, 1, #{muteHours},
+		    #{notifyEnabled}, #{notifyChatId,jdbcType=VARCHAR}, #{notifyChatName,jdbcType=VARCHAR},
+		    coalesce(#{notifyChats,jdbcType=VARCHAR}, '[]')::jsonb, #{currency}, #{config}::jsonb,
+		    #{enabled}, #{pausedAt,jdbcType=TIMESTAMP}, '0', #{createBy}, #{createTime}, #{createBy}, #{createTime}
+		)
+	</insert>
+
+	<update id="updateCondRule">
+		update monitor_rule
+		   set owner_user_id    = #{rule.ownerUserId},
+		       rule_name        = #{rule.ruleName},
+		       description      = #{rule.description,jdbcType=VARCHAR},
+		       level            = #{rule.level},
+		       mute_hours       = #{rule.muteHours},
+		       notify_enabled   = #{rule.notifyEnabled},
+		       notify_chat_id   = #{rule.notifyChatId,jdbcType=VARCHAR},
+		       notify_chat_name = #{rule.notifyChatName,jdbcType=VARCHAR},
+		       notify_chats     = coalesce(#{rule.notifyChats,jdbcType=VARCHAR}, '[]')::jsonb,
+		       currency         = #{rule.currency},
+		       config           = #{rule.config}::jsonb,
+		       version          = nextval('monitor_rule_version_seq'),
+		       update_by        = #{rule.updateBy},
+		       update_time      = #{rule.updateTime},
+		       edit_time        = #{rule.updateTime},
+		       edit_by          = #{rule.updateBy}
+		 where rule_id = #{rule.ruleId}
+		   and site_code = #{scope.siteCode}
+		   and del_flag = '0'
+		   and rule_type = 'COND'
+	</update>
+
+	<delete id="deleteConditions">
+		delete from monitor_rule_condition c
+		 using monitor_rule r
+		 where r.rule_id = c.rule_id
+		   and r.site_code = #{scope.siteCode}
+		   and c.rule_id = #{ruleId}
+	</delete>
+
+	<insert id="insertCondition">
+		insert into monitor_rule_condition (rule_id, seq, field_code, scope, how, op, unit, threshold_low, threshold_high, min_sample)
+		select #{row.ruleId}, #{row.seq}, #{row.fieldCode}, cast(#{row.scope} as jsonb), #{row.how}, #{row.op},
+		       #{row.unit,jdbcType=VARCHAR}, #{row.thresholdLow,jdbcType=NUMERIC}, #{row.thresholdHigh,jdbcType=NUMERIC},
+		       #{row.minSample,jdbcType=NUMERIC}
+		  from monitor_rule r
+		 where r.rule_id = #{row.ruleId}
+		   and r.site_code = #{scope.siteCode}
+		   and r.rule_type = 'COND'
+	</insert>
+
+	<!-- ================================================================ 检测 -->
+
+	<select id="selectCondSites" resultType="java.lang.String">
+		select distinct r.site_code
+		  from monitor_rule r
+		 where r.del_flag = '0'
+		   and r.enabled = true
+		   and r.rule_type = 'COND'
+		 order by r.site_code
+	</select>
+
+	<select id="selectStates" resultMap="CondStateResult">
+		select r.rule_id, s.run_start_hour, s.recent_periods::text as recent_periods, s.last_period_end, s.last_data_hour,
+		       s.detail::text as detail,
+		       e.event_id, e.start_hour as event_start_hour, e.trigger_hour as event_trigger_hour,
+		       e.detail::text as event_detail, e.handle_status as event_handle_status
+		  from monitor_rule r
+		  left join monitor_rule_state s on s.rule_id = r.rule_id and s.site_code = r.site_code
+		  left join monitor_event e on e.rule_id = r.rule_id and e.site_code = r.site_code
+		                           and e.event_type = 'alert' and e.status = 'open'
+		 where r.rule_id in <foreach collection="ruleIds" item="v" open="(" separator="," close=")">#{v}</foreach>
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="r"/>
+		</include>
+	</select>
+
+	<insert id="upsertState">
+		insert into monitor_rule_state (rule_id, site_code, run_start_hour, recent_levels, recent_periods, open_event_id,
+		                                last_period_end, last_data_hour, detail, update_time)
+		values (#{st.ruleId}, #{scope.siteCode}, #{st.runStartHour,jdbcType=TIMESTAMP}, '[]'::jsonb,
+		        coalesce(cast(#{st.recentPeriods,jdbcType=VARCHAR} as jsonb), '[]'::jsonb), #{st.eventId,jdbcType=BIGINT},
+		        #{st.lastPeriodEnd,jdbcType=TIMESTAMP}, #{st.lastDataHour,jdbcType=TIMESTAMP},
+		        cast(#{st.detail,jdbcType=VARCHAR} as jsonb), now())
+		on conflict (rule_id) do update
+		   set run_start_hour  = excluded.run_start_hour,
+		       recent_periods  = excluded.recent_periods,
+		       open_event_id   = excluded.open_event_id,
+		       last_period_end = excluded.last_period_end,
+		       last_data_hour  = excluded.last_data_hour,
+		       detail          = excluded.detail,
+		       update_time     = excluded.update_time
+		 where monitor_rule_state.site_code = #{scope.siteCode}
+	</insert>
+
+	<insert id="resetState">
+		insert into monitor_rule_state (rule_id, site_code, recent_levels, recent_periods, last_data_hour, update_time)
+		values (#{ruleId}, #{scope.siteCode}, '[]'::jsonb, '[]'::jsonb, #{lastDataHour}, now())
+		on conflict (rule_id) do update
+		   set run_start_hour  = null,
+		       recent_periods  = '[]'::jsonb,
+		       open_event_id   = null,
+		       last_period_end = null,
+		       last_data_hour  = excluded.last_data_hour,
+		       detail          = null,
+		       update_time     = excluded.update_time
+		 where monitor_rule_state.site_code = #{scope.siteCode}
+	</insert>
+
+	<insert id="insertEvent" useGeneratedKeys="true" keyProperty="e.eventId" keyColumn="event_id">
+		insert into monitor_event (site_code, rule_id, metric_code, rule_type, event_type, level, peak_level, escalated, status,
+		                           start_hour, trigger_hour, last_period_end, rule_snapshot, detail, notify_status, mute_hours,
+		                           handle_status, handle_reset, create_time, update_time)
+		values (#{scope.siteCode}, #{e.ruleId}, null, 'COND', 'alert', #{e.level}, #{e.level}, false, 'open',
+		        #{e.startHour}, #{e.triggerHour}, #{e.lastPeriodEnd,jdbcType=TIMESTAMP},
+		        cast(#{e.ruleSnapshot} as jsonb), cast(#{e.detail} as jsonb), #{e.notifyStatus}, null,
+		        'pending', false, #{now}, #{now})
+	</insert>
+
+	<update id="updateEventLatest">
+		update monitor_event
+		   set detail          = cast(#{detail} as jsonb),
+		       last_period_end = #{lastPeriodEnd},
+		       update_time     = #{now}
+		 where site_code = #{scope.siteCode}
+		   and event_id = #{eventId}
+		   and status = 'open'
+	</update>
+
+	<update id="resolveEvent">
+		update monitor_event
+		   set status      = 'resolved',
+		       end_hour    = #{endHour},
+		       update_time = #{now}
+		 where site_code = #{scope.siteCode}
+		   and event_id = #{eventId}
+		   and status = 'open'
+	</update>
+
+	<update id="updateEventNotify">
+		update monitor_event
+		   set notify_status = #{status},
+		       update_time   = #{now}
+		 where site_code = #{scope.siteCode}
+		   and event_id = #{eventId}
+	</update>
+
+	<select id="selectEvent" resultMap="CondEventResult">
+		select e.event_id, e.rule_id, e.rule_type, e.level, e.status, e.start_hour, e.trigger_hour, e.end_hour, e.last_period_end,
+		       e.stopped_at, e.stop_reason, e.rule_snapshot::text as rule_snapshot, e.detail::text as detail, e.notify_status,
+		       e.handle_status, e.handle_note, coalesce(nullif(hu.email, ''), hu.user_name) as handled_by, e.handled_at,
+		       r.version as rule_version, coalesce(r.del_flag = '2', true) as rule_deleted
+		  from monitor_event e
+		  left join monitor_rule r on r.rule_id = e.rule_id and r.site_code = e.site_code
+		  left join sys_user hu    on hu.user_id = e.handled_by
+		 where e.event_type = 'alert'
+		   and e.event_id = #{eventId}
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+	</select>
+
+	<select id="selectLastTrigger" resultType="java.time.LocalDateTime">
+		select max(e.create_time)
+		  from monitor_event e
+		 where e.rule_id = #{ruleId}
+		   and e.event_type = 'alert'
+		<include refid="com.fivetech.monitor.mapper.MonitorCommon.monitorScopeFilter">
+			<property name="alias" value="e"/>
+		</include>
+	</select>
+
+</mapper>

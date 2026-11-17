@@ -364,7 +364,7 @@ public class MonitorEventWriter
         {
             return Notify.KEEP;
         }
-        if (StringUtils.isEmpty(rule.getNotifyChatId()))
+        if (chatsOf(rule).isEmpty())
         {
             return Notify.UNSET;
         }
@@ -392,7 +392,7 @@ public class MonitorEventWriter
         {
             return Notify.KEEP;
         }
-        if (StringUtils.isEmpty(rule.getNotifyChatId()))
+        if (chatsOf(rule).isEmpty())
         {
             return Notify.KEEP;
         }
@@ -414,23 +414,27 @@ public class MonitorEventWriter
             recent.add(new BigDecimal[] { decimal(p.get("value")), decimal(p.get("baseline")) });
         }
         LocalDateTime trigger = e.getTriggerHour() != null ? e.getTriggerHour() : rule.getEventTriggerHour();
-        MonitorNotifyRecord n = new MonitorNotifyRecord();
-        n.setSiteCode(scope.getSiteCode());
-        n.setMsgType("alert");
-        n.setNotifyType(type);
-        n.setEventId(e.getEventId() != null ? e.getEventId() : rule.getEventId());
-        n.setDataHour(hour);
-        n.setChatId(rule.getNotifyChatId());
         // 正文：站点专用模板 → 全站默认模板 → 内置默认模板（FY-30 格式）
         java.util.Map<String, String> values = messages.alertValues(rule, judge, escalated, trigger, recent,
             messages.siteTime(scope.getSiteCode(), now));
         com.fivetech.monitor.service.MonitorNotifyTemplateService.Rendered rendered = templates.render(scope.getSiteCode(), type,
                 values);
-        n.setContent(rendered.getContent());
-        n.setTemplateId(rendered.getTemplateId());
-        n.setTemplateVersion(rendered.getTemplateVersion());
-        n.setNow(now);
-        mapper.insertNotifyLog(n);
+        // 规则可选多个群（release_next ㉑）：同一条告警以相同内容给每个群各写一条待发送记录，同一数据小时的这几条就是一次发送
+        for (com.fivetech.monitor.service.MonitorChats.Chat chat : chatsOf(rule))
+        {
+            MonitorNotifyRecord n = new MonitorNotifyRecord();
+            n.setSiteCode(scope.getSiteCode());
+            n.setMsgType("alert");
+            n.setNotifyType(type);
+            n.setEventId(e.getEventId() != null ? e.getEventId() : rule.getEventId());
+            n.setDataHour(hour);
+            n.setChatId(chat.chatId());
+            n.setContent(rendered.getContent());
+            n.setTemplateId(rendered.getTemplateId());
+            n.setTemplateVersion(rendered.getTemplateVersion());
+            n.setNow(now);
+            mapper.insertNotifyLog(n);
+        }
         // 提交后由发送任务（MonitorNotifySender，每分钟）投递；成功后更新事件 notify_status / notified_at / notify_count
         // 和规则 last_notified_at（静默期从这里算）
     }
@@ -565,7 +569,22 @@ public class MonitorEventWriter
         // 触发时的通知群：异常事件「通知送達」按快照显示，不随之后改规则变化（FY-27 R10 / MON-32）
         m.put("notifyChatId", rule == null ? null : rule.getNotifyChatId());
         m.put("notifyChatName", rule == null ? null : rule.getNotifyChatName());
+        List<Map<String, Object>> chats = new ArrayList<>();
+        for (com.fivetech.monitor.service.MonitorChats.Chat c : rule == null ? List.<com.fivetech.monitor.service.MonitorChats.Chat>of() : chatsOf(rule))
+        {
+            Map<String, Object> cm = new LinkedHashMap<>();
+            cm.put("chatId", c.chatId());
+            cm.put("name", c.name());
+            chats.add(cm);
+        }
+        m.put("notifyChats", chats);
         return write(m);
+    }
+
+    /** 规则的通知群（release_next ㉑）；notify_chats 为空的旧数据退回 notify_chat_id */
+    static List<com.fivetech.monitor.service.MonitorChats.Chat> chatsOf(MonitorEngineRule rule)
+    {
+        return com.fivetech.monitor.service.MonitorChats.parse(rule.getNotifyChats(), rule.getNotifyChatId(), rule.getNotifyChatName(), null);
     }
 
     private String write(Object value)

@@ -21,6 +21,13 @@ public interface IMonitorEventService
     MonitorEventPageVO listEvents(MonitorScope scope, String range, String handle, String metricCode, String status,
             Long ownerId, Integer pageNum, Integer pageSize);
 
+    /**
+     * 事件列表（release_next ㉓ 起）：规则类型、指标、状态、负责人可多选（q 里的列表），range 增加 custom（from、to 为
+     * yyyy-MM-dd，含两端，最多 90 天）。q 的 handle 取值同上。
+     */
+    MonitorEventPageVO listEvents(MonitorScope scope, com.fivetech.monitor.domain.MonitorEventQuery q, String range, String from,
+            String to, Integer pageNum, Integer pageSize);
+
     /** 标记已处理（单条与批量共用）：1～100 条，全部属于本站，否则 404；note 去掉首尾空白后 1～500 字 */
     int handle(MonitorScope scope, List<Long> eventIds, String note);
 

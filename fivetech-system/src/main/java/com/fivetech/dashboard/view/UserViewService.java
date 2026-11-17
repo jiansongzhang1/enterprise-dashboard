@@ -37,7 +37,8 @@ public class UserViewService
     public static final Map<String, String> PAGE_PERMS = Map.of(
         "PROMO", "dashboard:promo:view",
         "OVERVIEW", "dashboard:overview:view",
-        "SUMMARY", "dashboard:metric:summary");
+        "SUMMARY", "dashboard:metric:summary",
+        "RISK", "dashboard:risk:view");
 
     private static final TypeReference<List<String>> LIST = new TypeReference<>() {};
 

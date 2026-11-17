@@ -1,6 +1,7 @@
 package com.fivetech.monitor.domain.vo;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +12,21 @@ import java.util.List;
 public class MonitorEventVO
 {
     private Long eventId;
+
+    /** METRIC 指標規則 / COND 條件規則 */
+    private String ruleType = "METRIC";
+
+    /** 条件规则的规则名（指标规则仍用 metricName） */
+    private String ruleName;
+
+    /** 条件规则：{matchMode, met, total, values[{index, scopeLabel, fieldName, text}], basis[{scopeLabel, text}]} */
+    private java.util.Map<String, Object> cond;
+
+    /** 「判定時間 11:05；這次檢測統計 10:00 – 11:00 的資料，每 1 小時檢測一次」（条件规则） */
+    private String judgeTip;
+
+    /** 条件规则 true（打开事件详情）；指标规则 false（到营运总览查看） */
+    private boolean canDetail;
     private Long ruleId;
     private Integer ruleNo;
     private String ruleCode;
@@ -69,8 +85,22 @@ public class MonitorEventVO
 
     public static class NotifyVO
     {
-        /** none / pending / sent / failed / unset */
+        /**
+         * none / pending / sent / partial / failed / unset / muted / paused。
+         * 规则选了多个群时按最近一次发送的各群汇总：全部送达 sent、有的失败 partial（「部分送達 n/N」）、全部失败 failed、还有待发 pending
+         */
         private String status;
+        /** 各群结果（按规则的选择顺序）；chatId / chatName / chatStatus / error 为第一个群或第一个失败的群（旧字段） */
+        private List<ChatResultVO> chats = new ArrayList<>();
+        /** 群数、已送达群数（「已發送 · N 個群」「部分送達 n/N」） */
+        private int total;
+        private int sentCount;
+        public List<ChatResultVO> getChats() { return chats; }
+        public void setChats(List<ChatResultVO> chats) { this.chats = chats; }
+        public int getTotal() { return total; }
+        public void setTotal(int total) { this.total = total; }
+        public int getSentCount() { return sentCount; }
+        public void setSentCount(int sentCount) { this.sentCount = sentCount; }
         private String sentAt;
         private String chatId;
         private String chatName;
@@ -98,6 +128,30 @@ public class MonitorEventVO
         public void setChatName(String chatName) { this.chatName = chatName; }
         public String getChatStatus() { return chatStatus; }
         public void setChatStatus(String chatStatus) { this.chatStatus = chatStatus; }
+    }
+
+    /** 一个群的发送结果：status = sent / failed / pending，还没发送（静默、未配置等）为 null */
+    public static class ChatResultVO
+    {
+        private String chatId;
+        private String name;
+        /** 群当前状态 ok / dead */
+        private String chatStatus;
+        private String status;
+        private String sentAt;
+        private String error;
+        public String getChatId() { return chatId; }
+        public void setChatId(String chatId) { this.chatId = chatId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getChatStatus() { return chatStatus; }
+        public void setChatStatus(String chatStatus) { this.chatStatus = chatStatus; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        public String getSentAt() { return sentAt; }
+        public void setSentAt(String sentAt) { this.sentAt = sentAt; }
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
     }
 
     /** 静默期内未发送：「靜默期內：上次發送 {lastSentAt}，靜默 {muteHours} 小時，本次未發送」 */
@@ -185,4 +239,15 @@ public class MonitorEventVO
     public void setNotify(NotifyVO notify) { this.notify = notify; }
     public HandleVO getHandle() { return handle; }
     public void setHandle(HandleVO handle) { this.handle = handle; }
+
+    public String getRuleType() { return ruleType; }
+    public void setRuleType(String ruleType) { this.ruleType = ruleType; }
+    public String getRuleName() { return ruleName; }
+    public void setRuleName(String ruleName) { this.ruleName = ruleName; }
+    public java.util.Map<String, Object> getCond() { return cond; }
+    public void setCond(java.util.Map<String, Object> cond) { this.cond = cond; }
+    public String getJudgeTip() { return judgeTip; }
+    public void setJudgeTip(String judgeTip) { this.judgeTip = judgeTip; }
+    public boolean isCanDetail() { return canDetail; }
+    public void setCanDetail(boolean canDetail) { this.canDetail = canDetail; }
 }

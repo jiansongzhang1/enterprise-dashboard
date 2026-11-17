@@ -79,9 +79,16 @@ class SubscriptionBriefTest
         assertEquals(LocalDateTime.of(2026, 11, 1, 9, 0), SubscriptionRange.TODAY.window(d, 9)[1]);
         assertEquals(LocalDateTime.of(2026, 10, 31, 0, 0), SubscriptionRange.YESTERDAY.window(d, 9)[0]);
         assertEquals(LocalDateTime.of(2026, 11, 1, 0, 0), SubscriptionRange.YESTERDAY.window(d, 9)[1]);
-        assertEquals(LocalDateTime.of(2026, 10, 25, 0, 0), SubscriptionRange.LAST_7D.window(d, 9)[0]);
-        assertEquals(LocalDateTime.of(2026, 11, 1, 0, 0), SubscriptionRange.LAST_7D.window(d, 9)[1]);
-        assertEquals(LocalDateTime.of(2026, 10, 2, 0, 0), SubscriptionRange.LAST_30D.window(d, 9)[0]);
+        // 近 N 天含发送当天、截至发送整点（2026-11-13 起与运营总览一致）
+        assertEquals(LocalDateTime.of(2026, 10, 26, 0, 0), SubscriptionRange.LAST_7D.window(d, 9)[0]);
+        assertEquals(LocalDateTime.of(2026, 11, 1, 9, 0), SubscriptionRange.LAST_7D.window(d, 9)[1]);
+        assertEquals(LocalDateTime.of(2026, 10, 3, 0, 0), SubscriptionRange.LAST_30D.window(d, 9)[0]);
+        assertEquals(LocalDateTime.of(2026, 11, 1, 9, 0), SubscriptionRange.LAST_30D.window(d, 9)[1]);
+        // 固定日期：含两端
+        LocalDateTime[] fixed = SubscriptionRange.window(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 7));
+        assertEquals(LocalDateTime.of(2026, 9, 1, 0, 0), fixed[0]);
+        assertEquals(LocalDateTime.of(2026, 9, 8, 0, 0), fixed[1]);
+        assertEquals(SubscriptionRange.CUSTOM, SubscriptionRange.of("custom"));
         assertEquals(Granularity.HOUR, SubscriptionRange.YESTERDAY.getGranularity());
         assertEquals(Granularity.DAY, SubscriptionRange.LAST_7D.getGranularity());
         assertEquals("dashboard_overview_day_v2", SubscriptionRange.LAST_30D.getDataset());

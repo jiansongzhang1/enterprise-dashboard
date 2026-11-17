@@ -7,12 +7,14 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.AntPathMatcher;
 import com.fivetech.apikey.domain.ApiKey;
 import com.fivetech.apikey.mapper.ApiKeyMapper;
 import com.fivetech.common.core.domain.entity.SysUser;
@@ -22,10 +24,12 @@ import com.fivetech.common.exception.ServiceException;
 import com.fivetech.system.service.ISysUserService;
 
 /**
- * 系统对接用的 API Key：给不方便走「账号 + 密码 + Google 动态码」登录的程序调用指定接口（目前只有发送 Lark 消息）。
+ * 系统对接用的 API Key：给不方便走「账号 + 密码 + Google 动态码」登录的程序调用指定接口
+ * （目前只有按告警规则发 Lark 告警 POST /monitor/rules/{ruleId}/alert）。
  *
  * <ul>
- *   <li>请求头 {@value #HEADER}: ftk_…；只在 {@code security.api-key.paths} 列出的接口上认，其他接口带了也不算登录；</li>
+ *   <li>请求头 {@value #HEADER}: ftk_…；只在 {@code security.api-key.paths} 列出的接口上认，其他接口带了也不算登录；
+ *       路径支持 Ant 风格（星号只匹配一段，如配置 /monitor/rules/{星号}/alert 匹配 /monitor/rules/23/alert）；</li>
  *   <li>每个 Key 绑定一个后台账号：权限、操作日志都按这个账号走（接口上的 @PreAuthorize 照常生效）；</li>
  *   <li>Key 自己再限定能访问的接口、来源 IP、到期时间；作废后立即失效；</li>
  *   <li>库里只存 SHA-256，明文只在创建时返回一次；Key 是 30 字节随机数，不需要加盐慢哈希。</li>
@@ -44,6 +48,9 @@ public class ApiKeyService
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /** 路径匹配（Ant 风格）：配置与 Key 里存的是模式，请求来的是具体路径 */
+    private static final AntPathMatcher PATHS = new AntPathMatcher();
+
     private final ApiKeyMapper mapper;
 
     private final ISysUserService users;
@@ -52,7 +59,7 @@ public class ApiKeyService
     private final Set<String> supportedPaths;
 
     public ApiKeyService(ApiKeyMapper mapper, ISysUserService users,
-        @Value("${security.api-key.paths:/notification/lark/send}") String[] paths)
+        @Value("${security.api-key.paths:/monitor/rules/*/alert}") String[] paths)
     {
         this.mapper = mapper;
         this.users = users;
@@ -100,7 +107,24 @@ public class ApiKeyService
     /** 这个接口支不支持 API Key（不支持的接口带了 Key 也当没带） */
     public boolean supports(String path)
     {
-        return path != null && supportedPaths.contains(path);
+        return matchesAny(supportedPaths, path);
+    }
+
+    /** path 是否命中其中一个模式（相同字符串直接算命中） */
+    static boolean matchesAny(Collection<String> patterns, String path)
+    {
+        if (path == null)
+        {
+            return false;
+        }
+        for (String p : patterns)
+        {
+            if (p.equals(path) || PATHS.match(p, path))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -133,7 +157,7 @@ public class ApiKeyService
         {
             return new Check(null, "Key 已过期");
         }
-        if (!csv(k.getAllowedPaths()).contains(path))
+        if (!matchesAny(csv(k.getAllowedPaths()), path))
         {
             return new Check(null, "Key 不能访问该接口");
         }

@@ -79,6 +79,16 @@ public class SnapshotProperties
     /** 截图前隐藏的元素（导航、菜单、聊天浮窗等，逗号分隔的 CSS 选择器） */
     private String hideSelector = "";
 
+    /**
+     * 内部滚动容器（逗号分隔的 CSS 选择器）：这些元素会被改成 height:auto、overflow:visible，
+     * 让整页高度真的等于内容高度。后台布局常把内容区做成 height:100vh + overflow:auto，
+     * 此时 documentElement.scrollHeight 只有一屏，截出来就是"当前页面"。
+     */
+    private String expandSelector = "";
+
+    /** 截图前额外注入的 CSS（兜底用，比如某个控件要单独放开高度） */
+    private String extraCss = "";
+
     /** 地址里含这个片段说明跳到了登录页（令牌无效） */
     private String loginPathKeyword = "login";
 
@@ -139,6 +149,10 @@ public class SnapshotProperties
     public void setBusySelector(String busySelector) { this.busySelector = busySelector; }
     public String getHideSelector() { return hideSelector; }
     public void setHideSelector(String hideSelector) { this.hideSelector = hideSelector; }
+    public String getExpandSelector() { return expandSelector; }
+    public void setExpandSelector(String expandSelector) { this.expandSelector = expandSelector; }
+    public String getExtraCss() { return extraCss; }
+    public void setExtraCss(String extraCss) { this.extraCss = extraCss; }
     public String getLoginPathKeyword() { return loginPathKeyword; }
     public void setLoginPathKeyword(String loginPathKeyword) { this.loginPathKeyword = loginPathKeyword; }
     public int getIdleMillis() { return idleMillis; }

@@ -56,4 +56,10 @@ public enum BusinessType
      * 清空数据
      */
     CLEAN,
+
+    /**
+     * 查询（数据查询接口：运营总览、推广分析、明细查询、监控规则与事件等；只记请求参数，不记返回）。
+     * 存的是 ordinal，只能追加在最后，字典 sys_oper_type 对应 dict_value = 10
+     */
+    QUERY,
 }

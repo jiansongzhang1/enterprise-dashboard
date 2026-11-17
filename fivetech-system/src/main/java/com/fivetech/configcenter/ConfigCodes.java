@@ -92,6 +92,46 @@ public final class ConfigCodes
             ConfigCodes::validatePromoTerminals));
     }
 
+    /** 风控分析：榜单条件（全站共用，只作用于榜单本身） */
+    public static final String RISK_RANK_THRESHOLDS = "RISK_RANK_THRESHOLDS";
+
+    /** 风控分析：榜单设置（系统榜单的入榜条件、排行字段、占比口径、默认列，默认卡片、占比档位、我的榜单上限、风险类型） */
+    public static final String RISK_RANK_BOARDS = "RISK_RANK_BOARDS";
+
+    /** 风控分析：游戏字典（平台 › 品牌 / 类型 › 游戏，编码与 UDS 一致） */
+    public static final String RISK_GAME_DICT = "RISK_GAME_DICT";
+
+    static
+    {
+        add(new Def(RISK_RANK_THRESHOLDS, "風控分析",
+            "排行榜的榜單條件：values 為各項的值（鍵名被 RISK_RANK_BOARDS 的 \"$鍵\" 引用），limits 為頁面可改的上下限，names 為頁面上的名稱。"
+                + "只作用於榜單本身（概覽的新老用戶固定 7 天，不讀這裡）；channelRiskTypes 為渠道風險榜的全局默認風險類型；在風控分析頁修改時寫入當前站點",
+            com.fivetech.risk.config.RiskConfigService.DEFAULT_THRESHOLDS,
+            n -> com.fivetech.risk.config.RiskConfigService.validateThresholds(n.toString())));
+        add(new Def(RISK_RANK_BOARDS, "風控分析",
+            "排行榜的榜單設置：boards 每張榜的 code、name、kind（USER 按用戶 / ORDER 按訂單 / CHANNEL 按渠道）、entry 入榜條件（= 名單默認條件；"
+                + "field + gt / min / max / lt，值為數字或 \"$榜單條件鍵\"，any 為任一滿足）、scope 名單範圍（改條件也生效）、rankCol 排行字段、"
+                + "shareMode 卡片中間（SHARE 頭部佔比 / GAME_DIST 遊戲分佈，distCol / MULTIPLE_BUCKET / RTP_DIFF / NONE）、"
+                + "shareBase（ENTRY 入榜合計 / ALL 全部用戶合計）、stats 卡片 3 個數（code + label）、cols 默認列、card 能否做卡片；"
+                + "ORDER 另有 threshold、filters 名單條件、colOptions 可選列；CHANNEL 另有 channelCols 列定義、drillCols 下鑽名單默認列；"
+                + "defaultCards 默認卡片（1–9 張）、bands 佔比檔位、myBoardLimit 每人我的榜單上限、shareCols / sharePositiveCols 算佔比的金額列、"
+                + "ratioCols 比率列、riskTypes 風險類型（命中哪張榜的入榜條件，and 為附加條件）、channelRiskDefault 渠道風險榜的系統默認風險類型。"
+                + "字段編碼是「指標管理」裡風控排行榜列的接口編碼",
+            com.fivetech.risk.config.RiskConfigService.DEFAULT_BOARDS,
+            n -> com.fivetech.risk.config.RiskConfigService.validateBoards(n.toString())));
+        add(new Def(RISK_GAME_DICT, "風控分析",
+            "遊戲字典：platforms 為遊戲平台（含 brands 品牌、gameTypes 類型），games 為遊戲（code、name、platform、brand、gameType）；"
+                + "編碼與 UDS 一致。排行榜、遊戲分析、條件規則的遊戲範圍共用",
+            "{\n  \"platforms\": [ { \"code\": \"PG\", \"name\": \"PG\", \"brands\": [ { \"code\": \"PGS\", \"name\": \"PG Soft\" } ],\n"
+                + "    \"gameTypes\": [ { \"code\": \"slot\", \"name\": \"老虎機\" } ] } ],\n"
+                + "  \"games\": [ { \"code\": \"pg-mahjong-ways\", \"name\": \"麻將胡了\", \"platform\": \"PG\", \"brand\": \"PGS\", \"gameType\": \"slot\" } ]\n}",
+            n -> com.fivetech.risk.config.RiskConfigService.validateGameDict(n.toString())));
+        add(new Def(com.fivetech.monitor.cond.CondDims.PAY_CHANNELS, "監控管理",
+            "條件規則「支付通道」範圍的選項：[{code, name}]，code 與 UDS 小時數據集的支付通道字段一致",
+            com.fivetech.monitor.cond.CondDims.DEFAULT_PAY_CHANNELS,
+            n -> com.fivetech.monitor.cond.CondDims.validatePayChannels(n.toString())));
+    }
+
     private ConfigCodes()
     {
     }

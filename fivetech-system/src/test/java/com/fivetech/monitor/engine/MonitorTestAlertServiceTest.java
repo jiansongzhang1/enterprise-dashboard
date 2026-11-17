@@ -58,6 +58,9 @@ class MonitorTestAlertServiceTest
 
     private MonitorTestAlertService service;
 
+    /** 群列表缓存里的群：chatId → ok / dead */
+    private final Map<String, String> chatStatus = new java.util.HashMap<>(Map.of("oc_real_group", "ok"));
+
     @BeforeEach
     void setUp()
     {
@@ -122,17 +125,31 @@ class MonitorTestAlertServiceTest
                 return new PeriodPoint(from, to, v, null, new BigDecimal("40"), v == null);
             }
         };
+        com.fivetech.monitor.mapper.MonitorLarkChatMapper chatMapper = (com.fivetech.monitor.mapper.MonitorLarkChatMapper) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] { com.fivetech.monitor.mapper.MonitorLarkChatMapper.class }, (p, m, a) -> {
+                    if ("selectChat".equals(m.getName()) && chatStatus.containsKey((String) a[1]))
+                    {
+                        com.fivetech.monitor.domain.MonitorLarkChat c = new com.fivetech.monitor.domain.MonitorLarkChat();
+                        c.setChatId((String) a[1]);
+                        c.setName("群" + a[1]);
+                        c.setStatus(chatStatus.get((String) a[1]));
+                        return c;
+                    }
+                    return null;
+                });
         service = new MonitorTestAlertService(mapper, fetcher, builder, new MonitorMessageBuilder(dashboard, props),
-                new MonitorNotifyTemplateService(tplMapper, dashboard, props, lark), lark, props, dashboard);
+                new MonitorNotifyTemplateService(tplMapper, dashboard, props, lark), lark, props, dashboard,
+                new MonitorTestSender(lark, props, chatMapper));
     }
 
     @Test
-    void sendsTestAlertToConfiguredChatWithoutWritingAnything()
+    void sendsTestAlertToRuleChatsWithoutWritingAnything()
     {
         Map<String, Object> out = service.trigger(SITE, 9L, "admin");
         assertEquals(Boolean.TRUE, out.get("success"));
         assertEquals("om_1", out.get("messageId"));
-        assertEquals("oc_test", lark.chatId, "发到 MONITOR_TEST_CHAT_ID，不是规则自己的通知群");
+        assertEquals("oc_real_group", lark.chatId, "发到规则自己的通知群（FY-91 R9），不再发测试群");
+        assertEquals(1, ((List<?>) out.get("chats")).size());
         assertTrue(lark.text.startsWith("【測試】"), lark.text);
         assertTrue(lark.text.contains("首存轉化率"), lark.text);
         assertEquals("CRIT", out.get("level"), "0% < 1% → 按真实数据判定为严重");
@@ -170,14 +187,19 @@ class MonitorTestAlertServiceTest
     }
 
     @Test
-    void missingTestChatOrCredentialOrRule()
+    void noUsableChatOrCredentialOrRule()
     {
-        props.getLark().setTestChatId("");
+        chatStatus.put("oc_real_group", "dead");
         MonitorException e = assertThrows(MonitorException.class, () -> service.trigger(SITE, 9L, "admin"));
         assertEquals(MonitorErrorCode.BAD_REQUEST, e.getCode());
-        assertTrue(e.getMessage().contains("MONITOR_TEST_CHAT_ID"));
+        assertTrue(e.getMessage().contains("失效"), "规则的群都失效 → 400");
 
-        props.getLark().setTestChatId("oc_test");
+        rule.setNotifyChatId(null);
+        e = assertThrows(MonitorException.class, () -> service.trigger(SITE, 9L, "admin"));
+        assertTrue(e.getMessage().contains("沒有設置通知群"));
+        rule.setNotifyChatId("oc_real_group");
+        chatStatus.put("oc_real_group", "ok");
+
         props.getLark().setAppSecret(null);
         assertEquals(MonitorErrorCode.LARK_CREDENTIAL_INVALID,
                 assertThrows(MonitorException.class, () -> service.trigger(SITE, 9L, "admin")).getCode());
@@ -186,6 +208,19 @@ class MonitorTestAlertServiceTest
         assertEquals(MonitorErrorCode.NOT_FOUND,
                 assertThrows(MonitorException.class, () -> service.trigger(SITE, 404L, "admin")).getCode());
         assertNull(lark.chatId, "以上情况都不调 Lark");
+    }
+
+    @Test
+    void deadChatsAreSkippedOthersSent()
+    {
+        rule.setNotifyChats("[{\"chatId\":\"oc_dead\",\"name\":\"舊群\"},{\"chatId\":\"oc_real_group\",\"name\":\"風控群\"}]");
+        chatStatus.put("oc_dead", "dead");
+        Map<String, Object> out = service.trigger(SITE, 9L, "admin");
+        assertEquals(Boolean.TRUE, out.get("success"), "正常的群都送达即成功");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> chats = (List<Map<String, Object>>) out.get("chats");
+        assertEquals("skipped", chats.get(0).get("status"));
+        assertEquals("sent", chats.get(1).get("status"));
     }
 
     @Test

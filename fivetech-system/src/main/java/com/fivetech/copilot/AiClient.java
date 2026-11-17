@@ -32,6 +32,69 @@ public interface AiClient
         return complete(model, system, sb.toString().trim(), maxTokens);
     }
 
+    /**
+     * 带工具的多轮对话：模型要求调用工具时，由 executor 执行并把结果回传，直到模型给出文字回答或用完 maxRounds 轮。
+     * 默认实现不支持工具，退回 {@link #chat(String, String, java.util.List, int)}。
+     *
+     * @param tools     可用工具；为空时等同于不带工具
+     * @param executor  执行工具，返回给模型看的结果文本（不要抛异常，失败也用文字说明）
+     * @param maxRounds 最多执行几轮工具，用完后再问一次模型（不带工具）要文字回答
+     */
+    default AiResult chat(String model, String system, java.util.List<Message> messages, int maxTokens,
+            java.util.List<Tool> tools, ToolExecutor executor, int maxRounds)
+    {
+        return chat(model, system, messages, maxTokens);
+    }
+
+    /** 工具定义：name 给模型调用，inputSchema 是入参的 JSON Schema */
+    final class Tool
+    {
+        private final String name;
+
+        private final String description;
+
+        private final java.util.Map<String, Object> inputSchema;
+
+        public Tool(String name, String description, java.util.Map<String, Object> inputSchema)
+        {
+            this.name = name;
+            this.description = description;
+            this.inputSchema = inputSchema;
+        }
+
+        public String getName() { return name; }
+        public String getDescription() { return description; }
+        public java.util.Map<String, Object> getInputSchema() { return inputSchema; }
+    }
+
+    /** 模型要求的一次工具调用；id 用来把结果对回去 */
+    final class ToolCall
+    {
+        private final String id;
+
+        private final String name;
+
+        private final java.util.Map<String, Object> input;
+
+        public ToolCall(String id, String name, java.util.Map<String, Object> input)
+        {
+            this.id = id;
+            this.name = name;
+            this.input = input == null ? java.util.Map.of() : input;
+        }
+
+        public String getId() { return id; }
+        public String getName() { return name; }
+        public java.util.Map<String, Object> getInput() { return input; }
+    }
+
+    /** 执行工具，返回给模型看的结果文本 */
+    @FunctionalInterface
+    interface ToolExecutor
+    {
+        String execute(ToolCall call);
+    }
+
     /** 对话里的一条消息：role = user / assistant */
     final class Message
     {
@@ -62,13 +125,23 @@ public interface AiClient
 
         private final String stopReason;
 
+        /** 这次回答里实际调用过的工具名（按顺序，可重复）；没用工具时为空 */
+        private final java.util.List<String> toolsUsed;
+
         public AiResult(String text, String model, int inputTokens, int outputTokens, String stopReason)
+        {
+            this(text, model, inputTokens, outputTokens, stopReason, java.util.List.of());
+        }
+
+        public AiResult(String text, String model, int inputTokens, int outputTokens, String stopReason,
+                java.util.List<String> toolsUsed)
         {
             this.text = text;
             this.model = model;
             this.inputTokens = inputTokens;
             this.outputTokens = outputTokens;
             this.stopReason = stopReason;
+            this.toolsUsed = toolsUsed == null ? java.util.List.of() : java.util.List.copyOf(toolsUsed);
         }
 
         public String getText() { return text; }
@@ -76,6 +149,7 @@ public interface AiClient
         public int getInputTokens() { return inputTokens; }
         public int getOutputTokens() { return outputTokens; }
         public String getStopReason() { return stopReason; }
+        public java.util.List<String> getToolsUsed() { return toolsUsed; }
     }
 
     /** 调用失败；message 可以直接给页面看（不含 API Key） */

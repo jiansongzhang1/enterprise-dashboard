@@ -204,6 +204,8 @@ public class SubscriptionSnapshotService
             shot.readySelector = props.getReadySelector();
             shot.busySelector = props.getBusySelector();
             shot.hideSelector = props.getHideSelector();
+            shot.expandSelector = props.getExpandSelector();
+            shot.extraCss = props.getExtraCss();
             shot.loginKeyword = props.getLoginPathKeyword();
             shot.idleMillis = props.getIdleMillis();
             shot.settleMillis = props.getSettleMillis();

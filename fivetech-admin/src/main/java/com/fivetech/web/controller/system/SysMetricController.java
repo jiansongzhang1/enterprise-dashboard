@@ -34,14 +34,18 @@ public class SysMetricController extends BaseController
         this.metricDictService = metricDictService;
     }
 
-    /** 列表：{ rows, total, groups, datasets }；keyword 匹配编码 / 名称 / 口径，status = 0 已接入 / 1 仅登记 */
+    /**
+     * 列表：{ rows, total, groups, datasets, pageScopes }；keyword 匹配编码 / 名称 / 口径，status = 0 已接入 / 1 仅登记，
+     * pageScope = OVERVIEW / PROMO / RISK 只看该范围，ALL 只看适用于所有页面（范围为空）的
+     */
     @PreAuthorize("@ss.hasPermi('system:metric:list')")
     @GetMapping
     public AjaxResult list(@RequestParam(required = false) String keyword,
             @RequestParam(required = false) String groupCode,
-            @RequestParam(required = false) String status)
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String pageScope)
     {
-        return success(metricDictService.list(keyword, groupCode, status));
+        return success(metricDictService.list(keyword, groupCode, status, pageScope));
     }
 
     /** 详情：全部列 + 线上配置对照 + 引用情况 */
