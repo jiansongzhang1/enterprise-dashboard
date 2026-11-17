@@ -107,6 +107,16 @@ public class CopilotProperties
         /** 429 / 5xx / 529 时的重试次数 */
         private int retries = 2;
 
+        /**
+         * 提示词缓存：给 system（角色设定 + 本站数据快照）和工具定义打上 cache_control，
+         * 5 分钟内同一前缀的请求命中后按 10% 计费、响应更快。写入时贵 25%，
+         * 前缀必须一字不差，所以站点数据缓存期（chat.context-cache-seconds）内连着问才划算。
+         * 不满足最小可缓存长度时服务端直接忽略，不会报错。
+         */
+        private boolean promptCache = true;
+
+        public boolean isPromptCache() { return promptCache; }
+        public void setPromptCache(boolean promptCache) { this.promptCache = promptCache; }
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String getApiKey() { return apiKey; }
@@ -184,7 +194,7 @@ public class CopilotProperties
         private int maxTokens = 1500;
 
         /** 最多带上最近几条消息（含本次提问） */
-        private int maxMessages = 20;
+        private int maxMessages = 10;
 
         /** 单条提问最多几个字 */
         private int maxChars = 2000;

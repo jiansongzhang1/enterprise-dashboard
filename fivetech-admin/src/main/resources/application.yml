@@ -1055,6 +1055,9 @@ copilot:
     version: 2023-06-01
     timeout-seconds: ${COPILOT_TIMEOUT_SECONDS:60}
     retries: 2
+    # 提示词缓存：system（角色设定 + 本站数据快照）与工具定义打上 cache_control，
+    # 5 分钟内同一前缀命中后按 10% 计费。日志看 cache_read / cache_write
+    prompt-cache: ${COPILOT_PROMPT_CACHE:true}
   brief:
     # 每天最多调用几次（全部站点；定时、立即发送、测试、预览合计），用完后当天的简报不带摘要
     daily-limit: ${COPILOT_BRIEF_DAILY_LIMIT:20}
@@ -1078,8 +1081,8 @@ copilot:
     # 每人每天最多问几次
     daily-limit-per-user: ${COPILOT_CHAT_DAILY_LIMIT:50}
     max-tokens: 1500
-    # 最多带最近几条消息（含本次提问）
-    max-messages: 20
+    # 最多带最近几条消息（含本次提问）；越大越费 token，后台问答基本一问一答，10 条够用
+    max-messages: ${COPILOT_CHAT_MAX_MESSAGES:10}
     # 单条提问最多几个字
     max-chars: 2000
     # 站点数据缓存秒数

@@ -69,7 +69,7 @@ public class AnthropicAiClient implements AiClient
         m.put("max_tokens", Math.max(1, maxTokens));
         if (system != null && !system.isEmpty())
         {
-            m.put("system", system);
+            m.put("system", systemField(system));
         }
         m.put("messages", list);
         return send(model, m);
@@ -100,6 +100,11 @@ public class AnthropicAiClient implements AiClient
             spec.put("input_schema", t.getInputSchema());
             specs.add(spec);
         }
+        if (properties.getAnthropic().isPromptCache() && !specs.isEmpty())
+        {
+            // 缓存前缀的顺序是 tools → system → messages，断点打在最后一个工具上，前面整段 tools 都进缓存
+            specs.get(specs.size() - 1).put("cache_control", Map.of("type", "ephemeral"));
+        }
         List<String> used = new ArrayList<>();
         int in = 0;
         int out = 0;
@@ -113,7 +118,7 @@ public class AnthropicAiClient implements AiClient
             body.put("max_tokens", Math.max(1, maxTokens));
             if (system != null && !system.isEmpty())
             {
-                body.put("system", system);
+                body.put("system", systemField(system));
             }
             body.put("messages", conversation);
             if (!last)
@@ -202,6 +207,23 @@ public class AnthropicAiClient implements AiClient
         return n.asString();
     }
 
+    /**
+     * system 字段：开了提示词缓存就发成带 cache_control 的块，否则还是一个字符串。
+     * 角色设定与本站数据快照在站点数据缓存期内一字不差，连着问才会命中。
+     */
+    private Object systemField(String system)
+    {
+        if (!properties.getAnthropic().isPromptCache())
+        {
+            return system;
+        }
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("type", "text");
+        block.put("text", system);
+        block.put("cache_control", Map.of("type", "ephemeral"));
+        return List.of(block);
+    }
+
     private AiResult send(String model, Map<String, Object> requestBody)
     {
         return parse(postJson(model, requestBody), model);
@@ -265,9 +287,11 @@ public class AnthropicAiClient implements AiClient
             {
                 JsonNode root = readTree(response.body());
                 JsonNode usage = root.path("usage");
-                log.info("[copilot] model={} in={} out={} stop={} {}ms", model, usage.path("input_tokens").asInt(0),
-                    usage.path("output_tokens").asInt(0), root.path("stop_reason").asString(),
-                    System.currentTimeMillis() - started);
+                // cache_read 顶上去、in 掉下来 = 缓存命中；cache_write 是这次写进缓存的量（贵 25%，只在第一次出现）
+                log.info("[copilot] model={} in={} cache_read={} cache_write={} out={} stop={} {}ms", model,
+                    usage.path("input_tokens").asInt(0), usage.path("cache_read_input_tokens").asInt(0),
+                    usage.path("cache_creation_input_tokens").asInt(0), usage.path("output_tokens").asInt(0),
+                    root.path("stop_reason").asString(), System.currentTimeMillis() - started);
                 return root;
             }
             last = error(status, response.body());
