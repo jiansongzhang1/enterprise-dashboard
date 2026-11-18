@@ -29,6 +29,9 @@ public class MarketProperties
     /** 注册分群（留存与回收）：按注册日 reg_dt，第 N 日到期人数 / 留存人数 / 累计存款额 */
     private String cohortDataset = "dashboard_market_cohort_v1";
 
+    /** 裂变层级数据集（节点树 + 窗口事实，节点主键为 merchant_code + agent_id） */
+    private String fissionDataset = "dashboard_market_fission_v1";
+
     /** 可选：merchant_code 过滤值（Postman 联调包里的 merchant_code）；为空不加 */
     private String merchantCode = "";
 
@@ -46,6 +49,8 @@ public class MarketProperties
     public void setMemberDataset(String memberDataset) { this.memberDataset = memberDataset; }
     public String getCohortDataset() { return cohortDataset; }
     public void setCohortDataset(String cohortDataset) { this.cohortDataset = cohortDataset; }
+    public String getFissionDataset() { return fissionDataset; }
+    public void setFissionDataset(String fissionDataset) { this.fissionDataset = fissionDataset; }
     public String getMerchantCode() { return merchantCode; }
     public void setMerchantCode(String merchantCode) { this.merchantCode = merchantCode; }
     public int getPageSize() { return pageSize; }

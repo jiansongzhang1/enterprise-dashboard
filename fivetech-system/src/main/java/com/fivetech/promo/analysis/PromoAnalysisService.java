@@ -22,6 +22,7 @@ import com.fivetech.promo.analysis.query.CohortQuery;
 import com.fivetech.promo.analysis.query.FissionQuery;
 import com.fivetech.promo.analysis.query.PromoFilter;
 import com.fivetech.promo.analysis.query.Sort;
+import com.fivetech.promo.analysis.market.FissionGateway;
 import com.fivetech.promo.analysis.market.MarketCube;
 import com.fivetech.promo.analysis.market.MarketGateway;
 import com.fivetech.promo.analysis.market.MarketValues;
@@ -63,6 +64,15 @@ public class PromoAnalysisService
     private final PromoMetricCatalog catalog;
 
     private final MarketGateway market;
+
+    /** 裂变数据集网关；用 setter 注入，老的单测构造器不受影响 */
+    private FissionGateway fission;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setFission(FissionGateway fission)
+    {
+        this.fission = fission;
+    }
 
     public PromoAnalysisService(DashboardProperties properties, PromoChannelDictionary channels, PromoTerminalDictionary terminals,
         PromoMetricCatalog catalog, MarketGateway market)
@@ -1166,113 +1176,96 @@ public class PromoAnalysisService
         Map<String, Object> current;
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, Object> total;
+        /** 一级总数 / 直属总数：单独聚合查 node_count，不是当前页行数；没接通时 null */
+        java.math.BigDecimal totalRows;
+        /** 顶层的顶卡；下钻时为 null */
+        Map<String, Object> summary;
         List<Map<String, Object>> notices = new ArrayList<>();
         boolean loaded;
     }
 
     /**
-     * 裂变层级：进入某用户（parentId）时，按 UDS 会员快照的 agent_login（会员当前上级）列出直属下级，
-     * 每人的新增下级、首存、存款人数（按日累加）、存款总额、投注总额取小时数据集按 agent_login 汇总，直属下级人数取快照计数。
-     * 顶层一级代理清单、层级、提款人数、会员输赢、推广商 / 推广渠道待数据平台补源。
+     * 裂变层级：读 UDS {@code dashboard_market_fission_v1}（对接手册 2026-11-17 第二节）。
+     *
+     * <ul>
+     *   <li>顶层（没有 parentId）= 一级列表：{@code agent_level = 1 AND children_count > 0}；</li>
+     *   <li>进入某个节点 = 直属下钻：{@code merchant_code + parent_agent_id}，商户不能省；</li>
+     *   <li>行数、合计、顶卡都单独发聚合查询，不用当前页的行算；</li>
+     *   <li>数据集没接通（九站目前 {@code UNSUPPORTED/PENDING_SOURCE}）时 {@code loaded = false}，
+     *       各列保持 null，由前端显示「未接通」，不能当成 0。</li>
+     * </ul>
+     *
+     * <p>推广商 / 推广渠道归属数据平台仍未提供，{@code agent}、{@code channel} 两列固定为 null。</p>
      */
     Fission fission(FissionQuery q, PromoTime.Range range)
     {
         Fission f = new Fission();
         f.total = fissionStats();
         f.total.put("directCount", null);
+        if (fission == null || !fission.isEnabled())
+        {
+            f.notices.add(notice("FISSION_OFF", "裂變數據集未啟用"));
+            return f;
+        }
         boolean top = q.getParentId() == null || q.getParentId().isBlank();
-        if (top)
-        {
-            f.notices.add(notice("FISSION_TOP_PENDING", "一級代理清單、層級與裂變註冊待數據平台提供關係閉包與渠道映射"));
-            return f;
-        }
-        String id = q.getParentId().trim();
-        if (!marketOn())
-        {
-            f.current = currentStub(id, null);
-            return f;
-        }
+        String parentId = top ? null : q.getParentId().trim();
+        // 页面上没有「商户」，下钻只按 parent_agent_id。
+        // 手册要求商户过滤不能省（同一玩家号可能存在于多个商户下），站点有多商户时要配
+        // promo.market.merchant-code 固定住，否则有串数据的风险
+        List<Map<String, Object>> filters = top ? FissionGateway.topFilters()
+            : FissionGateway.childFilters(parentId);
+        String[] sort = fissionSort(q.getSort());
+        int num = q.getPageNum() == null ? 1 : Math.max(1, q.getPageNum());
+        // 接口路径已由 fissionAgents 夹到 200；这里放宽到 1000 是给导出一次取整层用
+        int size = q.getPageSize() == null ? 20 : Math.max(1, Math.min(1000, q.getPageSize()));
         try
         {
-            List<String> dims = List.of("player_id", "member_account", "agent_login");
-            List<com.fivetech.dashboard.gateway.uds.UdsRow> me = market.members(
-                List.of(MarketGateway.cond("player_id", "EQ", id.matches("\\d{1,18}") ? (Object) Long.valueOf(id) : id)), dims, List.of(), 1, 0);
-            if (me.isEmpty())
+            com.fivetech.dashboard.gateway.uds.UdsQueryResult list = fission.nodes(range, filters, sort[0],
+                "asc".equals(sort[1]), size, (num - 1) * size);
+            if (FissionGateway.pending(list))
             {
-                me = market.members(List.of(MarketGateway.cond("member_account", "EQ", id)), dims, List.of(), 1, 0);
-            }
-            if (me.isEmpty())
-            {
-                f.current = null;
-                f.notices.add(notice("NOT_FOUND", "找不到這個用戶：" + id));
-                f.loaded = true;
+                f.notices.add(notice("FISSION_NOT_READY", "本站的裂變數據集尚未接通，各欄暫無數值"));
                 return f;
             }
-            String account = me.get(0).str("member_account");
-            String userId = me.get(0).str("player_id");
-            int max = Math.max(1, Math.min(1000, market.maxChildren()));
-            List<com.fivetech.dashboard.gateway.uds.UdsRow> children = market.members(
-                List.of(MarketGateway.cond("agent_login", "EQ", account)), List.of("player_id", "member_account", "register_time"),
-                List.of(MarketGateway.order("register_time", "ASC")), max, 0);
-            if (children.size() >= max)
+            for (com.fivetech.dashboard.gateway.uds.UdsRow row : list.getRows())
             {
-                f.notices.add(notice("CHILDREN_TRUNCATED", "直屬下級超過 " + max + " 人，只列出最早註冊的 " + max + " 人"));
+                f.rows.add(fissionRow(row));
             }
-            List<String> accounts = new ArrayList<>();
-            accounts.add(account);
-            children.forEach(c -> accounts.add(c.str("member_account")));
-            Map<String, Map<String, BigDecimal>> stats = market.byAgent(range.from, range.to, accounts);
-            Map<String, Long> direct = market.directCounts(accounts);
-
-            Map<String, BigDecimal> mine = stats.getOrDefault(account, Map.of());
-            f.current = currentStub(userId, account);
-            f.current.put("directCount", direct.getOrDefault(account, 0L));
-            f.current.put("newSub", mine.getOrDefault("reg", BigDecimal.ZERO));
-            f.current.put("ftd", mine.getOrDefault("ftd_players", BigDecimal.ZERO));
-            f.current.put("betAmt", mine.getOrDefault("bet_amount", BigDecimal.ZERO));
-
-            for (com.fivetech.dashboard.gateway.uds.UdsRow c : children)
+            // 总数、合计都单独聚合查：当前页行数不等于总量，合计也不能只加当前页
+            f.totalRows = aggNum(range, filters, "node_count");
+            com.fivetech.dashboard.gateway.uds.UdsQueryResult totals = fission.aggregate(range, filters,
+                FissionGateway.METRICS);
+            if (!FissionGateway.pending(totals) && !totals.getRows().isEmpty())
             {
-                String acc = c.str("member_account");
-                Map<String, BigDecimal> st = stats.getOrDefault(acc, Map.of());
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("userId", c.str("player_id"));
-                row.put("account", acc);
-                row.put("level", null);
-                row.put("agent", null);
-                row.put("channel", null);
-                row.put("directCount", direct.getOrDefault(acc, 0L));
-                row.put("newSub", st.getOrDefault("reg", BigDecimal.ZERO));
-                row.put("ftd", st.getOrDefault("ftd_players", BigDecimal.ZERO));
-                row.put("depU", st.getOrDefault("deposit_users", BigDecimal.ZERO));
-                row.put("wdU", null);
-                row.put("depAmt", st.getOrDefault("deposit_amount", BigDecimal.ZERO));
-                row.put("betAmt", st.getOrDefault("bet_amount", BigDecimal.ZERO));
-                row.put("winLoss", null);
-                f.rows.add(row);
+                com.fivetech.dashboard.gateway.uds.UdsRow t = totals.getRows().get(0);
+                f.total.put("newSub", t.num("node_new_sub"));
+                f.total.put("ftd", t.num("node_first_deposit_users"));
+                f.total.put("depU", t.num("node_deposit_users"));
+                f.total.put("wdU", t.num("node_withdraw_users"));
+                f.total.put("depAmt", t.num("node_deposit_amount"));
+                f.total.put("wdAmt", t.num("node_withdraw_amount"));
+                f.total.put("betAmt", t.num("node_bet_amount"));
+                f.total.put("winLoss", t.num("node_member_win_loss"));
             }
-            String[] sort = fissionSort(q.getSort());
-            java.util.Comparator<Map<String, Object>> cmp = java.util.Comparator.comparing(
-                (Map<String, Object> r) -> num(r.get(sort[0])), java.util.Comparator.nullsLast(
-                    "asc".equals(sort[1]) ? java.util.Comparator.<BigDecimal>naturalOrder() : java.util.Comparator.<BigDecimal>reverseOrder()))
-                .thenComparing(r -> num(r.get("newSub")), java.util.Comparator.nullsLast(java.util.Comparator.<BigDecimal>reverseOrder()))
-                .thenComparing(r -> String.valueOf(r.get("account")));
-            f.rows.sort(cmp);
-            long directSum = 0;
-            for (Map<String, Object> r : f.rows)
+            if (top)
             {
-                directSum += ((Number) r.get("directCount")).longValue();
-                for (String k : List.of("newSub", "ftd", "depU", "depAmt", "betAmt"))
+                f.summary = fissionSummary(range);
+            }
+            else
+            {
+                f.current = fissionNode(range, parentId);
+                if (f.current == null)
                 {
-                    BigDecimal v = num(r.get(k));
-                    BigDecimal t = num(f.total.get(k));
-                    f.total.put(k, v == null ? t : t == null ? v : t.add(v));
+                    f.notices.add(notice("NOT_FOUND", "找不到這個用戶：" + parentId));
                 }
             }
-            f.total.put("directCount", directSum);
-            f.notices.add(notice("FISSION_PARTIAL", "層級、推廣商 / 推廣渠道、提款人數、會員輸贏待數據平台補源；上級關係按會員當前上級"));
+            f.notices.add(notice("FISSION_PARTIAL", "推廣商 / 推廣渠道歸屬待數據平台補源；樹為當前關係，所選期間的事實按當前上級歸屬"));
             f.loaded = true;
             return f;
+        }
+        catch (ServiceException e)
+        {
+            throw e;
         }
         catch (RuntimeException e)
         {
@@ -1280,28 +1273,81 @@ public class PromoAnalysisService
         }
     }
 
-    private static BigDecimal num(Object v)
+
+    /** 一行节点 */
+    Map<String, Object> fissionRow(com.fivetech.dashboard.gateway.uds.UdsRow r)
     {
-        if (v == null)
-        {
-            return null;
-        }
-        return v instanceof BigDecimal b ? b : new BigDecimal(v.toString());
+        Map<String, Object> row = new LinkedHashMap<>();
+        // 复合主键：下钻、定位都要原样带回
+        row.put("merchantCode", r.str("merchant_code"));
+        row.put("userId", r.str("agent_id"));
+        row.put("account", r.str("agent_login"));
+        row.put("parentId", r.str("parent_agent_id"));
+        row.put("parentAccount", r.str("agent_parent"));
+        row.put("rootId", r.str("root_agent_id"));
+        row.put("level", r.num("agent_level"));
+        // 树交付的原始直属人数，可能含测试下级，不等于有效直属注册人数
+        row.put("directCount", r.num("children_count"));
+        row.put("agent", null);
+        row.put("channel", null);
+        row.put("newSub", r.num("node_new_sub"));
+        row.put("ftd", r.num("node_first_deposit_users"));
+        row.put("depU", r.num("node_deposit_users"));
+        row.put("wdU", r.num("node_withdraw_users"));
+        row.put("depAmt", r.num("node_deposit_amount"));
+        row.put("wdAmt", r.num("node_withdraw_amount"));
+        row.put("betAmt", r.num("node_bet_amount"));
+        // 玩家视角，可为负；不是旧的 ggr
+        row.put("winLoss", r.num("node_member_win_loss"));
+        // 祖先链是 JSON 字符串，解析后给前端；截断时不能当成完整路径
+        java.math.BigDecimal overflow = r.num("depth_overflow");
+        boolean truncated = overflow != null && overflow.signum() != 0;
+        row.put("ancestorIds", fission.jsonArray(r.str("ancestor_ids")));
+        row.put("ancestorAccounts", fission.jsonArray(r.str("ancestor_logins")));
+        row.put("depthOverflow", truncated);
+        return row;
     }
 
-    private static Map<String, Object> currentStub(String userId, String account)
+    /** 单个节点（下钻时的「当前」） */
+    private Map<String, Object> fissionNode(PromoTime.Range range, String agentId)
     {
-        Map<String, Object> current = new LinkedHashMap<>();
-        current.put("userId", userId);
-        current.put("account", account);
-        current.put("level", null);
-        current.put("agent", null);
-        current.put("channel", null);
-        current.put("directCount", null);
-        current.put("newSub", null);
-        current.put("ftd", null);
-        current.put("betAmt", null);
-        return current;
+        com.fivetech.dashboard.gateway.uds.UdsQueryResult r = fission.nodes(range,
+            FissionGateway.nodeFilters(agentId), null, true, 1, 0);
+        return FissionGateway.pending(r) || r.getRows().isEmpty() ? null : fissionRow(r.getRows().get(0));
+    }
+
+    /** 顶卡：裂变注册、注册首存率、二级注册占比、有活动自然根（都不带一级列表过滤） */
+    private Map<String, Object> fissionSummary(PromoTime.Range range)
+    {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("fissionReg", null);
+        s.put("fissionFtd", null);
+        s.put("fissionFtdRate", null);
+        s.put("directReg", null);
+        s.put("directShare", null);
+        s.put("activeRoots", null);
+        com.fivetech.dashboard.gateway.uds.UdsQueryResult r = fission.aggregate(range, List.of(),
+            FissionGateway.SUMMARY_METRICS);
+        if (!FissionGateway.pending(r) && !r.getRows().isEmpty())
+        {
+            com.fivetech.dashboard.gateway.uds.UdsRow t = r.getRows().get(0);
+            s.put("fissionReg", t.num("node_fission_registered_users"));
+            s.put("fissionFtd", t.num("node_fission_registered_first_users"));
+            // 两个比率原值 0～1，分母为 0 时保持 null，前端显示百分比时乘 100
+            s.put("fissionFtdRate", t.num("node_registered_first_rate"));
+            s.put("directReg", t.num("node_direct_registered_users"));
+            s.put("directShare", t.num("node_direct_registered_rate"));
+        }
+        // 有活动的自然根数：不等于「有活动推广代理数」
+        s.put("activeRoots", aggNum(range, List.of(), "node_active_roots"));
+        return s;
+    }
+
+    /** 单指标聚合；没接通或没返回时为 null，不补 0 */
+    private java.math.BigDecimal aggNum(PromoTime.Range range, List<Map<String, Object>> filters, String metric)
+    {
+        com.fivetech.dashboard.gateway.uds.UdsQueryResult r = fission.aggregate(range, filters, List.of(metric));
+        return FissionGateway.pending(r) || r.getRows().isEmpty() ? null : r.getRows().get(0).num(metric);
     }
 
     public Map<String, Object> fissionAgents(FissionQuery q)
@@ -1310,48 +1356,65 @@ public class PromoAnalysisService
         scope(q.getAgents(), q.getChannels(), null);
         fissionSort(q.getSort());
         boolean top = q.getParentId() == null || q.getParentId().isBlank();
+        int num = q.getPageNum() == null ? 1 : Math.max(1, q.getPageNum());
+        int size = q.getPageSize() == null ? 20 : Math.max(1, Math.min(200, q.getPageSize()));
+        q.setPageNum(num);
+        q.setPageSize(size);
         Fission f = fission(q, range);
         Map<String, Object> out = header(PromoTime.slot(range, null), null);
         out.put("dataPending", !f.loaded);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> notices = (List<Map<String, Object>>) out.get("notices");
         notices.addAll(f.notices);
-        if (top)
-        {
-            Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("fissionReg", null);
-            summary.put("fissionFtd", null);
-            summary.put("activeAgents", null);
-            summary.put("directShare", null);
-            out.put("summary", summary);
-        }
-        else
-        {
-            out.put("summary", null);
-        }
+        out.put("summary", top ? f.summary : null);
         out.put("current", f.current);
-        List<Map<String, Object>> crumb = new ArrayList<>();
-        if (f.current != null)
-        {
-            Map<String, Object> c = new LinkedHashMap<>();
-            c.put("userId", f.current.get("userId"));
-            c.put("account", f.current.get("account"));
-            crumb.add(c);
-        }
-        out.put("breadcrumb", crumb);
+        out.put("breadcrumb", fissionBreadcrumb(f.current));
         out.put("total", f.total);
-        int num = q.getPageNum() == null ? 1 : Math.max(1, q.getPageNum());
-        int size = q.getPageSize() == null ? 20 : Math.max(1, Math.min(200, q.getPageSize()));
-        int from = Math.min(f.rows.size(), (num - 1) * size);
-        out.put("rows", new ArrayList<>(f.rows.subList(from, Math.min(f.rows.size(), from + size))));
+        out.put("rows", f.rows);
         Map<String, Object> page = new LinkedHashMap<>();
         page.put("num", num);
         page.put("size", size);
-        page.put("total", f.rows.size());
+        // 总数来自单独的 node_count 聚合；没接通时为 null，前端不要拿它算页数
+        page.put("total", f.totalRows);
         out.put("page", page);
         return out;
     }
 
+    /** 面包屑：祖先链 + 当前节点；链被截断时标出来，不能当成完整路径 */
+    static List<Map<String, Object>> fissionBreadcrumb(Map<String, Object> current)
+    {
+        List<Map<String, Object>> crumb = new ArrayList<>();
+        if (current == null)
+        {
+            return crumb;
+        }
+        @SuppressWarnings("unchecked")
+        List<String> ids = (List<String>) current.get("ancestorIds");
+        @SuppressWarnings("unchecked")
+        List<String> accounts = (List<String>) current.get("ancestorAccounts");
+        if (ids != null)
+        {
+            for (int i = 0; i < ids.size(); i++)
+            {
+                Map<String, Object> c = new LinkedHashMap<>();
+                c.put("merchantCode", current.get("merchantCode"));
+                c.put("userId", ids.get(i));
+                c.put("account", accounts != null && i < accounts.size() ? accounts.get(i) : null);
+                crumb.add(c);
+            }
+        }
+        Map<String, Object> me = new LinkedHashMap<>();
+        me.put("merchantCode", current.get("merchantCode"));
+        me.put("userId", current.get("userId"));
+        me.put("account", current.get("account"));
+        crumb.add(me);
+        return crumb;
+    }
+
+    /**
+     * 定位：{@code q} 为玩家号或登录名。登录名可能对应多个商户 / 多个玩家，返回全部候选让使用者消歧，
+     * 不自动取第一条。
+     */
     public Map<String, Object> fissionLocate(String q)
     {
         if (q == null || q.isBlank())
@@ -1361,10 +1424,50 @@ public class PromoAnalysisService
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("found", false);
         out.put("reason", null);
-        out.put("path", new ArrayList<>());
+        out.put("candidates", new ArrayList<>());
         out.put("row", null);
-        out.put("flag", null);
         out.put("dataPending", true);
-        return out;
+        if (fission == null || !fission.isEnabled())
+        {
+            out.put("reason", "裂變數據集未啟用");
+            return out;
+        }
+        String key = q.trim();
+        PromoTime.Range range = PromoTime.range(null, null);
+        try
+        {
+            List<Map<String, Object>> f = new ArrayList<>();
+            f.add(MarketGateway.cond(key.matches("\\d{1,18}") ? "agent_id" : "agent_login", "EQ", key));
+            com.fivetech.dashboard.gateway.uds.UdsQueryResult r = fission.nodes(range, f, null, true, 50, 0);
+            if (FissionGateway.pending(r))
+            {
+                out.put("reason", "本站的裂變數據集尚未接通");
+                return out;
+            }
+            out.put("dataPending", false);
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (com.fivetech.dashboard.gateway.uds.UdsRow row : r.getRows())
+            {
+                rows.add(fissionRow(row));
+            }
+            if (rows.isEmpty())
+            {
+                out.put("reason", "找不到：" + key);
+                return out;
+            }
+            out.put("found", true);
+            out.put("candidates", rows);
+            // 同名可能对应不同商户或不同玩家，只有唯一一条时才直接给 row
+            out.put("row", rows.size() == 1 ? rows.get(0) : null);
+            if (rows.size() > 1)
+            {
+                out.put("reason", "有 " + rows.size() + " 個同名節點，請選擇商戶");
+            }
+            return out;
+        }
+        catch (RuntimeException e)
+        {
+            throw dataFailed(e);
+        }
     }
 }

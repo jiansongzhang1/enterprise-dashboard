@@ -9,7 +9,7 @@ public class FissionQuery extends PromoFilter
 {
     private static final long serialVersionUID = 1L;
 
-    /** 要进入的用户 ID；null = 顶层（一级代理） */
+    /** 要进入的用户 ID（UDS 的 agent_id）；null = 顶层（一级代理） */
     private String parentId;
 
     private Sort sort;

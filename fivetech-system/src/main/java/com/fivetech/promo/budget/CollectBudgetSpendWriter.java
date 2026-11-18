@@ -468,10 +468,16 @@ public class CollectBudgetSpendWriter implements BudgetSpendWriter
     }
 
     /** 请求体：确认时只在前面加 confirmation_id，rows 原样 */
+    /**
+     * 提交体。{@code environment} 是对接手册要求的显式环境确认（test / prod），
+     * 与采集令牌、UDS 的 X-Uds-Environment 必须指向同一环境，填错平台会拒绝。
+     */
     String body(String rowsJson, String confirmationId)
     {
-        return confirmationId == null ? "{\"rows\":" + rowsJson + "}"
-            : "{\"confirmation_id\":" + objectMapper.writeValueAsString(confirmationId) + ",\"rows\":" + rowsJson + "}";
+        String env = props.getEnvironment() == null ? "" : props.getEnvironment().trim();
+        String head = env.isEmpty() ? "{" : "{\"environment\":" + objectMapper.writeValueAsString(env) + ",";
+        return confirmationId == null ? head + "\"rows\":" + rowsJson + "}"
+            : head + "\"confirmation_id\":" + objectMapper.writeValueAsString(confirmationId) + ",\"rows\":" + rowsJson + "}";
     }
 
     // ------------------------------------------------------------------ 工具

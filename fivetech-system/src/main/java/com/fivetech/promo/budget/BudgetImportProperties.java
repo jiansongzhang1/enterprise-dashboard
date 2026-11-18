@@ -23,6 +23,12 @@ public class BudgetImportProperties
     /** 写入开关：关闭时导入只做校验、不写 */
     private boolean enabled = false;
 
+    /**
+     * 提交 body 里的 {@code environment}：{@code test} 或 {@code prod}，由对接手册要求显式确认。
+     * 必须与采集令牌、UDS 的 {@code X-Uds-Environment} 指向同一环境，混用会被平台拒绝。
+     */
+    private String environment = "test";
+
     /** 读取开关：关闭时表格不查 UDS（显示「—」），预算模板不预填，导入也不能合并已有数据（写入同样不可用） */
     private boolean readEnabled = true;
 
@@ -63,6 +69,8 @@ public class BudgetImportProperties
     /** 单次最多几天（导入文件的日期跨度 F7、模板与表格的日期范围、meta.maxDays），默认 31，取值 1–366 */
     private int maxDays = BudgetImportValidator.DEFAULT_MAX_DAYS;
 
+    public String getEnvironment() { return environment; }
+    public void setEnvironment(String environment) { this.environment = environment; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public boolean isReadEnabled() { return readEnabled; }

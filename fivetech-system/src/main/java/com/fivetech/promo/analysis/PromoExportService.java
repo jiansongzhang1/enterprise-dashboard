@@ -340,6 +340,9 @@ public class PromoExportService
         PromoScope scope = analysis.scope(q.getAgents(), q.getChannels(), null);
         PromoAnalysisService.fissionSort(q.getSort());
         boolean top = q.getParentId() == null || q.getParentId().isBlank();
+        // 导出当前层：一次取满一页上限，不跟随页面的分页
+        q.setPageNum(1);
+        q.setPageSize(1000);
         PromoAnalysisService.Fission f = analysis.fission(q, range);
         // 层级：顶层写「一級代理」，进入某用户写他的帳號（上层路径要关系闭包，暂只有当前用户）
         String level = top ? "一級代理"
