@@ -54,6 +54,10 @@ public class UdsClient
             builder.sslContext(sslContext);
         }
         this.httpClient = builder.build();
+        // 环境确认头与身份头的实际取值；排查「发到哪个环境」时先看这一行
+        log.info("[uds] base-url={} X-Uds-Environment={} 身份头={}", properties.getBaseUrl(),
+            StringUtils.isEmpty(properties.getEnvironment()) ? "（不发）" : properties.getEnvironment(),
+            properties.isSendIdentityHeaders() ? "发送" : "不发（走 mTLS 网关）");
     }
 
     /**

@@ -78,10 +78,14 @@ public class FissionGateway
         return props.isEnabled() && StringUtils.isNotEmpty(props.getFissionDataset());
     }
 
-    /** 排序列对应的 UDS 字段；不认识的列返回 null（调用方已经先校验过列名） */
+    /**
+     * 排序列对应的 UDS 字段；不认识的列返回 null（调用方已经先校验过列名）。
+     * column 为 null 表示这次查询不需要排序（定位、取单个节点），要先挡掉——
+     * {@code Map.of()} 是不接受 null 键的，直接 get(null) 会 NPE。
+     */
     public static String sortField(String column)
     {
-        return SORT_FIELDS.get(column);
+        return column == null ? null : SORT_FIELDS.get(column);
     }
 
     /** 一级列表过滤：层级 = 1 且有直属下级 */
