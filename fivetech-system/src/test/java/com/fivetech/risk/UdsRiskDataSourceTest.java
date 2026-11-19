@@ -81,8 +81,11 @@ class UdsRiskDataSourceTest
         assertEquals("risk_user_day_v1", b.get("dataset"));
         assertEquals(List.of("uid", "account", "register_time", "promoter_id", "channel_id"), b.get("dimensions"), "parent 配成空 = 没有这个字段");
         Map<String, Object> time = (Map<String, Object>) b.get("time");
-        assertEquals("2026-11-09", time.get("from"));
-        assertEquals("2026-11-15", time.get("to"), "左闭右开 → 日期闭区间");
+        // UDS 2026-11-19：窗口数据集统一 uds_hh / HOUR，from、to 是业务小时且闭区间
+        assertEquals("uds_hh", time.get("dimension"), "时间维固定 uds_hh，不随 fields.date 变");
+        assertEquals("HOUR", time.get("granularity"));
+        assertEquals("2026-11-09 00:00:00", time.get("from"));
+        assertEquals("2026-11-15 23:00:00", time.get("to"), "左闭右开 → 退到最后一个包含的整点");
         String filters = String.valueOf(b.get("filters"));
         assertTrue(filters.contains("channel_id") && filters.contains("promoter_id") && filters.contains("or"), "推广商与渠道取并集：" + filters);
         assertEquals(2, c.bodies.get(1).get("offset"));

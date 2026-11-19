@@ -81,7 +81,7 @@ public interface RiskDataSource
      * 单个用户按日或按小时的序列（用户详情抽屉 · 趋势）：kind 为 USER_DAY 或 USER_GAME，granularity 为 DAY / HOUR；
      * 每行 date（yyyy-MM-dd 或 yyyy-MM-dd HH:00）+ fields。
      */
-    default List<Map<String, Object>> userSeries(Kind kind, String userId, java.time.LocalDateTime from, java.time.LocalDateTime to,
+    default List<Map<String, Object>> userSeries(Kind kind, String userId, String entityKey, java.time.LocalDateTime from, java.time.LocalDateTime to,
         String granularity, Collection<String> fields)
     {
         return List.of();

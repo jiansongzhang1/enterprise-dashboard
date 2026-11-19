@@ -303,7 +303,7 @@ public final class RiskFixtures
         }
 
         @Override
-        public List<Map<String, Object>> userSeries(Kind kind, String userId, java.time.LocalDateTime from, java.time.LocalDateTime to,
+        public List<Map<String, Object>> userSeries(Kind kind, String userId, String entityKey, java.time.LocalDateTime from, java.time.LocalDateTime to,
             String granularity, Collection<String> fields)
         {
             lastGranularity = granularity;

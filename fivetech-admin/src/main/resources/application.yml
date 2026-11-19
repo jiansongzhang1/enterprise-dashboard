@@ -1079,6 +1079,12 @@ risk:
     date: ${RISK_UDS_FIELD_DATE:uds_dt}
     settleTime: ${RISK_UDS_FIELD_SETTLE_TIME:settle_time}
     rowCount: ${RISK_UDS_FIELD_ROW_COUNT:record_count}
+    # 用户唯一键（risk_user_window_v1）：印度站不同商户下会有相同的 player_id，日趋势靠它区分。
+    # 取行里的原值直接传，不要自己拼
+    entityKey: ${RISK_UDS_FIELD_ENTITY_KEY:entity_key}
+    # 展示游戏时另取的三列；等值过滤与翻页稳定键一律用 game_key，不要用 game_id
+    gameId: ${RISK_UDS_FIELD_GAME_ID:game_id}
+    gameProvider: ${RISK_UDS_FIELD_GAME_PROVIDER:game_provider_code}
     parentId: ${RISK_UDS_FIELD_PARENT_ID:parent_id}
     payMethod: ${RISK_UDS_FIELD_PAY_METHOD:pay_method}
     bonusType: ${RISK_UDS_FIELD_BONUS_TYPE:bonus_type}
@@ -1089,17 +1095,26 @@ risk:
       date: ${RISK_UDS_USER_WINDOW_DATE:stat_dt}
       parent: parent_loginname
       regTime: ""
+      # 日趋势要把这个值原样带过去
+      entityKey: entity_key
     "[risk_game_player_cube_window_v1]":
-      date: node_dt
+      date: node_dt                 # 五轴之一，不是时间维（时间维固定 uds_hh）
       brand: sub_provider_name
+      # 等值过滤与翻页稳定键用 game_key：同一个 game_id 在不同平台是不同游戏
+      game: game_key
+      gameId: game_id
+      gameProvider: game_provider_code
       gameName: game_name_en
     "[risk_game_node_judgement_window_v1]":
-      date: node_dt
+      date: node_dt                 # 五轴之一，不是时间维
       brand: sub_provider_name
+      game: game_key
       gameName: ""
     "[risk_user_day_window_v1]":
       date: stat_dt
       hour: ""
+      # 日趋势必带 player_id，entity_key 区分印度站不同商户下相同的 player_id
+      entityKey: entity_key
     "[risk_channel_reg_window_v1]":
       date: ${RISK_UDS_CHANNEL_REG_DATE:stat_dt}
     # 用户快照没有上级 ID（在用户窗口 parent_id，PR #151）

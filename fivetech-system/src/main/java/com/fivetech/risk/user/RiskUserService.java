@@ -455,7 +455,7 @@ public class RiskUserService
         overview.put("historyTitle", "歷史累計 · 註冊至今");
         overview.put("history", metrics(u, props.getUserHistoryCols(), Map.of()));
         overview.put("historyPending", !source.available(RiskDataSource.Kind.SNAPSHOT));
-        overview.put("trend", trend(userId, r));
+        overview.put("trend", trend(userId, str(p.get("entityKey")), r));
         out.put("overview", overview);
         Map<String, Object> counts = new LinkedHashMap<>();
         int funds = 0;
@@ -469,8 +469,13 @@ public class RiskUserService
         return out;
     }
 
-    /** 趋势（R6）：时间范围 ≥ 2 天按日，1 天按小时；累計存款、累計提款、累計存提差从时间范围起点累加 */
-    Map<String, Object> trend(String userId, Range r)
+    /**
+     * 趋势（R6）：时间范围 ≥ 2 天按日，1 天按小时；累計存款、累計提款、累計存提差从时间范围起点累加。
+     *
+     * @param entityKey 用户唯一键，原样取自 risk_user_window_v1 的行；印度站不同商户下会有相同的 player_id，
+     *                  靠它区分。拿不到时只按 player_id 过滤（可能把同号不同商户的数据并在一起）
+     */
+    Map<String, Object> trend(String userId, String entityKey, Range r)
     {
         String gran = r.from.equals(r.to) ? "HOUR" : "DAY";
         List<RiskColumn> cols = new ArrayList<>(catalog.rank().values());
@@ -478,7 +483,8 @@ public class RiskUserService
         for (RiskDataSource.Kind k : List.of(RiskDataSource.Kind.USER_DAY, RiskDataSource.Kind.USER_GAME))
         {
             String src = k == RiskDataSource.Kind.USER_DAY ? "USER_DAY" : "USER_GAME";
-            List<Map<String, Object>> rows = source.userSeries(k, userId, r.start(), r.end(), gran, RiskAggregator.fieldsOf(cols, src));
+            List<Map<String, Object>> rows = source.userSeries(k, userId, entityKey, r.start(), r.end(), gran,
+                RiskAggregator.fieldsOf(cols, src));
             for (Map<String, Object> row : rows)
             {
                 row.put(RiskAggregator.USER_ID, str(row.get("date")));

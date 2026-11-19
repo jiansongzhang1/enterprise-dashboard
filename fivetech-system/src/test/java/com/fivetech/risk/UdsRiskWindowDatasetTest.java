@@ -104,7 +104,8 @@ class UdsRiskWindowDatasetTest
         List<String> dims = (List<String>) b.get("dimensions");
         assertTrue(dims.contains("parent_loginname") && !dims.contains("agent_login"), "上级账号用该数据集的字段名");
         assertFalse(dims.contains("register_date_india"), "该数据集没有注册时间，不带");
-        assertEquals("stat_dt", ((Map<String, Object>) b.get("time")).get("dimension"), "时间字段按数据集");
+        // stat_dt 不是时间维（UDS 2026-11-19）：时间维固定 uds_hh，stat_dt 只在日趋势进 dimensions
+        assertEquals("uds_hh", ((Map<String, Object>) b.get("time")).get("dimension"), "时间维固定 uds_hh");
         String filters = String.valueOf(b.get("filters"));
         assertTrue(filters.contains("game_scope") && filters.contains("value=A"), "不选平台 = 全部（A）：" + filters);
         assertEquals("p1", rows.get(0).get("parent"));
@@ -133,7 +134,10 @@ class UdsRiskWindowDatasetTest
         assertEquals(2, c.bodies.size(), "另一个数据集另取一次");
         assertTrue(String.valueOf(c.bodies.get(0).get("filters")).contains("sub_provider_name"), "品牌按立方体的字段过滤");
         assertEquals(List.of("profit_players"), c.bodies.get(1).get("metrics"));
-        assertEquals("node_dt", ((Map<String, Object>) c.bodies.get(1).get("time")).get("dimension"));
+        // node_dt 是五个轴之一，不是时间维
+        assertEquals("uds_hh", ((Map<String, Object>) c.bodies.get(1).get("time")).get("dimension"));
+        assertTrue(((List<String>) c.bodies.get(1).get("dimensions")).contains("node_dt"), "node_dt 在 dimensions 里");
+        assertTrue(String.valueOf(c.bodies.get(1).get("filters")).contains("scope_mask"), "每个请求必须带 scope_mask");
         assertEquals(3, rows.get(0).get("risk_game_node_judgement_window_v1.profit_players"), "按维度值并回，键仍是「数据集.字段」");
         assertNull(rows.get(1).get("risk_game_node_judgement_window_v1.profit_players"));
     }

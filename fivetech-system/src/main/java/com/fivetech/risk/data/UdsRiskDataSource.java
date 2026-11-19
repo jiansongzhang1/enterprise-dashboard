@@ -43,6 +43,20 @@ public class UdsRiskDataSource implements RiskDataSource
 
     static final List<String> USER_GAME_DIMS = List.of("userId", "game", "gameName", "platform", "date");
 
+    /**
+     * 游戏两个数据集（judgement / cube）固定的五个轴，顺序与 UDS 请求说明一致。
+     * <p>不参与本次聚合的轴返回 null；全写的好处是下钻只改 scope_mask 和过滤条件，dimensions 不用重排。</p>
+     */
+    static final List<String> GAME_AXES = List.of("date", "platform", "brand", "gameType", "game");
+
+    /**
+     * scope_mask 的位：node_dt = 1、provider_code = 2、sub_provider_name = 4、game_type = 8、game_key = 16。
+     * <p>scope_mask = 本次要展开的轴 + 已用等值条件固定住的父层轴，各位相加。写错不报错，只会返回空行或错的节点
+     * （例如 mask = 4 再加 provider_code 等值 → 0 行，因为 mask = 4 的行上 provider_code 为空）。</p>
+     */
+    static final Map<String, Integer> GAME_AXIS_BITS = Map.of(
+        "date", 1, "platform", 2, "brand", 4, "gameType", 8, "game", 16);
+
     static final List<String> ORDER_DIMS = List.of("orderNo", "userId", "account", "submitTime", "paidTime", "agentId", "channelId");
 
     private final UdsClient client;
@@ -144,10 +158,20 @@ public class UdsRiskDataSource implements RiskDataSource
     @Override
     public List<Map<String, Object>> userGameDays(RiskFilter f, Collection<String> fields)
     {
+        String ds = dataset(Kind.USER_GAME);
         List<Map<String, Object>> and = new ArrayList<>();
         promoFilters(f, and);
-        gameFilters(f, and, dataset(Kind.USER_GAME));
-        return query(dataset(Kind.USER_GAME), USER_GAME_DIMS, fields, dateTime(f), and);
+        gameFilters(f, and, ds);
+        // 立方体和判定集同一套维度：五个轴全写，再按展开层级带 scope_mask
+        List<String> dims = new ArrayList<>(USER_GAME_DIMS);
+        for (String axis : GAME_AXES)
+        {
+            if (!dims.contains(axis))
+            {
+                dims.add(axis);
+            }
+        }
+        return query(ds, dims, fields, dateTime(f), gameScoped(ds, GAME_AXES, null, and));
     }
 
     @Override
@@ -203,25 +227,45 @@ public class UdsRiskDataSource implements RiskDataSource
     @Override
     public List<Map<String, Object>> games(RiskFilter f, List<String> dims, Map<String, String> eq, Collection<String> fields)
     {
+        String ds = dataset(Kind.GAME);
         List<Map<String, Object>> and = new ArrayList<>();
-        gameFilters(f, and, dataset(Kind.GAME));
+        gameFilters(f, and, ds);
+        // 父层轴用等值固定住；值为空 = 该层是空节点，走 IS_NULL
         if (eq != null)
         {
-            for (Map.Entry<String, String> e : eq.entrySet())
+            eq.forEach((logical, value) -> axisEq(and, ds, logical, value));
+        }
+        return query(ds, gameDims(ds, dims), fields, dateTime(f), gameScoped(ds, dims, eq, and));
+    }
+
+    /**
+     * 游戏数据集的维度：固定五个轴，展示游戏时另加 game_id、game_provider_code、game_name_en。
+     * <p>等值过滤与翻页稳定键一律用 game_key——同一个 game_id 在不同平台是不同游戏。</p>
+     */
+    private List<String> gameDims(String dataset, List<String> dims)
+    {
+        List<String> all = new ArrayList<>(GAME_AXES);
+        if (dims != null && dims.contains("game"))
+        {
+            for (String extra : List.of("gameId", "gameProvider", "gameName"))
             {
-                String col = props.field(dataset(Kind.GAME), e.getKey());
-                if (StringUtils.isNotEmpty(col))
+                if (StringUtils.isNotEmpty(props.field(dataset, extra)))
                 {
-                    and.add(cond(col, "EQ", e.getValue()));
+                    all.add(extra);
                 }
             }
         }
-        List<String> all = new ArrayList<>(dims);
-        if (all.contains("game") && !all.contains("gameName"))
-        {
-            all.add("gameName");
-        }
-        return query(dataset(Kind.GAME), all, fields, dateTime(f), and);
+        return all;
+    }
+
+    /** 加上必填的 scope_mask 等值条件；不带 UDS 返回 400 / 4001 */
+    private List<Map<String, Object>> gameScoped(String dataset, List<String> dims, Map<String, String> eq,
+        List<Map<String, Object>> and)
+    {
+        int mask = scopeMask(dims, eq == null ? List.of() : eq.keySet());
+        and.add(cond("scope_mask", "EQ", mask));
+        log.debug("[risk] {} scope_mask={} dims={} eq={}", dataset, mask, dims, eq == null ? Map.of() : eq.keySet());
+        return and;
     }
 
     @Override
@@ -288,8 +332,8 @@ public class UdsRiskDataSource implements RiskDataSource
     }
 
     @Override
-    public List<Map<String, Object>> userSeries(Kind kind, String userId, LocalDateTime from, LocalDateTime to, String granularity,
-        Collection<String> fields)
+    public List<Map<String, Object>> userSeries(Kind kind, String userId, String entityKey, LocalDateTime from, LocalDateTime to,
+        String granularity, Collection<String> fields)
     {
         if (!available(kind))
         {
@@ -304,13 +348,20 @@ public class UdsRiskDataSource implements RiskDataSource
             return List.of();
         }
         List<Map<String, Object>> and = new ArrayList<>();
-        and.add(cond(props.field("userId"), "IN", List.of(userId)));
+        // player_id 必填，不带 UDS 返回 400；entity_key 用来区分印度站不同商户下相同的 player_id，
+        // 取 risk_user_window_v1 行里的原值直接传，不要自己拼
+        and.add(cond(props.field("userId"), "EQ", userId));
+        if (StringUtils.isNotEmpty(entityKey) && StringUtils.isNotEmpty(props.field(ds, "entityKey")))
+        {
+            and.add(cond(props.field(ds, "entityKey"), "EQ", entityKey));
+        }
+        // 窗口数据集的时间维固定 uds_hh；stat_dt 是维度，已经在 dims 里
         Map<String, Object> time = new LinkedHashMap<>();
-        time.put("dimension", props.field("date"));
-        time.put("granularity", hour ? "HOUR" : "DAY");
-        time.put("from", hour ? from.format(DATETIME) : from.toLocalDate().format(DATE));
-        LocalDateTime last = to.minusSeconds(1);
-        time.put("to", hour ? last.format(DATETIME) : last.toLocalDate().format(DATE));
+        time.put("dimension", HOUR_DIMENSION);
+        time.put("granularity", "HOUR");
+        time.put("from", from.withMinute(0).withSecond(0).withNano(0).format(DATETIME));
+        LocalDateTime last = to.minusSeconds(1).withMinute(0).withSecond(0).withNano(0);
+        time.put("to", (last.isBefore(from) ? from.withMinute(0).withSecond(0).withNano(0) : last).format(DATETIME));
         List<Map<String, Object>> rows = query(ds, List.of(hour ? "hour" : "date"), fields, time, and);
         if (hour)
         {
@@ -357,15 +408,64 @@ public class UdsRiskDataSource implements RiskDataSource
 
     // ------------------------------------------------------------------ 公共
 
+    /**
+     * 窗口数据集统一的时间维（UDS 2026-11-19）：固定 uds_hh、HOUR 粒度，from / to 是业务小时、<b>闭区间</b>，
+     * 结果里没有时间桶，一个窗口一份结果。
+     * <p>stat_dt、node_dt 都<b>不是</b>时间维：前者进 {@link #userDayTrend} 的 dimensions，后者是游戏五轴之一。</p>
+     */
     private Map<String, Object> dateTime(RiskFilter f)
     {
         Map<String, Object> time = new LinkedHashMap<>();
-        time.put("dimension", props.field("date"));
-        time.put("granularity", "DAY");
-        time.put("from", f.from.toLocalDate().format(DATE));
-        LocalDateTime last = f.to.minusSeconds(1);
-        time.put("to", (last.isBefore(f.from) ? f.from : last).toLocalDate().format(DATE));
+        time.put("dimension", HOUR_DIMENSION);
+        time.put("granularity", "HOUR");
+        time.put("from", f.from.withMinute(0).withSecond(0).withNano(0).format(DATETIME));
+        // 本系统区间左闭右开，UDS 要闭区间：退到最后一个包含的整点
+        LocalDateTime last = f.to.minusSeconds(1).withMinute(0).withSecond(0).withNano(0);
+        time.put("to", (last.isBefore(f.from) ? f.from.withMinute(0).withSecond(0).withNano(0) : last).format(DATETIME));
         return time;
+    }
+
+    /** 窗口数据集的时间维名；与 stat_dt / node_dt 无关 */
+    static final String HOUR_DIMENSION = "uds_hh";
+
+    /**
+     * 本次请求的 scope_mask：要展开的轴（dims）加上已用等值固定住的父层轴（eq）。
+     * <p>人数与盈亏是按节点算的，少写一个展开的轴会把多个节点合并——同一用户在子平台 A 盈利、B 亏损，
+     * 会同时计入盈利人数和亏损人数，而且不报错。金额类不受影响。</p>
+     */
+    static int scopeMask(Collection<String> dims, Collection<String> eqAxes)
+    {
+        int mask = 0;
+        for (String d : dims == null ? List.<String>of() : dims)
+        {
+            mask |= GAME_AXIS_BITS.getOrDefault(d, 0);
+        }
+        for (String d : eqAxes == null ? List.<String>of() : eqAxes)
+        {
+            mask |= GAME_AXIS_BITS.getOrDefault(d, 0);
+        }
+        return mask;
+    }
+
+    /**
+     * 游戏数据集的父层等值条件：值为空表示该层本身就是空节点，要写 IS_NULL，不能写空字符串。
+     */
+    private void axisEq(List<Map<String, Object>> and, String dataset, String logical, String value)
+    {
+        String col = props.field(dataset, logical);
+        if (StringUtils.isEmpty(col))
+        {
+            return;
+        }
+        if (StringUtils.isEmpty(value))
+        {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("field", col);
+            m.put("op", "IS_NULL");
+            and.add(m);
+            return;
+        }
+        and.add(cond(col, "EQ", value));
     }
 
     private void promoFilters(RiskFilter f, List<Map<String, Object>> and)
