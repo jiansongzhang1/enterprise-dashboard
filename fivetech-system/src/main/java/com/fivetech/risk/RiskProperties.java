@@ -47,6 +47,34 @@ public class RiskProperties
     /** 优惠发放明细（用户详情抽屉 · 資金流水）。TODO：UDS 数据集名待定 */
     private String bonusDataset = "";
 
+    /** 渠道获客（渠道风险榜的註冊用戶、首存人數、首存金額）：按推广渠道的窗口汇总；为空 = 获客三列待接入 */
+    private String channelAcqDataset = "";
+
+    /** 渠道获客的指标字段：regUsers / ftdUsers / ftdAmt → UDS 字段 */
+    private Map<String, String> channelAcqFields = new LinkedHashMap<>(Map.of("regUsers", "reg_users", "ftdUsers", "ftd_users", "ftdAmt", "ftd_amount"));
+
+    /** 用户详情抽屉 · 趋势（按日）的数据集；为空 = 用用户 × 日数据集（userDayDataset） */
+    private String userSeriesDataset = "";
+
+    /**
+     * 用户 × 日数据集的游戏范围字段（如 game_scope：A 全部 / V:平台编码）。配了时：不选平台或选多个平台取 gameScopeAll，
+     * 只选一个平台取 gameScopePlatformPrefix + 平台编码；为空 = 不加这个条件。
+     */
+    private String gameScopeField = "";
+
+    private String gameScopeAll = "A";
+
+    private String gameScopePlatformPrefix = "V:";
+
+    /**
+     * 按数据集覆盖字段名：数据集名 → (逻辑名 → 字段)，没覆盖的用 {@link #fields}；配成空串 = 该数据集没有这个字段。
+     * 例如用户窗口数据集的上级账号叫 parent_loginname、用户快照叫 agent_login。
+     */
+    private Map<String, Map<String, String>> datasetFields = new LinkedHashMap<>();
+
+    /** 按数据集加的固定条件：数据集名 → (UDS 字段 → 值，EQ) */
+    private Map<String, Map<String, String>> datasetFilters = new LinkedHashMap<>();
+
     /** 资料起始日（yyyy-MM-dd）：注册早于它的用户不能按注册日期看抽屉；为空 = 不限。TODO：以 UDS 实际起始日为准 */
     private String dataStartDate = "";
 
@@ -165,6 +193,35 @@ public class RiskProperties
         }
         return v == null ? "" : v.trim();
     }
+
+    /** 某个数据集里逻辑名对应的字段：先看 datasetFields 的覆盖，再看全局 */
+    public String field(String dataset, String logical)
+    {
+        Map<String, String> o = dataset == null ? null : datasetFields.get(dataset);
+        if (o != null && o.containsKey(logical))
+        {
+            String v = o.get(logical);
+            return v == null ? "" : v.trim();
+        }
+        return field(logical);
+    }
+
+    public String getChannelAcqDataset() { return channelAcqDataset; }
+    public void setChannelAcqDataset(String v) { this.channelAcqDataset = v == null ? "" : v.trim(); }
+    public Map<String, String> getChannelAcqFields() { return channelAcqFields; }
+    public void setChannelAcqFields(Map<String, String> v) { if (v != null) { this.channelAcqFields.putAll(v); } }
+    public String getUserSeriesDataset() { return userSeriesDataset; }
+    public void setUserSeriesDataset(String v) { this.userSeriesDataset = v == null ? "" : v.trim(); }
+    public String getGameScopeField() { return gameScopeField; }
+    public void setGameScopeField(String v) { this.gameScopeField = v == null ? "" : v.trim(); }
+    public String getGameScopeAll() { return gameScopeAll; }
+    public void setGameScopeAll(String v) { this.gameScopeAll = v == null ? "" : v.trim(); }
+    public String getGameScopePlatformPrefix() { return gameScopePlatformPrefix; }
+    public void setGameScopePlatformPrefix(String v) { this.gameScopePlatformPrefix = v == null ? "" : v; }
+    public Map<String, Map<String, String>> getDatasetFields() { return datasetFields; }
+    public void setDatasetFields(Map<String, Map<String, String>> v) { this.datasetFields = v == null ? new LinkedHashMap<>() : v; }
+    public Map<String, Map<String, String>> getDatasetFilters() { return datasetFilters; }
+    public void setDatasetFilters(Map<String, Map<String, String>> v) { this.datasetFilters = v == null ? new LinkedHashMap<>() : v; }
 
     public java.util.List<String> getUserOverviewCols() { return userOverviewCols; }
     public void setUserOverviewCols(java.util.List<String> v) { if (v != null && !v.isEmpty()) { this.userOverviewCols = v; } }

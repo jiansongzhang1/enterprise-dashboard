@@ -208,7 +208,7 @@ dashboard:
       site-storage-value: "{site}"
       # 筛选条件（订阅的 snapshot_filters，为空按统计范围生成），如 {"range":"yesterday","gran":"hour","cmp":"previous-period"}
       filters-storage-key: ${DASHBOARD_SNAPSHOT_FILTERS_LS_KEY:overview-filters}
-      width: 1280
+      width: 1920
       height: 900
       max-height: 6000
       scale: 1.5
@@ -308,9 +308,12 @@ dashboard:
       principal: ${UDS_PRINCIPAL:backend-local-debug}
       tenant: ${UDS_TENANT:site:SITE-IN}
       roles: ${UDS_ROLES:dashboard_ops}
-      # X-Uds-Environment：联调固定入口要 test；现网生产旧版还没有这个头，切生产时设成空串
-      # 必须与 promo.budget-import.environment 一致，混用会被平台拒绝
-      environment: ${UDS_ENVIRONMENT:test}
+      # X-Uds-Environment：必须和入口路径配套，配错 UDS 直接 403 / 4012「环境未知或未授权」。
+      #   /contract-stage/v1（固定联调入口，新版）→ test
+      #   /v1（现网生产旧版，还没有环境标识）     → 留空（不发这个头）
+      # 默认留空 = 和加这个头之前行为一致；联调机器显式配 UDS_ENVIRONMENT=test。
+      # 另外要与 promo.budget-import.environment 指向同一环境
+      environment: ${UDS_ENVIRONMENT:}
       # 批量查询（列表 + COUNT、周序列），Body 为数组，最多 50 项
       batch-path: ${UDS_BATCH_PATH:/v1/query/batch}
       # 扫描量预估：明细导出前用它判断走同步 XLSX 还是异步导出（只编译不执行，不返回结果总数）
@@ -977,14 +980,39 @@ monitor:
 # 数据集名为空 = 还没接入：对应接口照常返回结构，dataPending = true。
 risk:
   enabled: ${RISK_ENABLED:true}
-  user-day-dataset: ${RISK_UDS_USER_DAY_DATASET:}
-  user-game-day-dataset: ${RISK_UDS_USER_GAME_DAY_DATASET:}
-  withdraw-order-dataset: ${RISK_UDS_WITHDRAW_ORDER_DATASET:}
-  game-dataset: ${RISK_UDS_GAME_DATASET:}
-  player-snapshot-dataset: ${RISK_UDS_PLAYER_SNAPSHOT_DATASET:}
-  # 用户详情抽屉 / 全部用户搜索（FY-75）：用户资料、存款订单、优惠发放的数据集。TODO：数据集名待 UDS 给出；为空时对应部分返回 dataPending
-  user-dataset: ${RISK_UDS_USER_DATASET:}
-  deposit-order-dataset: ${RISK_UDS_DEPOSIT_ORDER_DATASET:}
+  # 数据集名取自《V0.4 指标与字段数据对照》G 列「数据服务UDS 层指标数据集与字段名」。
+  # 为空 = 该部分返回 dataPending，页面显示未接通，不会报错。
+  #
+  # 标注「PR 待合并」的 risk_* 窗口数据集：UDS 确认字段协议不会变，先按对照表配上（2026-11-19）；
+  # 未合并到的环境用环境变量配成空串 = 该部分 dataPending。
+  # 用户窗口（PR #140）：每个用户在所选时间内的存提、优惠、单笔最大派彩、注册天数、历史累计；
+  # 按 game_scope 分行（A 全部 / V:平台编码），见下面 game-scope-field
+  user-day-dataset: ${RISK_UDS_USER_DAY_DATASET:risk_user_window_v1}
+  # 用户 × 游戏（PR #140）：valid_bet、payout、pnl、bet_cnt，按 provider_code / game_id / node_dt
+  user-game-day-dataset: ${RISK_UDS_USER_GAME_DAY_DATASET:risk_game_player_cube_window_v1}
+  # 用户详情抽屉 · 趋势（按日，PR #150）：stat_dt × dep / wd
+  user-series-dataset: ${RISK_UDS_USER_SERIES_DATASET:risk_user_day_window_v1}
+  # 渠道风险榜的註冊用戶、首存人數、首存金額（PR #150）：按 channel；推广商 UDS 没有
+  channel-acq-dataset: ${RISK_UDS_CHANNEL_ACQ_DATASET:risk_channel_reg_window_v1}
+  channel-acq-fields:
+    regUsers: ${RISK_UDS_FIELD_REG_USERS:reg_users}
+    ftdUsers: ${RISK_UDS_FIELD_FTD_USERS:ftd_users}
+    ftdAmt: ${RISK_UDS_FIELD_FTD_AMOUNT:ftd_amount}
+  # 用户窗口的游戏范围：不选平台 = A，只选一个平台 = V:平台编码（选多个平台时资金类、单笔最大派彩按 A）
+  game-scope-field: ${RISK_UDS_FIELD_GAME_SCOPE:game_scope}
+  # 大額提款榜 + 抽屉資金流水的提款订单。对照表首选 risk_withdraw_order_window_v1（待合并），
+  # 先用已上线的提款快照顶上：billno / default_amount / status / created_date_india
+  withdraw-order-dataset: ${RISK_UDS_WITHDRAW_ORDER_DATASET:dashboard_withdraw_snapshot_v3}
+  # 遊戲分析（PR #140）：用户 × 游戏立方体按平台 / 品牌（sub_provider_name）/ 类型 / 游戏汇总，有效投注口径，投注人数每层去重；
+  # 盈利 / 亏损人数在 risk_game_node_judgement_window_v1（指标管理里字段写成「数据集.字段」）；
+  # 本金 / 优惠拆分 PR #151。已上线的 dashboard_game_ranking_v3 只有投注额口径、没有品牌，不再用
+  game-dataset: ${RISK_UDS_GAME_DATASET:risk_game_player_cube_window_v1}
+  # 用户属性（风控·用户属性 14 项里 12 项出自这个数据集）
+  player-snapshot-dataset: ${RISK_UDS_PLAYER_SNAPSHOT_DATASET:dashboard_player_snapshot_v3}
+  # 用户详情抽屉 / 全部用户搜索（FY-75）：用户资料走同一张用户快照；存款订单走存款快照
+  user-dataset: ${RISK_UDS_USER_DATASET:dashboard_player_snapshot_v3}
+  deposit-order-dataset: ${RISK_UDS_DEPOSIT_ORDER_DATASET:dashboard_deposit_snapshot_v3}
+  # 优惠发放：对照表只给了数据集名，没给字段，接入前先留空
   bonus-dataset: ${RISK_UDS_BONUS_DATASET:}
   # 资料起始日（yyyy-MM-dd）：注册早于它的用户不能按注册日期看抽屉；为空 = 不限。TODO：以 UDS 实际起始日为准
   data-start-date: ${RISK_DATA_START_DATE:}
@@ -1019,32 +1047,64 @@ risk:
   drawer-top-users-cols: ${RISK_DRAWER_TOP_USERS_COLS:bet,winLoss,rtp}
   drawer-day-cols: ${RISK_DRAWER_DAY_COLS:bet,ggr,rtp}
   game-default-path: ${RISK_GAME_DEFAULT_PATH:platform,brand,game}
-  # UDS 维度字段名（逻辑名 → 数据集字段），UDS 给出字段名后改这里或对应环境变量
+  # UDS 维度字段名（逻辑名 → 数据集字段），取自《V0.4 指标与字段数据对照》G 列。
+  # 注意这是一份全局映射，所有风控数据集共用；配成空串 = 该字段不存在，取数时不带它。
+  # 代码里的默认值（RiskProperties.defaultFields）保持原样不动，单测断言的是那一套。
   fields:
-    date: ${RISK_UDS_FIELD_DATE:uds_dt}
-    userId: ${RISK_UDS_FIELD_USER_ID:user_id}
-    account: ${RISK_UDS_FIELD_ACCOUNT:account}
-    regTime: ${RISK_UDS_FIELD_REG_TIME:register_time}
-    agentId: ${RISK_UDS_FIELD_AGENT_ID:promoter_id}
-    channelId: ${RISK_UDS_FIELD_CHANNEL_ID:channel_id}
-    parent: ${RISK_UDS_FIELD_PARENT:parent_account}
-    platform: ${RISK_UDS_FIELD_PLATFORM:platform_code}
-    brand: ${RISK_UDS_FIELD_BRAND:brand_code}
+    # 用户快照 dashboard_player_snapshot_v3
+    userId: ${RISK_UDS_FIELD_USER_ID:player_id}
+    account: ${RISK_UDS_FIELD_ACCOUNT:login_name}
+    regTime: ${RISK_UDS_FIELD_REG_TIME:register_date_india}
+    channelId: ${RISK_UDS_FIELD_CHANNEL_ID:channel}
+    parent: ${RISK_UDS_FIELD_PARENT:agent_login}
+    # 推广商：对照表 C-021「UDS 暂无对应（两站均无推广商字段／字典）」，留空
+    agentId: ${RISK_UDS_FIELD_AGENT_ID:}
+    # 品牌、游戏名全局留空（用户快照 / 订单没有）；游戏立方体的在下面 dataset-fields 里配
+    platform: ${RISK_UDS_FIELD_PLATFORM:provider_code}
+    brand: ${RISK_UDS_FIELD_BRAND:}
     gameType: ${RISK_UDS_FIELD_GAME_TYPE:game_type}
-    game: ${RISK_UDS_FIELD_GAME:game_code}
-    gameName: ${RISK_UDS_FIELD_GAME_NAME:game_name}
-    orderNo: ${RISK_UDS_FIELD_ORDER_NO:order_no}
-    orderAmount: ${RISK_UDS_FIELD_ORDER_AMOUNT:amount}
+    game: ${RISK_UDS_FIELD_GAME:game_id}
+    gameName: ${RISK_UDS_FIELD_GAME_NAME:}
+    hour: ${RISK_UDS_FIELD_HOUR:uds_hh}
+    # 存款 / 提款快照 dashboard_deposit_snapshot_v3、dashboard_withdraw_snapshot_v3（两张表字段同名）
+    orderNo: ${RISK_UDS_FIELD_ORDER_NO:billno}
+    orderAmount: ${RISK_UDS_FIELD_ORDER_AMOUNT:default_amount}
     orderStatus: ${RISK_UDS_FIELD_ORDER_STATUS:status}
-    submitTime: ${RISK_UDS_FIELD_SUBMIT_TIME:submit_time}
-    paidTime: ${RISK_UDS_FIELD_PAID_TIME:paid_time}
+    submitTime: ${RISK_UDS_FIELD_SUBMIT_TIME:created_date_india}
+    # 到账时间：提款是 payment_approve_date_india，存款是 bill_date_india，两边不同名，
+    # 这里只能配一个，先按提款配（存款的到账耗时用 duration_min）。待确认 ①
+    paidTime: ${RISK_UDS_FIELD_PAID_TIME:payment_approve_date_india}
+    # date 全局留默认值，risk_* 窗口数据集的时间字段在下面 dataset-fields 里按数据集配；
+    # settleTime / rowCount / parentId / payMethod / bonusType 对照表没给，暂留默认值（见 RiskProperties.defaultFields）
+    date: ${RISK_UDS_FIELD_DATE:uds_dt}
     settleTime: ${RISK_UDS_FIELD_SETTLE_TIME:settle_time}
     rowCount: ${RISK_UDS_FIELD_ROW_COUNT:record_count}
-    # 用户详情抽屉（TODO：字段名待 UDS 确认；hour 为空时按小时趋势不取）
     parentId: ${RISK_UDS_FIELD_PARENT_ID:parent_id}
     payMethod: ${RISK_UDS_FIELD_PAY_METHOD:pay_method}
     bonusType: ${RISK_UDS_FIELD_BONUS_TYPE:bonus_type}
-    hour: ${RISK_UDS_FIELD_HOUR:}
+  # 按数据集覆盖上面的字段名（数据集名 → 逻辑名 → 字段；空串 = 该数据集没有这个字段，取数时不带）。
+  # 时间字段（date）对照表没写，按 stat_dt / node_dt 先配，待 UDS 确认 ②
+  dataset-fields:
+    "[risk_user_window_v1]":
+      date: ${RISK_UDS_USER_WINDOW_DATE:stat_dt}
+      parent: parent_loginname
+      regTime: ""
+    "[risk_game_player_cube_window_v1]":
+      date: node_dt
+      brand: sub_provider_name
+      gameName: game_name_en
+    "[risk_game_node_judgement_window_v1]":
+      date: node_dt
+      brand: sub_provider_name
+      gameName: ""
+    "[risk_user_day_window_v1]":
+      date: stat_dt
+      hour: ""
+    "[risk_channel_reg_window_v1]":
+      date: ${RISK_UDS_CHANNEL_REG_DATE:stat_dt}
+    # 用户快照没有上级 ID（在用户窗口 parent_id，PR #151）
+    "[dashboard_player_snapshot_v3]":
+      parentId: ""
 
 # token配置
 # Yata Copilot（AI 能力）：目前用于订阅简报的「AI 摘要」。
@@ -1055,10 +1115,20 @@ copilot:
   enabled: ${COPILOT_ENABLED:true}
   # 页面不选模型时用这个
   default-model: ${COPILOT_DEFAULT_MODEL:claude-haiku-5-5}
-  # 页面上可选的模型；id 以 Anthropic GET /v1/models 返回的为准，加模型前先用它确认
+  # 页面上可选的模型；id 以 Anthropic GET /v1/models 返回的为准，加模型前先用它确认。
+  # AI 助手（右下角聊天）头部的下拉就是这份列表：只配一个时不显示下拉，配两个及以上才出现。
+  # 用户选的模型由 /copilot/chat 的 model 参数传回来，后端只认这里列出的 id，其他值一律退回 default-model。
+  # 每人每天的次数上限（chat.daily-limit-per-user）是所有模型合计，不分模型计数。
+  # 第一个是默认，排在下拉最前；2026-11-18 核对过 GET /v1/models，三个都是 lifecycle=active
   models:
     - id: claude-haiku-5-5
-      label: Claude Haiku 5.5
+      label: Claude Haiku 5.5（快）
+    - id: claude-sonnet-5-5
+      label: Claude Sonnet 5.5（均衡）
+    - id: claude-opus-5-5
+      label: Claude Opus 5.5（最强）
+    # 加模型照这个格式往下写，label 是页面上显示的名字。
+    # 不要配 lifecycle=deprecated 的（如 claude-sonnet-4-5-20250929，2026-11-30 下线）
   anthropic:
     base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
     api-key: ${ANTHROPIC_API_KEY:}
@@ -1090,7 +1160,8 @@ copilot:
     model: ${COPILOT_CHAT_MODEL:}
     # 每人每天最多问几次
     daily-limit-per-user: ${COPILOT_CHAT_DAILY_LIMIT:50}
-    max-tokens: 1500
+    # 挂了审计日志工具之后，模型要先思考再写回答，1500 会在正文还没开始时就耗尽（日志里 stop=max_tokens 且 reply 为空）
+    max-tokens: ${COPILOT_CHAT_MAX_TOKENS:4000}
     # 最多带最近几条消息（含本次提问）；越大越费 token，后台问答基本一问一答，10 条够用
     max-messages: ${COPILOT_CHAT_MAX_MESSAGES:10}
     # 单条提问最多几个字

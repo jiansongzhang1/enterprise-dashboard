@@ -83,8 +83,17 @@ public class OrderRuleEventPublisher
      */
     public void publish(MonitorScope scope, Long ruleId)
     {
-        if (!enabled || topic == null || topic.isBlank() || scope == null || ruleId == null)
+        if (!enabled || topic == null || topic.isBlank())
         {
+            // 开关关了或没配 topic：规则照常保存，只是不通知判定服务。
+            // 查「规则建好了但 MQ 没收到」时，这条日志能直接排除配置问题
+            log.warn("[order-rule] 事件未发送 ruleId={}：{}", ruleId,
+                !enabled ? "monitor.order-rule.kafka.enabled = false" : "没有配 monitor.order-rule.kafka.topic");
+            return;
+        }
+        if (scope == null || ruleId == null)
+        {
+            log.warn("[order-rule] 事件未发送：scope 或 ruleId 为空（ruleId={}）", ruleId);
             return;
         }
         String site = scope.getSiteCode();
@@ -130,7 +139,7 @@ public class OrderRuleEventPublisher
             {
                 event.put("version", rule.getVersion());
                 event.put("deleted", false);
-                event.put("rule", orderRules.getObject().view(rule, site));
+                event.put("rule", orderRules.getObject().eventView(rule, site));
             }
             KafkaTemplate<String, String> template = kafka.getIfAvailable();
             if (template == null)

@@ -11,6 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import com.fivetech.common.utils.StringUtils;
 import com.fivetech.dashboard.gateway.uds.UdsClient;
@@ -30,6 +32,8 @@ import com.fivetech.risk.RiskProperties;
 @Component
 public class UdsRiskDataSource implements RiskDataSource
 {
+    private static final Logger log = LoggerFactory.getLogger(UdsRiskDataSource.class);
+
     static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     static final DateTimeFormatter DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -71,7 +75,7 @@ public class UdsRiskDataSource implements RiskDataSource
             case GAME -> props.getGameDataset();
             case SNAPSHOT -> props.getPlayerSnapshotDataset();
             // TODO：渠道获客（注册、首存）的 UDS 口径未定，接入前不可用
-            case CHANNEL_ACQ -> "";
+            case CHANNEL_ACQ -> props.getChannelAcqDataset();
             case USER -> props.getUserDataset();
             case DEPOSIT -> props.getDepositOrderDataset();
             case BONUS -> props.getBonusDataset();
@@ -88,7 +92,53 @@ public class UdsRiskDataSource implements RiskDataSource
         }
         List<Map<String, Object>> and = new ArrayList<>();
         promoFilters(f, and);
+        gameScope(f, and);
         return query(dataset(Kind.USER_DAY), dims, fields, dateTime(f), and);
+    }
+
+    /**
+     * 用户窗口数据集的游戏范围（risk.game-scope-field）：只选一个平台取该平台（V:编码），其余取全部（A）。
+     * 选多个平台时 UDS 没有「几个平台合计」的行，资金类按全部、游戏类另由用户 × 游戏数据集按平台过滤。
+     */
+    private void gameScope(RiskFilter f, List<Map<String, Object>> and)
+    {
+        if (StringUtils.isEmpty(props.getGameScopeField()))
+        {
+            return;
+        }
+        String v = f.platforms.size() == 1 ? props.getGameScopePlatformPrefix() + f.platforms.get(0) : props.getGameScopeAll();
+        and.add(cond(props.getGameScopeField(), "EQ", v));
+    }
+
+    /** 渠道获客：按推广商、推广渠道汇总所选时间内的注册、首存（risk.channel-acq-dataset） */
+    @Override
+    public List<Map<String, Object>> channelAcquisition(RiskFilter f)
+    {
+        if (!available(Kind.CHANNEL_ACQ))
+        {
+            return List.of();
+        }
+        Map<String, String> acq = props.getChannelAcqFields();
+        List<String> fields = new ArrayList<>();
+        acq.values().forEach(v -> {
+            if (StringUtils.isNotEmpty(v))
+            {
+                fields.add(v.trim());
+            }
+        });
+        List<Map<String, Object>> and = new ArrayList<>();
+        promoFilters(f, and);
+        List<Map<String, Object>> rows = query(dataset(Kind.CHANNEL_ACQ), List.of("agentId", "channelId"), fields, dateTime(f), and);
+        for (Map<String, Object> r : rows)
+        {
+            acq.forEach((logical, field) -> {
+                if (StringUtils.isNotEmpty(field))
+                {
+                    r.put(logical, num(r.remove(field.trim())));
+                }
+            });
+        }
+        return rows;
     }
 
     @Override
@@ -96,7 +146,7 @@ public class UdsRiskDataSource implements RiskDataSource
     {
         List<Map<String, Object>> and = new ArrayList<>();
         promoFilters(f, and);
-        gameFilters(f, and);
+        gameFilters(f, and, dataset(Kind.USER_GAME));
         return query(dataset(Kind.USER_GAME), USER_GAME_DIMS, fields, dateTime(f), and);
     }
 
@@ -154,12 +204,12 @@ public class UdsRiskDataSource implements RiskDataSource
     public List<Map<String, Object>> games(RiskFilter f, List<String> dims, Map<String, String> eq, Collection<String> fields)
     {
         List<Map<String, Object>> and = new ArrayList<>();
-        gameFilters(f, and);
+        gameFilters(f, and, dataset(Kind.GAME));
         if (eq != null)
         {
             for (Map.Entry<String, String> e : eq.entrySet())
             {
-                String col = props.field(e.getKey());
+                String col = props.field(dataset(Kind.GAME), e.getKey());
                 if (StringUtils.isNotEmpty(col))
                 {
                     and.add(cond(col, "EQ", e.getValue()));
@@ -246,8 +296,9 @@ public class UdsRiskDataSource implements RiskDataSource
             return List.of();
         }
         boolean hour = "HOUR".equals(granularity);
-        // TODO：按小时需要 UDS 的小时字段（risk.fields.hour），没配时不取
-        String dim = hour ? props.field("hour") : props.field("date");
+        String ds = kind == Kind.USER_DAY && StringUtils.isNotEmpty(props.getUserSeriesDataset()) ? props.getUserSeriesDataset() : dataset(kind);
+        // 按小时需要该数据集的小时字段（risk.fields.hour / dataset-fields），没有时不取
+        String dim = props.field(ds, hour ? "hour" : "date");
         if (StringUtils.isEmpty(dim))
         {
             return List.of();
@@ -260,7 +311,7 @@ public class UdsRiskDataSource implements RiskDataSource
         time.put("from", hour ? from.format(DATETIME) : from.toLocalDate().format(DATE));
         LocalDateTime last = to.minusSeconds(1);
         time.put("to", hour ? last.format(DATETIME) : last.toLocalDate().format(DATE));
-        List<Map<String, Object>> rows = query(dataset(kind), List.of(hour ? "hour" : "date"), fields, time, and);
+        List<Map<String, Object>> rows = query(ds, List.of(hour ? "hour" : "date"), fields, time, and);
         if (hour)
         {
             rows.forEach(r -> r.put("date", r.remove("hour")));
@@ -349,19 +400,19 @@ public class UdsRiskDataSource implements RiskDataSource
         }
     }
 
-    private void gameFilters(RiskFilter f, List<Map<String, Object>> and)
+    /** 平台 / 品牌 / 类型条件，字段按该数据集的（品牌全局为空、游戏立方体是 sub_provider_name） */
+    private void gameFilters(RiskFilter f, List<Map<String, Object>> and, String dataset)
     {
-        if (!f.platforms.isEmpty() && StringUtils.isNotEmpty(props.field("platform")))
+        in(and, props.field(dataset, "platform"), f.platforms);
+        in(and, props.field(dataset, "brand"), f.brands);
+        in(and, props.field(dataset, "gameType"), f.gameTypes);
+    }
+
+    private static void in(List<Map<String, Object>> and, String field, List<String> values)
+    {
+        if (!values.isEmpty() && StringUtils.isNotEmpty(field))
         {
-            and.add(cond(props.field("platform"), "IN", f.platforms));
-        }
-        if (!f.brands.isEmpty() && StringUtils.isNotEmpty(props.field("brand")))
-        {
-            and.add(cond(props.field("brand"), "IN", f.brands));
-        }
-        if (!f.gameTypes.isEmpty() && StringUtils.isNotEmpty(props.field("gameType")))
-        {
-            and.add(cond(props.field("gameType"), "IN", f.gameTypes));
+            and.add(cond(field, "IN", values));
         }
     }
 
@@ -383,30 +434,135 @@ public class UdsRiskDataSource implements RiskDataSource
         return query(dataset, dims, fields, time, and, null);
     }
 
-    /** onePage 不为空时只取一页、每页 onePage 行 */
+    /**
+     * onePage 不为空时只取一页、每页 onePage 行。
+     * <p>指标字段写成「数据集.字段」时向那个数据集另取（同样的维度、时间、条件），按维度值并回同一行，行里的键仍是「数据集.字段」；
+     * 另取失败只记日志、那几列为空，不影响主数据集。</p>
+     */
     List<Map<String, Object>> query(String dataset, List<String> dims, Collection<String> fields, Map<String, Object> time,
         List<Map<String, Object>> and, Integer onePage)
     {
+        Map<String, List<String>> other = new LinkedHashMap<>();
+        List<String> own = new ArrayList<>();
+        for (String f : fields)
+        {
+            if (StringUtils.isEmpty(f))
+            {
+                continue;
+            }
+            String t = f.trim();
+            int dot = t.indexOf('.');
+            if (dot > 0 && dot < t.length() - 1 && !t.substring(0, dot).equals(dataset))
+            {
+                other.computeIfAbsent(t.substring(0, dot), k -> new ArrayList<>()).add(t);
+            }
+            else
+            {
+                own.add(dot > 0 && t.substring(0, dot).equals(dataset) ? t.substring(dot + 1) : t);
+            }
+        }
+        List<Map<String, Object>> rows = queryOne(dataset, dims, own, time, and, onePage);
+        if (other.isEmpty())
+        {
+            return rows;
+        }
+        Map<List<Object>, Map<String, Object>> byKey = new LinkedHashMap<>();
+        for (Map<String, Object> r : rows)
+        {
+            byKey.put(key(r, dims), r);
+        }
+        for (Map.Entry<String, List<String>> e : other.entrySet())
+        {
+            List<String> plain = new ArrayList<>();
+            e.getValue().forEach(q -> plain.add(q.substring(e.getKey().length() + 1)));
+            List<Map<String, Object>> extra;
+            try
+            {
+                extra = queryOne(e.getKey(), dims, plain, time, and, onePage);
+            }
+            catch (RuntimeException ex)
+            {
+                if (ex instanceof com.fivetech.common.exception.ServiceException se && se.getCode() != null && se.getCode() == 400)
+                {
+                    throw ex;
+                }
+                log.warn("[risk] 另取数据集 {} 失败，{} 留空：{}", e.getKey(), e.getValue(), ex.getMessage());
+                continue;
+            }
+            for (Map<String, Object> x : extra)
+            {
+                Map<String, Object> r = byKey.get(key(x, dims));
+                if (r == null)
+                {
+                    continue;
+                }
+                for (int i = 0; i < plain.size(); i++)
+                {
+                    r.put(e.getValue().get(i), x.get(plain.get(i)));
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static List<Object> key(Map<String, Object> r, List<String> dims)
+    {
+        List<Object> k = new ArrayList<>();
+        for (String d : dims)
+        {
+            Object v = r.get(d);
+            k.add(v == null ? null : String.valueOf(v).trim());
+        }
+        return k;
+    }
+
+    /**
+     * 向一个数据集取数：dims 为逻辑名，按该数据集的字段名（risk.dataset-fields 覆盖全局 risk.fields）翻译；
+     * 时间维度、条件里的全局字段名也换成该数据集的；加上 risk.dataset-filters 的固定条件。
+     */
+    List<Map<String, Object>> queryOne(String dataset, List<String> dims, Collection<String> fields, Map<String, Object> time,
+        List<Map<String, Object>> and, Integer onePage)
+    {
+        Map<String, String> rename = rename(dataset);
         Map<String, String> udsDims = new LinkedHashMap<>();
         for (String d : dims)
         {
-            String col = props.field(d);
+            String col = props.field(dataset, d);
             if (StringUtils.isNotEmpty(col))
             {
                 udsDims.put(d, col);
             }
         }
-        Set<String> metrics = new LinkedHashSet<>();
+        Map<String, String> metricCols = new LinkedHashMap<>();
         for (String f : fields)
         {
             if (StringUtils.isNotEmpty(f))
             {
-                metrics.add(f.trim());
+                String col = rename.getOrDefault(f.trim(), f.trim());
+                if (StringUtils.isNotEmpty(col))
+                {
+                    metricCols.put(f.trim(), col);
+                }
             }
         }
-        if (metrics.isEmpty() && StringUtils.isNotEmpty(props.field("rowCount")))
+        Set<String> metrics = new LinkedHashSet<>(metricCols.values());
+        if (metrics.isEmpty() && StringUtils.isNotEmpty(props.field(dataset, "rowCount")))
         {
-            metrics.add(props.field("rowCount"));
+            metrics.add(props.field(dataset, "rowCount"));
+        }
+        time = renameTime(time, rename);
+        and = renameFilters(and, rename);
+        Map<String, String> fixed = props.getDatasetFilters().get(dataset);
+        if (fixed != null && !fixed.isEmpty())
+        {
+            and = new ArrayList<>(and);
+            for (Map.Entry<String, String> e : fixed.entrySet())
+            {
+                if (StringUtils.isNotEmpty(e.getKey()) && e.getValue() != null)
+                {
+                    and.add(cond(e.getKey().trim(), "EQ", e.getValue().trim()));
+                }
+            }
         }
         int limit = Math.max(1, Math.min(1000, onePage != null ? onePage : props.getPageSize()));
         Map<String, Object> body = new LinkedHashMap<>();
@@ -437,9 +593,9 @@ public class UdsRiskDataSource implements RiskDataSource
                 {
                     m.put(e.getKey(), r.raw(e.getValue()));
                 }
-                for (String f : metrics)
+                for (Map.Entry<String, String> e : metricCols.entrySet())
                 {
-                    m.put(f, r.raw(f));
+                    m.put(e.getKey(), r.raw(e.getValue()));
                 }
                 out.add(m);
             }
@@ -453,6 +609,77 @@ public class UdsRiskDataSource implements RiskDataSource
             }
             offset += limit;
         }
+    }
+
+    /** 全局字段名 → 该数据集的字段名（只含被覆盖的；空串 = 该数据集没有） */
+    Map<String, String> rename(String dataset)
+    {
+        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> o = dataset == null ? null : props.getDatasetFields().get(dataset);
+        if (o == null)
+        {
+            return out;
+        }
+        for (Map.Entry<String, String> e : o.entrySet())
+        {
+            String global = props.field(e.getKey());
+            if (StringUtils.isNotEmpty(global))
+            {
+                out.put(global, e.getValue() == null ? "" : e.getValue().trim());
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, Object> renameTime(Map<String, Object> time, Map<String, String> rename)
+    {
+        if (time == null || rename.isEmpty() || !(time.get("dimension") instanceof String d) || !rename.containsKey(d)
+            || StringUtils.isEmpty(rename.get(d)))
+        {
+            return time;
+        }
+        Map<String, Object> t = new LinkedHashMap<>(time);
+        t.put("dimension", rename.get(d));
+        return t;
+    }
+
+    /** 条件里的字段换成该数据集的；该数据集没有这个字段（覆盖为空串）的条件去掉 */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> renameFilters(List<Map<String, Object>> and, Map<String, String> rename)
+    {
+        if (rename.isEmpty() || and.isEmpty())
+        {
+            return and;
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> c : and)
+        {
+            if (c.get("or") instanceof List<?> any)
+            {
+                List<Map<String, Object>> sub = renameFilters((List<Map<String, Object>>) any, rename);
+                if (!sub.isEmpty())
+                {
+                    out.add(Map.of("or", sub));
+                }
+                continue;
+            }
+            Object f = c.get("field");
+            if (f instanceof String name && rename.containsKey(name))
+            {
+                if (StringUtils.isEmpty(rename.get(name)))
+                {
+                    continue;
+                }
+                Map<String, Object> m = new LinkedHashMap<>(c);
+                m.put("field", rename.get(name));
+                out.add(m);
+            }
+            else
+            {
+                out.add(c);
+            }
+        }
+        return out;
     }
 
     static BigDecimal num(Object v)

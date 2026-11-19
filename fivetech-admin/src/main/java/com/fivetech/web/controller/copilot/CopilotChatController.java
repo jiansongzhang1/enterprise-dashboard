@@ -30,7 +30,7 @@ public class CopilotChatController extends BaseController
         this.service = service;
     }
 
-    /** { available, reason, model, modelLabel, dailyLimit, usedToday, maxChars, siteCode, siteName, contextNote } */
+    /** { available, reason, model, modelLabel, models: [{id,label}], dailyLimit, usedToday, maxChars, siteCode, siteName, contextNote } */
     @PreAuthorize("@ss.hasPermi('copilot:chat:use')")
     @GetMapping("/meta")
     public AjaxResult meta()
@@ -39,7 +39,8 @@ public class CopilotChatController extends BaseController
     }
 
     /**
-     * 请求：{ messages: [{ role: user | assistant, content }], page: 当前页面标题（选填） }，最后一条是这次的提问。
+     * 请求：{ messages: [{ role: user | assistant, content }], page: 当前页面标题（选填），
+     * model: 页面选的模型 id（选填，必须是 meta.models 里的一个，否则按配置的模型走） }，最后一条是这次的提问。
      * 返回：{ reply, model, modelLabel, contextAsOf, usedToday, dailyLimit }。
      */
     @PreAuthorize("@ss.hasPermi('copilot:chat:use')")
@@ -49,7 +50,8 @@ public class CopilotChatController extends BaseController
     {
         Object messages = body == null ? null : body.get("messages");
         Object page = body == null ? null : body.get("page");
+        Object model = body == null ? null : body.get("model");
         return success(service.chat(messages instanceof List ? (List<Map<String, Object>>) messages : null,
-            page == null ? null : String.valueOf(page), getUsername()));
+            page == null ? null : String.valueOf(page), model == null ? null : String.valueOf(model), getUsername()));
     }
 }

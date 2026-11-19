@@ -173,7 +173,10 @@ public class CopilotGateway
             String rejected;
             if (text == null || text.trim().isEmpty())
             {
-                rejected = "模型沒有返回內容";
+                // stop=max_tokens 说明输出长度用完了（思考块也算在里面），正文一个字都没来得及写
+                rejected = "max_tokens".equals(res.getStopReason())
+                    ? "回覆長度已達上限，沒有產出正文；請把問題問得更具體，或調高 copilot.chat.max-tokens"
+                    : "模型沒有返回內容";
             }
             else
             {

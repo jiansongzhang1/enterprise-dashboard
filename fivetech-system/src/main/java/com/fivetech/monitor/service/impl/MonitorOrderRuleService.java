@@ -31,6 +31,8 @@ import com.fivetech.monitor.mapper.MonitorOrderRuleMapper;
 import com.fivetech.monitor.mapper.MonitorSiteMapper;
 import com.fivetech.monitor.service.MonitorOrderRules;
 import com.fivetech.promo.budget.PromoChannelDictionary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -49,6 +51,8 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class MonitorOrderRuleService
 {
+    private static final Logger log = LoggerFactory.getLogger(MonitorOrderRuleService.class);
+
     private final MonitorOrderRuleMapper mapper;
 
     private final MonitorMetaMapper metaMapper;
@@ -109,7 +113,12 @@ public class MonitorOrderRuleService
         rule.setCreateBy(operator);
         rule.setCreateTime(now);
         mapper.insertOrderRule(rule);
-        fire(scope, rule.getRuleId());
+        // 新建且未启用时什么都不发：判定服务从没见过这条规则，发 DELETE 没有意义，
+        // 日志里还会出现「刚建好就被删」的误导。等它启用时 setEnabled 会发 UPSERT
+        if (enabled)
+        {
+            fire(scope, rule.getRuleId());
+        }
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ruleId", rule.getRuleId());
@@ -148,6 +157,18 @@ public class MonitorOrderRuleService
     public Map<String, Object> detail(MonitorScope scope, Long ruleId)
     {
         return view(require(scope, ruleId), scope.getSiteCode());
+    }
+
+    /**
+     * 只校验这条规则存在、未删除、且确实是订单规则（不是指标规则），不组装展示对象。
+     * <p>给只需要「拦住非订单规则」的入口用（如删除）：{@link #detail} 会额外把站点、时区、币种和
+     * config JSON 全展开一遍，当校验使纯属浪费。</p>
+     *
+     * @throws com.fivetech.monitor.domain.MonitorException 不存在 / 已删除 / 不是订单规则时抛 404
+     */
+    public void requireOrderRule(MonitorScope scope, Long ruleId)
+    {
+        require(scope, ruleId);
     }
 
     /**
@@ -213,10 +234,14 @@ public class MonitorOrderRuleService
     /** 规则变更后通知判定服务（事务提交后才真正发） */
     void fire(MonitorScope scope, Long ruleId)
     {
-        if (events != null)
+        if (events == null)
         {
-            events.publish(scope, ruleId);
+            // 没配 spring.kafka.bootstrap-servers，整个 publisher 没装配。
+            // 不打日志的话「规则建好了但 MQ 没收到」完全查不出卡在哪一环
+            log.debug("[order-rule] 未配置 Kafka，规则 {} 的变更事件不发送", ruleId);
+            return;
         }
+        events.publish(scope, ruleId);
     }
 
     /** setter 注入，避免改构造器 */
@@ -312,7 +337,19 @@ public class MonitorOrderRuleService
     }
 
     /** 一条规则的对外结构；Kafka 事件里的 rule 快照也用它（{@link com.fivetech.monitor.order.OrderRuleEventPublisher}） */
+    /** 发到 MSK 的精简快照；字段取舍见 {@link MonitorOrderRules#event} */
+    public Map<String, Object> eventView(MonitorRule rule, String siteCode)
+    {
+        return MonitorOrderRules.event(rule, config(rule), site(siteCode));
+    }
+
     public Map<String, Object> view(MonitorRule rule, String siteCode)
+    {
+        return MonitorOrderRules.view(rule, config(rule), site(siteCode));
+    }
+
+    /** 站点上下文（名称、时区、币种），view 与 eventView 共用 */
+    private MonitorOrderRules.Site site(String siteCode)
     {
         MonitorOrderRules.Site site = new MonitorOrderRules.Site();
         site.siteCode = siteCode;
@@ -321,7 +358,7 @@ public class MonitorOrderRuleService
         site.currency = properties.siteCurrency(siteCode);
         site.currencySymbol = properties.siteCurrencySymbol(siteCode);
         site.toSiteTime = t -> properties.toSiteTime(siteCode, t);
-        return MonitorOrderRules.view(rule, config(rule), site);
+        return site;
     }
 
     OrderRuleConfig config(MonitorRule rule)

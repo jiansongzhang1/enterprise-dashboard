@@ -399,6 +399,10 @@ public class MetricCardVO implements Serializable
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private java.util.Map<String, Object> attribution;
 
+    /** 风控概览：该指标可按哪些维度归因 [{code, name}]（配置中心 ATTRIBUTION_DIMENSIONS，名称随接口下发）；比率、快照为 []；其他场景为 null 不返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private java.util.List<java.util.Map<String, Object>> attributionDims;
+
     public String getState() { return state; }
 
     public void setState(String state) { this.state = state; }
@@ -422,4 +426,8 @@ public class MetricCardVO implements Serializable
     public java.util.Map<String, Object> getAttribution() { return attribution; }
 
     public void setAttribution(java.util.Map<String, Object> attribution) { this.attribution = attribution; }
+
+    public java.util.List<java.util.Map<String, Object>> getAttributionDims() { return attributionDims; }
+
+    public void setAttributionDims(java.util.List<java.util.Map<String, Object>> attributionDims) { this.attributionDims = attributionDims; }
 }

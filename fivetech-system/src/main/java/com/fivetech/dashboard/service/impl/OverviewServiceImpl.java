@@ -117,6 +117,15 @@ public class OverviewServiceImpl implements IOverviewService
         this.promoOverview = promoOverview;
     }
 
+    /** 风控概览的变化归因（scene = RISK）；setter 注入，避免改动构造函数 */
+    private com.fivetech.risk.overview.RiskAttribution riskAttribution;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRiskAttribution(com.fivetech.risk.overview.RiskAttribution riskAttribution)
+    {
+        this.riskAttribution = riskAttribution;
+    }
+
     @Override
     public OverviewVO query(OverviewQuery query)
     {
@@ -132,6 +141,10 @@ public class OverviewServiceImpl implements IOverviewService
         {
             throw new ServiceException("scene 只能是 OPS（運營總覽）、PROMO（推廣分析）或 RISK（風控分析）", 4003);
         }
+        // 风控概览：归因维度取数前校验（不认识的维度 4003），维度名称随接口下发
+        com.fivetech.risk.overview.RiskAttribution.Config attrConfig = query.isRisk() && riskAttribution != null
+            ? riskAttribution.config(site(query)) : null;
+        String attrDimension = attrConfig == null ? null : riskAttribution.dimension(query, attrConfig);
         OverviewVO vo = new OverviewVO();
         List<OverviewNoticeVO> notices = vo.getNotices();
 
@@ -271,9 +284,17 @@ public class OverviewServiceImpl implements IOverviewService
                 // 例如请求 20 个指标、本站 8 个不提供，items 只有 12 个
                 List<String> shown = new ArrayList<>(allCodes);
                 shown.removeAll(gateway.omittedMetrics(site(query), allCodes));
-                vo.getBlocks().put(OverviewBlock.METRICS.name(),
-                    buildMetrics(query, slot, shown, nullCodes, fetched, alerts));
+                MetricsBlockVO metricsBlock = buildMetrics(query, slot, shown, nullCodes, fetched, alerts);
+                vo.getBlocks().put(OverviewBlock.METRICS.name(), metricsBlock);
+                if (attrConfig != null)
+                {
+                    riskAttribution.apply(vo, metricsBlock, attrDimension, attrConfig);
+                }
             }
+        }
+        if (attrConfig != null && vo.getAttributionDimensions() == null)
+        {
+            riskAttribution.apply(vo, null, attrDimension, attrConfig);
         }
         vo.setEmpty(fetched == null || fetched.isEmpty());
         return vo;

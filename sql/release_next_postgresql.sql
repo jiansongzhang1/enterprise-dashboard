@@ -26,10 +26,13 @@
 --                                                       排行榜 31 列、游戏分析 20 列；新表 risk_my_board；配置中心 RISK_*；个人视图配置位；菜单 dashboard:risk:*
 --   ㉓ 2026-11-16  监控 · 条件规则                          新表 monitor_rule_condition；monitor_event 加 rule_type / detail（metric_code 可空）；
 --                                                       monitor_rule 加 edit_time / edit_by；monitor_rule_state 加 detail；条件规则字段目录 27 项（MONITOR_COND）
+--   ㉔ 2026-11-17  风控分析 · 排行榜对齐《榜单逻辑总览》      RISK_RANK_BOARDS 升级（渠道风险榜、卡片 3 个数、游戏分布、名单条件）；个人视图配置位 4 个；各榜默认列
+--   ㉕ 2026-11-18  风控分析 · 概览变化归因维度              配置中心 ATTRIBUTION_DIMENSIONS（维度字典与名称、各指标可用维度、比率 / 快照类）
+--   ㉖ 2026-11-19  风控分析 · 接 UDS 字段（对照表 G 列）      排行榜 / 游戏分析的列配上 UDS 字段名（含 PR #140 / #150 / #151 待合并的 risk_* 窗口数据集）
 --
 -- 上线记录：
 --   ①–⑬ 已上线
---   ⑭–㉔ 尚未上线
+--   ⑭–㉖ 尚未上线
 -- ============================================================================
 
 
@@ -1919,3 +1922,113 @@ SELECT s.slot_code, (SELECT count(*) FROM dashboard_view_slot_item i WHERE i.slo
        (SELECT string_agg(i.item_code, ',' ORDER BY i.default_sort) FROM dashboard_view_slot_item i
          WHERE i.slot_code = s.slot_code AND i.default_sort IS NOT NULL) AS defaults
 FROM dashboard_view_slot s WHERE s.slot_code LIKE 'risk.rank.%' ORDER BY s.sort_no;
+
+
+-- ㉕ 2026-11-18 · 风控分析 · 概览变化归因维度（新 JAR 启动前后执行均可：没配时代码用同样的默认）
+--   配置中心 ATTRIBUTION_DIMENSIONS（全部站点一份）：dimensions 维度字典（编码 + 页面名称，随 /dashboard/metrics/overview 下发；uds 为拆分用的 UDS 数据集与字段），
+--   metrics 各指标可按哪些维度拆，ratios 比率类（只写说明 + 去处），snapshots 快照类（不做归因）。站点要不同时另加一条本站的。
+--   改名称 / 加维度只改这条配置，不改代码。
+--   回滚：DELETE FROM config_center WHERE config_code = 'ATTRIBUTION_DIMENSIONS';
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+INSERT INTO config_center (config_code, site_code, page_name, description, config_value, create_by, create_time)
+SELECT 'ATTRIBUTION_DIMENSIONS', '', '風控分析', '變化歸因維度：維度字典與名稱、各指標可用維度、比率 / 快照類指標', '{
+  "RISK": {
+    "dimensions": [
+      { "code": "agent", "name": "推廣商" },
+      { "code": "channel", "name": "推廣渠道", "uds": { "dataset": "risk_user_window_v1", "field": "channel" } },
+      { "code": "age", "name": "新老用戶", "uds": { "dataset": "risk_user_window_v1", "field": "reg_bucket" } },
+      { "code": "depBand", "name": "存款檔位", "bands": [500, 1000, 5000],
+        "uds": { "dataset": "risk_user_window_v1", "field": "dep_bucket" } },
+      { "code": "platform", "name": "遊戲平台", "uds": { "dataset": "risk_game_player_cube_window_v1", "field": "provider_code" } },
+      { "code": "gameType", "name": "遊戲類型", "uds": { "dataset": "risk_game_player_cube_window_v1", "field": "game_type" } },
+      { "code": "game", "name": "遊戲", "uds": { "dataset": "risk_game_player_cube_window_v1", "field": "game_id" } }
+    ],
+    "metrics": {
+      "reg": ["agent", "channel"],
+      "ftd": ["agent", "channel"],
+      "dep": ["agent", "channel", "age", "depBand"],
+      "depU": ["agent", "channel", "age", "depBand"],
+      "wd": ["agent", "channel", "age", "depBand"],
+      "wOk": ["agent", "channel", "age", "depBand"],
+      "net": ["agent", "channel", "age", "depBand"],
+      "ngr": ["agent", "channel", "age", "depBand"],
+      "bet": ["agent", "channel", "age", "depBand", "platform", "gameType", "game"],
+      "pay": ["agent", "channel", "age", "depBand", "platform", "gameType", "game"],
+      "ggr": ["agent", "channel", "age", "depBand", "platform", "gameType", "game"]
+    },
+    "ratios": {
+      "wdr": { "goTo": { "tab": "rank", "board": "wd" } },
+      "rtp": { "goTo": { "tab": "games" } },
+      "killR": { "goTo": { "tab": "games" } },
+      "dOkR": {}
+    },
+    "snapshots": ["wPendN", "wPendT"]
+  }
+}', 'admin', CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM config_center c WHERE c.config_code = 'ATTRIBUTION_DIMENSIONS' AND c.site_code = '');
+
+COMMIT;
+
+-- ㉕ 自检：全部站点一条
+SELECT config_code, site_code, config_value::jsonb -> 'RISK' -> 'dimensions' AS dimensions FROM config_center WHERE config_code = 'ATTRIBUTION_DIMENSIONS' ORDER BY site_code;
+
+-- ㉖ 2026-11-19 · 风控分析 · 排行榜 / 游戏分析的列接 UDS 字段（新 JAR 启动前执行，与 application.yml 的 risk.* 数据集配置配套）
+--   字段名取自《V0.4 指标与字段数据对照》G 列；标注「PR #140 / #150 / #151 待合并」的 risk_* 窗口数据集 UDS 已确认协议不变，一并配上。
+--   1. 用户窗口 risk_user_window_v1（来源 USER_DAY）：存提、优惠、单笔最大派彩那一笔（UDS 已算好，不再按游戏取最大）、注册天数、累计玩家输赢；
+--   2. 用户 × 游戏 risk_game_player_cube_window_v1（来源 USER_GAME）：有效投注、注单数、派彩、玩家输赢；
+--   3. 用户快照 dashboard_player_snapshot_v3（来源 SNAPSHOT）：注册时间、首存、累计存提；
+--   4. 游戏分析（同一立方体）：GGR 改为 有效投注 − 派彩（立方体只有玩家视角的 pnl）；盈利 / 亏损人数取 risk_game_node_judgement_window_v1
+--      （字段写成「数据集.字段」，后端另取后并回）。
+--   只改 uds_day_field、ext 里的 source / agg / calc / follow 和备注，其他字段不动（指标管理里改过的字段名会被覆盖）。
+--   回滚：把 uds_day_field、ext 改回 ㉒ 的值（见 ㉒ 段）。
+-- ----------------------------------------------------------------------------
+BEGIN;
+
+UPDATE dashboard_metric_card c
+   SET uds_day_field = v.field,
+       ext = (c.ext - v.drop_keys) || v.patch,
+       remark = '对照表 G 列（2026-11-19）',
+       update_by = 'admin', update_time = CURRENT_TIMESTAMP
+FROM (VALUES
+    ('rkDep', 'dep', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkDepN', 'dep_cnt', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkWd', 'wd', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkWdN', 'wd_cnt', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkBonus', 'bonus', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkBet', 'valid_bet', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkBetN', 'bet_cnt', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkPay', 'payout', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkGWinLoss', 'pnl', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkMaxPayout', 'max_payout', '{"source": "USER_DAY", "agg": "MAX"}'::jsonb, ARRAY[]::text[]),
+    ('rkWinGame', 'max_payout_game', '{"source": "USER_DAY", "agg": "LAST"}'::jsonb, ARRAY['follow']::text[]),
+    ('rkWinTime', 'max_payout_time', '{"source": "USER_DAY", "agg": "LAST"}'::jsonb, ARRAY['follow']::text[]),
+    ('rkMaxPayoutBet', 'max_payout_bet_v', '{"source": "USER_DAY", "agg": "LAST"}'::jsonb, ARRAY['follow']::text[]),
+    ('rkRegTime', 'register_date_india', '{"source": "SNAPSHOT", "agg": "LAST"}'::jsonb, ARRAY[]::text[]),
+    ('rkRegDays', 'register_days_v', '{"source": "USER_DAY", "agg": "LAST"}'::jsonb, ARRAY['calc']::text[]),
+    ('rkFirstDepTime', 'first_deposit_time_india', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkFirstDepAmt', 'first_deposit_amount', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkHistDep', 'total_deposit_amount', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkHistWd', 'total_withdraw_amount', '{}'::jsonb, ARRAY[]::text[]),
+    ('rkHistWinLoss', 'total_pnl_v', '{"source": "USER_DAY", "agg": "LAST"}'::jsonb, ARRAY[]::text[]),
+    ('gmBet', 'valid_bet', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmBetN', 'bet_cnt', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmBetU', 'bet_players', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmPay', 'payout', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmGgr', NULL, '{"calc": {"op": "SUBTRACT", "left": "bet", "right": "pay"}}'::jsonb, ARRAY[]::text[]),
+    ('gmProfitU', 'risk_game_node_judgement_window_v1.profit_players', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmLossU', 'risk_game_node_judgement_window_v1.loss_players', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmCashBet', 'cash_valid_bet', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmCashPay', 'cash_payout', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmBonusBet', 'bonus_valid_bet', '{}'::jsonb, ARRAY[]::text[]),
+    ('gmBonusPay', 'bonus_payout', '{}'::jsonb, ARRAY[]::text[])
+) AS v(code, field, patch, drop_keys)
+WHERE c.metric_code = v.code AND c.page_scope IN ('RISK_RANK', 'RISK_GAME')
+  AND (c.uds_day_field IS DISTINCT FROM v.field OR NOT (c.ext @> v.patch) OR c.ext ?| v.drop_keys);
+
+COMMIT;
+
+-- ㉖ 自检：还在用占位字段（㉒ 的 *_amount / *_count 等）的列应为 0 行
+SELECT metric_code, uds_day_field, ext ->> 'source' AS source FROM dashboard_metric_card
+ WHERE page_scope IN ('RISK_RANK', 'RISK_GAME') AND remark LIKE 'UDS 字段待 UDS 确认%' ORDER BY sort_no;

@@ -93,6 +93,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		</if>
 		<!-- 数据范围过滤 -->
 		${params.dataScope}
+		<!-- 默认按创建时间倒序（新建的在最前）。PostgreSQL 不加 order by 时顺序不保证，
+		     行被更新过就可能乱掉。前端点列头排序时 PageHelper 会用它自己的 order by 覆盖这一句 -->
+		order by u.create_time desc, u.user_id desc
 	</select>
 	
 	<select id="selectAllocatedList" parameterType="SysUser" resultMap="SysUserResult">

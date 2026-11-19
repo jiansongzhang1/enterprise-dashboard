@@ -126,6 +126,12 @@ public final class ConfigCodes
                 + "    \"gameTypes\": [ { \"code\": \"slot\", \"name\": \"老虎機\" } ] } ],\n"
                 + "  \"games\": [ { \"code\": \"pg-mahjong-ways\", \"name\": \"麻將胡了\", \"platform\": \"PG\", \"brand\": \"PGS\", \"gameType\": \"slot\" } ]\n}",
             n -> com.fivetech.risk.config.RiskConfigService.validateGameDict(n.toString())));
+        add(new Def(com.fivetech.risk.overview.RiskAttribution.CODE, "風控分析",
+            "變化歸因維度（按場景，目前 RISK）：dimensions 維度字典 [{code, name, uds}]，name 為頁面上的維度名稱（隨概覽接口下發），uds 為按哪個 UDS 數據集與字段拆，"
+                + "depBand 的 bands 為存款檔位邊界（升序）；metrics 每個指標可按哪些維度拆（按此順序展示）；"
+                + "ratios 比率類指標（不拆貢獻，只寫說明，goTo 為去處）；snapshots 快照類指標（不做歸因）。站點可單獨覆蓋",
+            com.fivetech.risk.overview.RiskAttribution.DEFAULT,
+            n -> com.fivetech.risk.overview.RiskAttribution.validate(n.toString())));
         add(new Def(com.fivetech.monitor.cond.CondDims.PAY_CHANNELS, "監控管理",
             "條件規則「支付通道」範圍的選項：[{code, name}]，code 與 UDS 小時數據集的支付通道字段一致",
             com.fivetech.monitor.cond.CondDims.DEFAULT_PAY_CHANNELS,

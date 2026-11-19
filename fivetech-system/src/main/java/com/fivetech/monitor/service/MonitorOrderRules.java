@@ -477,6 +477,81 @@ public final class MonitorOrderRules
         return m;
     }
 
+    /**
+     * 发到 MSK 的规则快照（2026-11-19 与判定服务约定）。
+     *
+     * <p>和 {@link #view} 的区别：view 是后台详情 / 增量拉取接口用的完整对象，这里只投影判定服务真正要的字段。
+     * 判定服务只关心<b>规则 ID、指标与阈值、触发时机</b>，所以去掉了：</p>
+     * <ul>
+     *   <li>与事件顶层重复的 ruleId / siteCode / deleted / version；</li>
+     *   <li>展示文案 siteName、description、metric.name、trigger.summary、dailyTotalRule.description
+     *       （规则改个名、换个渠道就会变，对判定服务是纯噪音）；</li>
+     *   <li>后台详情页专用的 currencyChanged；</li>
+     *   <li>整个 notify（通知由 Yata 发，判定服务不需要群和限流配置）；</li>
+     *   <li>owner、createBy / updateBy、createTime / updateTime；</li>
+     *   <li>channelScope 里的 promoterName / channelName（判定服务按 ID 比对）。</li>
+     * </ul>
+     *
+     * <p>要加字段时改这里，不要改 {@link #view}，两边是给不同消费方的。</p>
+     */
+    public static Map<String, Object> event(MonitorRule r, OrderRuleConfig cfg, Site site)
+    {
+        boolean daily = DAILY_TOTAL.equals(cfg.getAmountMode());
+        String unit = site.currency != null && site.currency.equals(r.getCurrency()) ? site.currencySymbol : r.getCurrency();
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ruleNo", ruleCode(r.getRuleNo()));
+        m.put("ruleType", TYPE);
+        m.put("name", r.getRuleName());
+        m.put("level", r.getLevel());
+        m.put("enabled", Boolean.TRUE.equals(r.getEnabled()));
+
+        Map<String, Object> metric = new LinkedHashMap<>();
+        metric.put("code", daily ? METRIC_DAILY_TOTAL : METRIC_SINGLE);
+        metric.put("unit", unit);
+        metric.put("currency", r.getCurrency());
+        m.put("metric", metric);
+
+        Map<String, Object> th = new LinkedHashMap<>();
+        th.put("op", "GE");
+        th.put("value", cfg.getAmountThreshold() == null ? null : plain(cfg.getAmountThreshold()));
+        th.put("currency", r.getCurrency());
+        m.put("threshold", th);
+
+        Map<String, Object> trigger = new LinkedHashMap<>();
+        trigger.put("orderType", cfg.getOrderType() == null ? WITHDRAW : cfg.getOrderType());
+        trigger.put("triggerAt", cfg.getTriggerAt());
+        trigger.put("channelScope", channelEvent(cfg.getChannelScope()));
+        if (daily)
+        {
+            // 只留结构化字段，description 那句中文说明不发
+            Map<String, Object> rule = new LinkedHashMap<>(dailyTotalRule(cfg.getTriggerAt(), site.timezone));
+            rule.remove("description");
+            trigger.put("dailyTotalRule", rule);
+        }
+        m.put("trigger", trigger);
+        return m;
+    }
+
+    /**
+     * 事件里的生效范围：只给判定服务用来匹配的 ID，不给展示名。
+     * <p>判定服务按 promoterId / channelId 比对（2026-11-19 确认），promoterName / channelName
+     * 运营改个名就会变，发过去只是噪音。</p>
+     */
+    static Map<String, Object> channelEvent(ChannelScope s)
+    {
+        if (s == null)
+        {
+            return null;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", s.getType());
+        m.put("code", channelCode(s));
+        m.put("promoterId", s.getPromoterId());
+        m.put("channelId", CHANNEL.equals(s.getType()) ? s.getChannelId() : null);
+        return m;
+    }
+
     public static Map<String, Object> channelView(ChannelScope s)
     {
         if (s == null)

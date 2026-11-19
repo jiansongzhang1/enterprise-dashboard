@@ -60,6 +60,10 @@ public class OverviewVO implements Serializable
     /** 取数失败的块，key 与 blocks 互斥 */
     private Map<String, OverviewBlockErrorVO> blockErrors = new LinkedHashMap<>();
 
+    /** 风控概览：变化归因的维度字典 [{code, name}]（配置中心 ATTRIBUTION_DIMENSIONS 的 RISK）；其他场景为 null 不返回 */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private List<Map<String, Object>> attributionDimensions;
+
     public String getAsOf()
     {
         return asOf;
@@ -198,5 +202,15 @@ public class OverviewVO implements Serializable
     public void setUpdateFrequency(String updateFrequency)
     {
         this.updateFrequency = updateFrequency;
+    }
+
+    public List<Map<String, Object>> getAttributionDimensions()
+    {
+        return attributionDimensions;
+    }
+
+    public void setAttributionDimensions(List<Map<String, Object>> attributionDimensions)
+    {
+        this.attributionDimensions = attributionDimensions;
     }
 }

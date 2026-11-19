@@ -54,6 +54,9 @@ public class MetricDictService
 
     static final Pattern FIELD = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,127}$");
 
+    /** 日数据集字段可写成「数据集.字段」（风控列：向另一个数据集取，如游戏分析的盈利人数） */
+    static final Pattern QUALIFIED_FIELD = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]{0,127}\\.)?[A-Za-z_][A-Za-z0-9_]{0,127}$");
+
     static final Pattern TABLE = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.]{0,127}$");
 
     static final Set<String> FORMATS = new HashSet<>(Arrays.asList("INT", "MONEY", "PCT", "MIN", "MULTIPLE"));
@@ -502,7 +505,7 @@ public class MetricDictService
         item.setSourceTable(name(body.getSourceTable(), TABLE, "sourceTable", "上游原始表只能用英文字母、數字、底線和「.」", errors));
         item.setSourceField(name(body.getSourceField(), FIELD, "sourceField", "上游原始字段只能用英文字母、數字、底線", errors));
         item.setUdsHourField(name(body.getUdsHourField(), FIELD, "udsHourField", "字段名只能用英文字母、數字、底線", errors));
-        item.setUdsDayField(name(body.getUdsDayField(), FIELD, "udsDayField", "字段名只能用英文字母、數字、底線", errors));
+        item.setUdsDayField(name(body.getUdsDayField(), QUALIFIED_FIELD, "udsDayField", "字段名只能用英文字母、數字、底線（另一個數據集的寫成「數據集.字段」）", errors));
         item.setUdsAmountField(name(body.getUdsAmountField(), FIELD, "udsAmountField", "字段名只能用英文字母、數字、底線", errors));
         item.setUdsBaselineField(name(body.getUdsBaselineField(), FIELD, "udsBaselineField", "字段名只能用英文字母、數字、底線", errors));
         if (item.getSourceTable() == null && item.getSourceField() != null)

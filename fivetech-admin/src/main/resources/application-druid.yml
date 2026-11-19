@@ -57,7 +57,9 @@ spring:
                     # 慢SQL记录
                     log-slow-sql: true
                     slow-sql-millis: 1000
-                    merge-sql: true
+                    # Druid 的 SQL 归并解析不认 PostgreSQL 的 jsonb_array_elements(...) with ordinality 等写法，
+                    # 开着会对每条这类 SQL 刷一长串 "merge sql error" ERROR 堆栈（只影响监控页的归并统计，不影响执行）
+                    merge-sql: ${DRUID_MERGE_SQL:false}
                 wall:
                     config:
                         multi-statement-allow: true

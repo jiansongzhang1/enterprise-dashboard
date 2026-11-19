@@ -90,7 +90,8 @@ public class MonitorOrderRuleController extends BaseController
     {
         com.fivetech.monitor.domain.MonitorScope scope = scopeResolver.resolve();
         // 只认订单规则：不存在、已删除、不是订单规则 → 404
-        service.detail(scope, ruleId);
+        // （ruleService.deleteRule 自己的校验不限类型，少了这句就能用订单规则的接口删掉指标规则）
+        service.requireOrderRule(scope, ruleId);
         ruleService.deleteRule(scope, ruleId, getUsername());
         return success();
     }

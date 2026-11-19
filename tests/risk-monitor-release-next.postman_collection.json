@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "19531af1-acba-49af-847a-601e6084839b",
+    "_postman_id": "287d405e-9357-4351-b067-cd5cc5c2587b",
     "name": "Fivetech Dashboard API · 风控分析 + 监控管理（条件规则 / 订单告警）· release_next ㉒㉓",
     "description": "本期新功能的接口用例：风控分析（选项、榜单条件、概览、榜单卡片、完整名单、导出、我的榜单、游戏分析）；监控管理（条件规则全流程、告警规则三类同表、异常事件改造与事件详情、订单告警列表与处理）。\n\n使用：\n1. 集合变量 baseUrl、siteCode；username / password 只填 Current value，运行前填 totp；\n2. 先在目标库执行 sql/release_next_postgresql.sql 的 ⑭–㉓，并部署新 JAR；账号需有 dashboard:risk:*、monitor:rule:*、monitor:event:* 权限；\n3. 按目录顺序整集运行（0.1 登录写入 token；用例之间靠集合变量传 id，第 7 组清理测试数据）；\n4. UDS 数据集未接入时，风控接口返回 dataPending=true、条件规则预览返回 dataPending、订单告警 udsOk=false，用例已兼容两种状态。\n\n若依返回 HTTP 恒为 200，断言看响应体 code。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -533,7 +533,107 @@
                 "exec": [
                   "const j = pm.response.json();",
                   "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
-                  "pm.test('返回指标卡', () => pm.expect(j.data).to.be.an('object'));"
+                  "pm.test('返回指标卡', () => pm.expect(j.data).to.be.an('object'));",
+                  "pm.test('维度字典随接口下发', () => { pm.expect(j.data.attributionDimensions).to.be.an('array').that.is.not.empty; pm.expect(j.data.attributionDimensions[0]).to.have.all.keys('code', 'name'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5b 风控概览 · 变化归因（按存款档位）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"RISK\",\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"compareType\": \"PREV_PERIOD\",\n  \"metrics\": [\n    \"net\",\n    \"wdr\",\n    \"ggr\"\n  ],\n  \"attribution\": {\n    \"dimension\": \"depBand\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('code = 200', () => pm.expect(j.code, j.msg).to.eql(200));",
+                  "const items = (j.data.blocks.METRICS || {items: []}).items; const card = c => items.find(x => x.code === c);",
+                  "pm.test('存提差的维度带中文名', () => { const n = card('net'); if (n) pm.expect(n.attributionDims.map(d => d.code)).to.include('depBand'); });",
+                  "pm.test('每张卡都有 attribution', () => items.forEach(x => pm.expect(x.attribution).to.have.property('dimensionName')));",
+                  "pm.test('提存比为 RATIO + goTo', () => { const w = card('wdr'); if (w) { pm.expect(w.attribution.reasonCode).to.eql('RATIO'); pm.expect(w.attribution.goTo).to.be.an('object'); } });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5c [校验] 风控概览 · 不认识的归因维度 → 4003",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Site-Code",
+                "value": "{{siteCode}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/metrics/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "metrics",
+                "overview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene\": \"RISK\",\n  \"granularity\": \"DAY\",\n  \"slotFrom\": \"{{d7}} 00:00\",\n  \"slotTo\": \"{{today}} 00:00\",\n  \"attribution\": {\n    \"dimension\": \"terminal\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('业务码 4003', () => pm.expect(pm.response.json().code).to.eql(4003));"
                 ]
               }
             }

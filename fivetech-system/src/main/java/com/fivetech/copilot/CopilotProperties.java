@@ -191,7 +191,7 @@ public class CopilotProperties
         /** 每人每天最多问几次（按数据库日期） */
         private int dailyLimitPerUser = 50;
 
-        private int maxTokens = 1500;
+        private int maxTokens = 4096;
 
         /** 最多带上最近几条消息（含本次提问） */
         private int maxMessages = 10;

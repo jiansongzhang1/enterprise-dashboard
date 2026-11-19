@@ -511,7 +511,8 @@ public class RiskUserService
         out.put("cols", props.getUserTrendCols());
         out.put("points", points);
         // TODO：按小时需要 UDS 的小时字段（risk.fields.hour）；没配或数据集未接入时为空
-        out.put("pending", !source.available(RiskDataSource.Kind.USER_DAY) || ("HOUR".equals(gran) && StringUtils.isEmpty(props.field("hour"))));
+        out.put("pending", !source.available(RiskDataSource.Kind.USER_DAY) || ("HOUR".equals(gran) && StringUtils.isEmpty(props.field(
+            StringUtils.isNotEmpty(props.getUserSeriesDataset()) ? props.getUserSeriesDataset() : props.getUserDayDataset(), "hour"))));
         return out;
     }
 

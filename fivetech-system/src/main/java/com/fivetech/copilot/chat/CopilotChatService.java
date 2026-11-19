@@ -114,6 +114,20 @@ public class CopilotChatService
         m.put("reason", !properties.isEnabled() ? "AI 功能已關閉" : !properties.isConfigured() ? "未配置 ANTHROPIC_API_KEY" : null);
         m.put("model", model);
         m.put("modelLabel", properties.label(model));
+        // 页面上可选的模型（copilot.models）；只有一个时前端不必显示选择器
+        List<Map<String, Object>> models = new ArrayList<>();
+        for (CopilotProperties.Model one : properties.getModels())
+        {
+            if (one == null || one.getId() == null || one.getId().isBlank())
+            {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", one.getId());
+            item.put("label", properties.label(one.getId()));
+            models.add(item);
+        }
+        m.put("models", models);
         m.put("dailyLimit", cfg.getDailyLimitPerUser());
         m.put("usedToday", used(operator));
         m.put("maxChars", cfg.getMaxChars());
@@ -140,15 +154,18 @@ public class CopilotChatService
      * 回答一轮。
      *
      * @param messages 最近的对话（时间顺序，最后一条是这次的提问）
+     * @param requestedModel 页面选的模型；为空或不在 copilot.models 里时退回配置的模型
      * @return { reply, model, modelLabel, contextAsOf, usedToday, dailyLimit }
      */
-    public Map<String, Object> chat(List<Map<String, Object>> messages, String page, String operator)
+    public Map<String, Object> chat(List<Map<String, Object>> messages, String page, String requestedModel, String operator)
     {
         CopilotProperties.Chat cfg = properties.getChat();
         List<AiClient.Message> list = normalize(messages, cfg);
         String site = dashboard.currentSite();
         Context ctx = context(site);
-        String model = properties.effectiveModel(cfg.getModel());
+        // 页面选的模型必须在 copilot.models 白名单里，不认识就按配置来，避免前端传任意模型 id
+        String model = properties.find(requestedModel) != null ? properties.effectiveModel(requestedModel)
+            : properties.effectiveModel(cfg.getModel());
 
         CopilotGateway.Request r = new CopilotGateway.Request();
         r.feature = FEATURE;
@@ -163,7 +180,7 @@ public class CopilotChatService
         r.toolExecutor = call -> auditTools.execute(call, operator);
         r.maxToolRounds = cfg.getDataQuery().getMaxRounds();
         // 没挂上工具时这里是 tools=0，照旧只按上下文回答；排查「助手说查不到」先看这一行
-        log.info("[copilot] chat user={} site={} tools={}", operator, site,
+        log.info("[copilot] chat user={} site={} model={} tools={}", operator, site, model,
             tools.isEmpty() ? "0" : tools.size() + " " + tools.stream().map(AiClient.Tool::getName).toList());
         r.maxTokens = cfg.getMaxTokens();
         r.dailyLimit = cfg.getDailyLimitPerUser();
